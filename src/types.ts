@@ -130,6 +130,9 @@ export interface PengaturanSistem {
   tahun_anggaran_aktif: number;
   nama_instansi: string;
   logo_instansi: string; // base64 logo
+  nama_pejabat_ttd?: string;
+  jabatan_pejabat_ttd?: string;
+  nip_pejabat_ttd?: string;
 }
 
 // Type Aliases for compatibility

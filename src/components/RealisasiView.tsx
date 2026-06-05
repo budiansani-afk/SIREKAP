@@ -39,6 +39,7 @@ export default function RealisasiView({
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedMonth, setSelectedMonth] = useState('');
   const [selectedSubKeg, setSelectedSubKeg] = useState('');
+  const [selectedUraianFilter, setSelectedUraianFilter] = useState('');
 
   // Modals
   const [showForm, setShowForm] = useState(false);
@@ -93,12 +94,13 @@ export default function RealisasiView({
                           (r && r.kode_sub_kegiatan ? String(r.kode_sub_kegiatan).toLowerCase().includes(searchTerm.toLowerCase()) : false);
       const matchMonth = selectedMonth === '' || (r && r.bulan === selectedMonth);
       const matchSub = selectedSubKeg === '' || (r && r.kode_sub_kegiatan === selectedSubKeg);
+      const matchUraian = selectedUraianFilter === '' || (r && r.uraian_belanja === selectedUraianFilter);
 
-      return matchSearch && matchMonth && matchSub;
+      return matchSearch && matchMonth && matchSub && matchUraian;
     });
-  }, [realisasis, searchTerm, selectedMonth, selectedSubKeg]);
+  }, [realisasis, searchTerm, selectedMonth, selectedSubKeg, selectedUraianFilter]);
 
-  // Compute monthly recap indicators
+  // Compute monthly recap indicators filtered by selected sub-kegiatan and description
   const rekapBulanan = useMemo(() => {
     const recaps: Record<string, number> = monthsList.reduce((acc, m) => {
       acc[m] = 0;
@@ -106,13 +108,34 @@ export default function RealisasiView({
     }, {} as Record<string, number>);
 
     realisasis.forEach(r => {
+      if (selectedSubKeg && r.kode_sub_kegiatan !== selectedSubKeg) {
+        return;
+      }
+      if (selectedUraianFilter && r.uraian_belanja !== selectedUraianFilter) {
+        return;
+      }
       if (recaps[r.bulan] !== undefined) {
         recaps[r.bulan] += r.nominal_realisasi;
       }
     });
 
     return recaps;
-  }, [realisasis]);
+  }, [realisasis, selectedSubKeg, selectedUraianFilter]);
+
+  // Compute total sum of matched/filtered realisasis
+  const totalBelanjaFiltered = useMemo(() => {
+    let sum = 0;
+    realisasis.forEach(r => {
+      if (selectedSubKeg && r.kode_sub_kegiatan !== selectedSubKeg) {
+        return;
+      }
+      if (selectedUraianFilter && r.uraian_belanja !== selectedUraianFilter) {
+        return;
+      }
+      sum += r.nominal_realisasi;
+    });
+    return sum;
+  }, [realisasis, selectedSubKeg, selectedUraianFilter]);
 
   // Compute selected Sub-Kegiatan Pagu and remaining sisa for dynamic warning alert guards
   const activeSubStatus = useMemo(() => {
@@ -280,16 +303,60 @@ export default function RealisasiView({
       </div>
 
       {/* Monthly Recap Row Widget */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4" id="recap-monthly-row">
-        <h4 className="text-xs font-bold text-slate-800 mb-3 flex items-center gap-1">
-          <Receipt size={14} className="text-blue-700" />
-          Rekap Belanja Kas Bulanan TA 2026
-        </h4>
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 space-y-4" id="recap-monthly-row">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+          <div>
+            <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+              <Receipt size={15} className="text-[#10409F]" />
+              Rekap Belanja Kas Bulanan TA 2026
+            </h4>
+            <p className="text-[10px] text-slate-500 mt-0.5">
+              {selectedSubKeg || selectedUraianFilter 
+                ? "Menampilkan rekapitulasi realisasi belanja kas yang disaring khusus." 
+                : "Menampilkan akumulasi seluruh realisasi belanja kas bulanan."}
+            </p>
+          </div>
+          
+          <div className="flex flex-wrap gap-2 items-center">
+            {/* Filter status indicator badges */}
+            {(selectedSubKeg || selectedUraianFilter) && (
+              <div className="flex flex-wrap items-center gap-1 bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-200/50">
+                <span className="text-[9px] text-[#1e3a8a] font-black uppercase tracking-wider">Aktif Saringan:</span>
+                {selectedSubKeg && (
+                  <span className="text-[10px] bg-white font-mono font-bold text-blue-900 border px-1.5 py-0.5 rounded shadow-xs">
+                    Sub-Keg: {selectedSubKeg}
+                  </span>
+                )}
+                {selectedUraianFilter && (
+                  <span className="text-[10px] bg-white text-orange-950 font-bold border border-orange-200 px-1.5 py-0.5 rounded shadow-xs" title={selectedUraianFilter}>
+                    Uraian: {selectedUraianFilter.substring(0, 18)}...
+                  </span>
+                )}
+                <button 
+                  onClick={() => {
+                    setSelectedSubKeg('');
+                    setSelectedUraianFilter('');
+                  }}
+                  className="text-[9px] hover:text-red-700 text-red-500 font-extrabold ml-1.5 hover:underline cursor-pointer"
+                >
+                  Bersihkan
+                </button>
+              </div>
+            )}
+            
+            {/* SUM / TOTAL OF THE SUB-KEGIATAN EXPENSES */}
+            <div className="bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-200 text-right">
+              <span className="text-[9px] text-slate-500 uppercase font-black block leading-none">Jumlah Belanja Sub Kegiatan</span>
+              <span className="text-xs font-mono font-black text-emerald-900 mt-1 inline-block">{formatRupiah(totalBelanjaFiltered)}</span>
+            </div>
+          </div>
+        </div>
+
         <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-12 gap-2" id="grid recaps box">
           {monthsList.map((m, i) => {
             const amount = rekapBulanan[m];
             return (
-              <div key={i} className={`p-2.5 rounded-lg border text-center transition ${amount > 0 ? 'bg-emerald-50 border-emerald-200 text-emerald-950' : 'bg-slate-50/50 border-slate-100'}`}>
+              <div key={i} className={`p-2.5 rounded-lg border text-center transition ${amount > 0 ? 'bg-emerald-50 border-emerald-250 text-emerald-950' : 'bg-slate-50/50 border-slate-100'}`}>
                 <p className="text-[10px] text-slate-500 font-semibold tracking-wide uppercase">{m.substring(0,3)}</p>
                 <p className="text-xs font-black mt-1 pl-0.5 truncate" title={formatRupiah(amount)}>
                   {amount > 0 ? formatRupiah(amount).replace('Rp', '') : '-'}
@@ -362,7 +429,13 @@ export default function RealisasiView({
                     </td>
                     <td className="p-3.5 font-mono text-[11px] font-bold text-slate-900" title={r.kode_sub_kegiatan}>{r.kode_sub_kegiatan}</td>
                     <td className="p-3.5">
-                      <p className="font-bold text-slate-950 font-semibold">{r.uraian_belanja}</p>
+                      <button 
+                        onClick={() => setSelectedUraianFilter(r.uraian_belanja)}
+                        className={`hover:underline text-left cursor-pointer transition font-bold block ${selectedUraianFilter === r.uraian_belanja ? 'text-orange-600 font-black decoration-orange-605' : 'text-slate-950 hover:text-blue-800'}`}
+                        title="Klik untuk menyaring khusus uraian/keterangan ini pada rekap kas bulanan"
+                      >
+                        {r.uraian_belanja}
+                      </button>
                       <span className="text-[10px] text-slate-600 italic block mt-0.5" title={r.keterangan}>{r.keterangan || 'Tidak ada kuintor SPJ adendum.'}</span>
                     </td>
                     <td className="p-3.5 text-right font-black text-rose-950">{formatRupiah(r.nominal_realisasi)}</td>

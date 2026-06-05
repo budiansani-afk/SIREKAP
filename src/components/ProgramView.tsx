@@ -11,7 +11,7 @@ import {
   ShieldCheck,
   Briefcase
 } from 'lucide-react';
-import { Program, Kegiatan, SubKegiatan, UserRole } from '../types';
+import { Program, Kegiatan, SubKegiatan, UserRole, RKA } from '../types';
 import { formatRupiah, exportToCSV } from '../utils/helpers';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { 
@@ -32,6 +32,7 @@ interface ProgramViewProps {
   programs: Program[];
   kegiatans: Kegiatan[];
   subKegiatans: SubKegiatan[];
+  rkaList: RKA[];
   currentUserRole: UserRole;
   currentUserEmail: string;
 }
@@ -42,12 +43,23 @@ export default function ProgramView({
   programs,
   kegiatans,
   subKegiatans,
+  rkaList = [],
   currentUserRole,
   currentUserEmail
 }: ProgramViewProps) {
   const [activeTab, setActiveTab] = useState<ActiveTabType>('program');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedProgramFilter, setSelectedProgramFilter] = useState('');
+  const [selectedSubKegiatanRka, setSelectedSubKegiatanRka] = useState<SubKegiatan | null>(null);
+
+  const matchingRkas = useMemo(() => {
+    if (!selectedSubKegiatanRka) return [];
+    return rkaList.filter(item => item.kode_sub_kegiatan === selectedSubKegiatanRka.kode_sub_kegiatan);
+  }, [selectedSubKegiatanRka, rkaList]);
+
+  const totalRkasSum = useMemo(() => {
+    return matchingRkas.reduce((sum, item) => sum + (item.jumlah || 0), 0);
+  }, [matchingRkas]);
   
   // Modal controllers
   const [showForm, setShowForm] = useState(false);
@@ -176,6 +188,11 @@ export default function ProgramView({
 
       const docRef = doc(db, collectionName, docId);
       await setDoc(docRef, payload).catch(err => handleFirestoreError(err, OperationType.WRITE, `${collectionName}/${docId}`));
+
+      // If code was changed during editing, delete the old document
+      if (editItem && editItem.id !== docId) {
+        await deleteDoc(doc(db, collectionName, editItem.id)).catch(err => console.warn("Failed to delete old master doc:", err));
+      }
 
       // Log the changes
       await createAuditLog(
@@ -358,7 +375,18 @@ export default function ProgramView({
                   filteredPrograms.map((p, i) => (
                     <tr key={i} className="hover:bg-slate-50/50 transition">
                       <td className="p-3.5 pl-4 font-mono font-bold text-slate-900">{p.kode_program}</td>
-                      <td className="p-3.5 font-medium">{p.nama_program}</td>
+                      <td className="p-3.5 font-medium">
+                        <button 
+                          onClick={() => {
+                            setSelectedProgramFilter(p.kode_program);
+                            setActiveTab('kegiatan');
+                          }}
+                          className="hover:underline text-blue-700 hover:text-blue-800 text-left font-bold cursor-pointer transition flex items-center gap-1"
+                        >
+                          {p.nama_program}
+                          <ChevronRight size={14} className="text-blue-500 shrink-0 inline" />
+                        </button>
+                      </td>
                       <td className="p-3.5 text-right font-bold text-slate-950">{formatRupiah(p.pagu)}</td>
                       <td className="p-3.5 text-right text-emerald-800 font-semibold">{formatRupiah(p.realisasi)}</td>
                       <td className="p-3.5 text-right font-medium text-slate-700">{formatRupiah(p.sisa)}</td>
@@ -405,7 +433,19 @@ export default function ProgramView({
                   filteredKegiatans.map((k, i) => (
                     <tr key={i} className="hover:bg-slate-50/50 transition">
                       <td className="p-3.5 pl-4 font-mono font-bold text-slate-900">{k.kode_kegiatan}</td>
-                      <td className="p-3.5 font-medium">{k.nama_kegiatan}</td>
+                      <td className="p-3.5 font-medium">
+                        <button 
+                          onClick={() => {
+                            setSelectedProgramFilter(k.kode_program);
+                            setSearchTerm(k.kode_kegiatan);
+                            setActiveTab('sub_kegiatan');
+                          }}
+                          className="hover:underline text-blue-700 hover:text-blue-800 text-left font-bold cursor-pointer transition flex items-center gap-1"
+                        >
+                          {k.nama_kegiatan}
+                          <ChevronRight size={14} className="text-blue-500 shrink-0 inline" />
+                        </button>
+                      </td>
                       <td className="p-3.5 font-mono text-slate-600">{k.kode_program}</td>
                       <td className="p-3.5 text-right font-bold text-slate-950">{formatRupiah(k.pagu)}</td>
                       <td className="p-3.5 text-right text-emerald-800 font-semibold">{formatRupiah(k.realisasi)}</td>
@@ -453,7 +493,17 @@ export default function ProgramView({
                   filteredSubKegiatans.map((s, i) => (
                     <tr key={i} className="hover:bg-slate-50/50 transition">
                       <td className="p-3.5 pl-4 font-mono font-bold text-slate-900">{s.kode_sub_kegiatan}</td>
-                      <td className="p-3.5 font-medium">{s.nama_sub_kegiatan}</td>
+                      <td className="p-3.5 font-medium">
+                        <button 
+                          onClick={() => {
+                            setSelectedSubKegiatanRka(s);
+                          }}
+                          className="hover:underline text-orange-600 hover:text-orange-700 text-left font-bold cursor-pointer transition flex items-center gap-1.5"
+                        >
+                          {s.nama_sub_kegiatan}
+                          <span className="text-[9px] bg-orange-100 text-orange-800 px-1.5 py-0.5 rounded font-black tracking-wider uppercase shrink-0">Rincian RKA</span>
+                        </button>
+                      </td>
                       <td className="p-3.5 font-mono text-slate-600">{s.kode_kegiatan}</td>
                       <td className="p-3.5 text-right font-bold text-slate-950">{formatRupiah(s.pagu)}</td>
                       <td className="p-3.5 text-right text-emerald-800 font-semibold">{formatRupiah(s.realisasi)}</td>
@@ -499,7 +549,7 @@ export default function ProgramView({
 
             <form onSubmit={handleSubmit} className="p-5 space-y-4 text-xs">
               
-              {/* Parent program selector (when target is Kegiatan / SubKegiatan) */}
+               {/* Parent program selector (when target is Kegiatan / SubKegiatan) */}
               {activeTab !== 'program' && (
                 <div>
                   <label className="block text-slate-700 font-bold mb-1">Pilih Program Atasan *</label>
@@ -507,7 +557,6 @@ export default function ProgramView({
                     value={formParentProgram}
                     onChange={(e) => setFormParentProgram(e.target.value)}
                     required
-                    disabled={editItem !== null}
                     className="w-full p-2.5 rounded-lg border border-slate-200 outline-blue-600 focus:border-blue-600 bg-slate-50"
                   >
                     <option value="">-- Pilih Program --</option>
@@ -526,7 +575,6 @@ export default function ProgramView({
                     value={formParentKegiatan}
                     onChange={(e) => setFormParentKegiatan(e.target.value)}
                     required
-                    disabled={editItem !== null}
                     className="w-full p-2.5 rounded-lg border border-slate-200 outline-blue-600 focus:border-blue-600 bg-slate-50"
                   >
                     <option value="">-- Pilih Kegiatan --</option>
@@ -549,7 +597,6 @@ export default function ProgramView({
                   placeholder={activeTab === 'program' ? 'Contoh: 2.10.01' : activeTab === 'kegiatan' ? 'Contoh: 2.10.01.2.01' : 'Contoh: 2.10.01.2.01.01'}
                   value={formKode}
                   onChange={(e) => setFormKode(e.target.value)}
-                  disabled={editItem !== null}
                   required
                   className="w-full p-2.5 rounded-lg border border-slate-200 outline-blue-600 focus:border-blue-600 disabled:bg-slate-100 font-mono text-[11px]"
                 />
@@ -602,6 +649,97 @@ export default function ProgramView({
               </div>
 
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* RKA Detailed Expenses Overlay Modal */}
+      {selectedSubKegiatanRka && (
+        <div className="fixed inset-0 bg-slate-950/50 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in" id="rka-details-modal-container">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl overflow-hidden border border-slate-100 flex flex-col max-h-[85vh]">
+            <div className="bg-gradient-to-r from-blue-900 to-[#1e3a8a] px-6 py-4 flex items-center justify-between text-white shrink-0">
+              <div>
+                <span className="text-[10px] bg-white/20 px-2 py-0.5 rounded-full uppercase tracking-wider font-extrabold text-blue-100">Rincian Dokumen RKA</span>
+                <h3 className="text-sm font-bold mt-1 font-mono">{selectedSubKegiatanRka.kode_sub_kegiatan} - {selectedSubKegiatanRka.nama_sub_kegiatan}</h3>
+              </div>
+              <button 
+                onClick={() => setSelectedSubKegiatanRka(null)}
+                className="text-white hover:text-orange-400 font-extrabold text-xl p-1 transition"
+              >
+                &times;
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto space-y-4 flex-1">
+              {/* Highlight summary indicators */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="bg-blue-50/70 p-3 rounded-xl border border-blue-100/50">
+                  <span className="text-[10px] uppercase font-bold text-slate-500">Pagu Sektor Tetap</span>
+                  <p className="text-base font-black text-blue-800 font-mono mt-0.5">{formatRupiah(selectedSubKegiatanRka.pagu)}</p>
+                </div>
+                <div className="bg-emerald-50/70 p-3 rounded-xl border border-emerald-100/50">
+                  <span className="text-[10px] uppercase font-bold text-slate-500">Total Rincian Belanja RKA</span>
+                  <p className="text-base font-black text-emerald-800 font-mono mt-0.5">{formatRupiah(totalRkasSum)}</p>
+                </div>
+                <div className="bg-amber-50/70 p-3 rounded-xl border border-amber-100/50">
+                  <span className="text-[10px] uppercase font-bold text-slate-500">Selisih Alokasi</span>
+                  <p className={`text-base font-black font-mono mt-0.5 ${selectedSubKegiatanRka.pagu - totalRkasSum < 0 ? 'text-red-700' : 'text-slate-800'}`}>
+                    {formatRupiah(selectedSubKegiatanRka.pagu - totalRkasSum)}
+                  </p>
+                </div>
+              </div>
+
+              {matchingRkas.length === 0 ? (
+                <div className="p-12 text-center bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                  <p className="text-slate-500 font-bold text-xs uppercase tracking-wider">Belum ada rincian belanja RKA yang diinput atau disinkronkan untuk sub kegiatan ini.</p>
+                  <p className="text-[11px] text-slate-400 mt-1">Silahkan masuk ke menu E-RKA Detail Belanja untuk menyusun rincian rekening belanja.</p>
+                </div>
+              ) : (
+                <div className="border border-slate-200 rounded-xl overflow-hidden shadow-xs">
+                  <div className="overflow-x-auto w-full">
+                    <table className="w-full text-left border-collapse text-xs">
+                      <thead>
+                        <tr className="bg-slate-50 border-b border-slate-200 font-bold text-slate-700">
+                          <th className="p-3 w-36">Kode Rekening</th>
+                          <th className="p-3">Uraian Belanja</th>
+                          <th className="p-3 text-center w-24">Volume</th>
+                          <th className="p-3 text-center w-20 font-bold">Satuan</th>
+                          <th className="p-3 text-right w-32">Harga Satuan</th>
+                          <th className="p-3 text-right w-36">Jumlah</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-150 text-slate-700 font-medium">
+                        {matchingRkas.map((item, idx) => (
+                          <tr key={idx} className="hover:bg-slate-50/40">
+                            <td className="p-3 font-mono text-slate-600 font-semibold">{item.kode_rekening}</td>
+                            <td className="p-3 text-slate-900 font-semibold">{item.uraian_belanja}</td>
+                            <td className="p-3 text-center font-mono">{item.volume}</td>
+                            <td className="p-3 text-center font-semibold text-slate-500">{item.satuan}</td>
+                            <td className="p-3 text-right font-mono">{formatRupiah(item.harga_satuan)}</td>
+                            <td className="p-3 text-right font-mono font-bold text-slate-900">{formatRupiah(item.jumlah)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr className="bg-slate-100 font-bold text-slate-800 border-t border-slate-200 text-xs">
+                          <td colSpan={5} className="p-3 text-right uppercase tracking-wider">Total Hasil Rincian Belanja RKA:</td>
+                          <td className="p-3 text-right font-mono font-black text-slate-950 text-sm border-l bg-slate-50">{formatRupiah(totalRkasSum)}</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="p-4 bg-slate-50 border-t flex justify-end gap-2 shrink-0">
+              <button 
+                onClick={() => setSelectedSubKegiatanRka(null)}
+                className="px-5 py-2 hover:bg-slate-200/80 text-slate-750 font-bold border rounded-lg bg-white transition cursor-pointer text-xs uppercase shadow-sm"
+              >
+                Tutup Rincian
+              </button>
+            </div>
           </div>
         </div>
       )}

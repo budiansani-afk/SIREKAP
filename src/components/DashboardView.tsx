@@ -31,6 +31,7 @@ export default function DashboardView({
   monitorings,
   dokumens
 }: DashboardProps) {
+  const [selectedInfo, setSelectedInfo] = React.useState<{ title: string; content: string; type: 'guide' | 'alert' } | null>(null);
 
   // Calculate totals
   const totalPagu = useMemo(() => programs.reduce((sum, p) => sum + (p.pagu || 0), 0), [programs]);
@@ -89,31 +90,54 @@ export default function DashboardView({
   return (
     <div className="space-y-6" id="dashboard-container">
       {/* Welcome Banner */}
-      <div className="bg-gradient-to-r from-[#172554] via-[#1e3a8a] to-[#1e40af] rounded-xl p-6 text-white shadow-sm relative overflow-hidden" id="welcome-pane">
-        <div className="absolute right-0 bottom-0 opacity-10 transform translate-x-12 translate-y-6">
+      <div 
+        onClick={() => setSelectedInfo({
+          title: "Panduan Penggunaan Sistem SIBIRU-TANAH 2026",
+          content: "Sistem Informasi Belanja dan Realisasi Keuangan Sektor Pertahanan & Pertanahan (SIBIRU TANAH) dirancang untuk menyinkronkan seluruh pengelolaan DPA, Program, Kegiatan Utama, Sub-Kegiatan, hingga Realisasi Anggaran Kas (RKA). Anda dapat memantau serapan kas bulanan, mengekspor laporan SP2D, serta mengelola berkas pertanahan secara digital.",
+          type: 'guide'
+        })}
+        className="bg-gradient-to-r from-[#172554] via-[#1e3a8a] to-[#1e40af] hover:from-[#131d42] hover:to-[#17328c] rounded-xl p-6 text-white shadow-xs cursor-pointer group transition-all duration-300 relative overflow-hidden animate-fade-in" 
+        id="welcome-pane"
+        title="Klik untuk membuka informasi panduan sistem lengkap"
+      >
+        <div className="absolute right-0 bottom-0 opacity-10 transform translate-x-12 translate-y-6 group-hover:scale-105 transition-transform duration-300">
           <Activity size={320} />
         </div>
         <div className="relative z-10">
           <h2 className="text-xl md:text-2xl font-bold font-display flex items-center gap-2">
             <span className="bg-white/10 px-3 py-1 rounded-lg text-xs border border-white/20 select-none font-mono">TA 2026</span>
-            Sistem SIBIRU Realoperasi
+            Sistem SIBIRU Realoperasi 
+            <span className="text-[11px] font-semibold bg-orange-500 text-white px-2 py-0.5 rounded-full ml-auto animate-pulse">Klik Info Detail</span>
           </h2>
-          <p className="text-blue-100/90 mt-1 max-w-2xl text-xs md:text-sm leading-relaxed">
-            Sistem Informasi Belanja dan Realisasi Keuangan Sektor Pertanahan Kabupaten Bima, Provinsi Nusa Tenggara Barat. Seluruh data transaksi, cetakan laporan DPA, dan monitoring terdokumentasi serta tersinkronisasi secara real-time.
+          <p className="text-blue-100/90 mt-1.5 max-w-2xl text-xs md:text-sm leading-relaxed group-hover:text-white transition-colors">
+            Sistem Informasi Belanja dan Realisasi Keuangan Sektor Pertanahan Kabupaten Bima, Provinsi Nusa Tenggara Barat. Seluruh data transaksi, cetakan laporan DPA, dan monitoring terdokumentasi serta tersinkronisasi secara real-time. Klik banner ini untuk melihat infografis panduan dasar.
           </p>
         </div>
       </div>
 
       {/* Alerts */}
       {alerts.length > 0 && (
-        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-amber-900 space-y-2 text-sm" id="dashboard-alerts">
-          <div className="flex items-center gap-2 font-semibold">
-            <AlertTriangle className="text-amber-600" size={18} />
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-amber-900 space-y-2 text-sm shadow-2xs" id="dashboard-alerts">
+          <div className="flex items-center gap-2 font-black text-amber-950 uppercase tracking-wide border-b border-amber-200/50 pb-2 mb-2">
+            <AlertTriangle className="text-amber-600 animate-bounce" size={18} />
             Sistem Peringatan Dini (Early Warning System)
           </div>
-          <ul className="list-disc list-inside space-y-1 text-amber-800 pl-1">
+          <ul className="space-y-2.5">
             {alerts.map((alert, i) => (
-              <li key={i}>{alert}</li>
+              <li key={i}>
+                <button 
+                  onClick={() => setSelectedInfo({
+                    title: "Detail Notifikasi & Tindakan Preventif",
+                    content: alert + "\n\nLangkah Penanganan:\n1. Segera lakukan penyesuaian/revisi DPA melalui menu RKA belanja jika terdapat defisit belanja kas.\n2. Hubungi operator penanggung jawab kegiatan setempat untuk memvalidasi kelengkapan berkas fisik SP2D.\n3. Cetak rekap bulanan SP2D sebagai bahan verifikasi dalam Rapat Koordinasi Evaluasi Serapan Anggaran.",
+                    type: 'alert'
+                  })}
+                  className="text-left w-full hover:underline decoration-amber-500 hover:text-amber-950 flex items-start gap-2 cursor-pointer group"
+                >
+                  <span className="text-amber-500 font-extrabold group-hover:scale-125 transition-transform">•</span>
+                  <span className="flex-1 font-semibold text-amber-900 group-hover:text-amber-950">{alert}</span>
+                  <span className="text-[10px] text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded font-bold whitespace-nowrap">Detail Tindak</span>
+                </button>
+              </li>
             ))}
           </ul>
         </div>
@@ -205,34 +229,65 @@ export default function DashboardView({
         {/* 1. Serapan Bulanan (Bar Chart) */}
         <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm lg:col-span-2 flex flex-col justify-between" id="chart-bulan">
           <div>
-            <h3 className="font-bold text-slate-800 flex items-center gap-2">
-              <FolderLock size={18} className="text-blue-700" />
-              Tren Realisasi Bulanan TA 2026
-            </h3>
-            <p className="text-slate-600 text-xs mt-1">Grafik nominal realisasi penyerapan keuangan per bulan berjalan</p>
+            <div className="flex justify-between items-start">
+              <div>
+                <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                  <FolderLock size={18} className="text-blue-750" />
+                  Tren Realisasi Bulanan TA 2026
+                </h3>
+                <p className="text-slate-600 text-xs mt-1 font-medium">Grafik nominal realisasi penyerapan keuangan per bulan berjalan</p>
+              </div>
+              <div className="text-right text-[10px] text-slate-500 font-bold bg-slate-50 px-2 py-1 rounded border border-slate-100">
+                Nilai Tertinggi: <span className="font-mono text-emerald-800 font-black">{formatRupiah(maxMonthAmount)}</span>
+              </div>
+            </div>
           </div>
           
-          <div className="mt-8 h-48 flex items-end gap-2.5 pb-2" id="chart-months-bars">
-            {monthlyData.map((d, index) => {
-              const heightPct = (d.amount / maxMonthAmount) * 100;
-              return (
-                <div key={index} className="flex-1 flex flex-col items-center group relative cursor-pointer">
-                  {/* Tooltip on Hover */}
-                  <div className="absolute bottom-full mb-2 bg-slate-900 text-white text-[10px] px-2 py-1 rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-30 pointer-events-none">
-                    {formatRupiah(d.amount)}
-                  </div>
-                  {/* Vertical Bar */}
-                  <div 
-                    className="w-full bg-blue-600 hover:bg-blue-500 rounded-t transition-all duration-300"
-                    style={{ height: `${Math.max(4, heightPct)}%` }}
-                  ></div>
-                  {/* Month Label */}
-                  <span className="text-[10px] text-slate-500 font-semibold mt-2 select-none rotate-45 sm:rotate-0 inline-block overflow-hidden max-w-[28px] truncate">
-                    {d.month.substring(0, 3)}
-                  </span>
+          <div className="mt-8 h-56 relative" id="chart-months-bars-container">
+            {/* Background Grid Lines & Ticks */}
+            <div className="absolute inset-x-0 top-0 bottom-6 flex flex-col justify-between pointer-events-none select-none">
+              {[100, 75, 50, 25, 0].map((tick, tIdx) => (
+                <div key={tIdx} className="w-full flex items-center gap-2">
+                  <span className="text-[9px] font-mono font-extrabold text-slate-450 w-7 text-right">{tick}%</span>
+                  <div className="flex-1 border-t border-dashed border-slate-100"></div>
                 </div>
-              );
-            })}
+              ))}
+            </div>
+
+            {/* Actual Bars */}
+            <div className="absolute inset-x-0 top-1 bottom-6 pl-9 flex items-end gap-3.5" id="chart-months-bars">
+              {monthlyData.map((d, index) => {
+                const heightPct = (d.amount / maxMonthAmount) * 100;
+                return (
+                  <div key={index} className="flex-1 h-full flex flex-col justify-end items-center group relative cursor-pointer">
+                    {/* Tooltip on Hover */}
+                    <div className="absolute bottom-full mb-2 bg-slate-900 text-white text-[10px] px-2 py-1.5 rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap z-30 pointer-events-none flex flex-col items-center">
+                      <span className="font-black border-b border-white/20 pb-0.5 mb-1 w-full text-center uppercase tracking-wider">{d.month}</span>
+                      <span className="font-mono font-extrabold text-emerald-400">{formatRupiah(d.amount)}</span>
+                      <span className="text-[8px] text-slate-300 mt-0.5">({((d.amount / maxMonthAmount) * 100).toFixed(1)}% dari puncak)</span>
+                    </div>
+
+                    {/* Numeric overhead label */}
+                    {d.amount > 0 && (
+                      <span className="text-[8px] font-mono font-bold text-slate-500 mb-1 pointer-events-none scale-0 group-hover:scale-100 transition duration-150 transform -translate-y-1">
+                        {d.amount >= 1000000000 ? `${(d.amount / 1000000000).toFixed(2)} M` : d.amount >= 1000000 ? `${(d.amount / 1000000).toFixed(1)} jt` : formatRupiah(d.amount)}
+                      </span>
+                    )}
+
+                    {/* Vertical Bar */}
+                    <div 
+                      className="w-full bg-gradient-to-t from-blue-750 to-blue-500 group-hover:from-blue-600 group-hover:to-blue-400 rounded-lg transition-all duration-300 shadow-2xs"
+                      style={{ height: `${Math.max(3, heightPct * 0.9)}%` }}
+                    ></div>
+                    
+                    {/* Month Label */}
+                    <span className="absolute top-full mt-1.5 text-[9px] text-slate-500 font-bold select-none uppercase tracking-wider">
+                      {d.month.substring(0, 3)}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
 
@@ -240,14 +295,14 @@ export default function DashboardView({
         <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex flex-col justify-between" id="chart-gauge">
           <div>
             <h3 className="font-bold text-slate-800 flex items-center gap-1.5">
-              <PieChart size={18} className="text-blue-700" />
+              <PieChart size={18} className="text-blue-750" />
               Persentase Kinerja Serapan
             </h3>
-            <p className="text-slate-600 text-xs mt-1">Visualisasi efisiensi penyerapan DPA dinas</p>
+            <p className="text-slate-600 text-xs mt-1 font-medium">Visualisasi efisiensi penyerapan DPA dinas</p>
           </div>
 
-          <div className="flex flex-col items-center justify-center py-6">
-            <div className="relative w-36 h-36 flex items-center justify-center">
+          <div className="flex flex-col items-center justify-center py-4">
+            <div className="relative w-32 h-32 flex items-center justify-center">
               {/* Simple SV Donut */}
               <svg className="w-full h-full transform -rotate-90" viewBox="0 0 36 36">
                 <path
@@ -268,20 +323,40 @@ export default function DashboardView({
                 />
               </svg>
               <div className="absolute text-center">
-                <span className="text-2xl font-black text-slate-800">{persentaseSerapan.toFixed(1)}%</span>
-                <p className="text-[10px] text-slate-500 font-semibold tracking-wide uppercase mt-0.5">TERSERAP</p>
+                <span className="text-2xl font-black text-slate-850">{persentaseSerapan.toFixed(1)}%</span>
+                <p className="text-[9px] text-slate-550 font-bold tracking-wider uppercase mt-1">TERSERAP</p>
               </div>
             </div>
             
-            <div className="grid grid-cols-2 gap-4 w-full mt-6 text-center text-xs">
-              <div className="p-2 bg-blue-50/50 rounded-xl border border-blue-100/50">
-                <p className="text-slate-500 font-medium">Realisasi</p>
-                <p className="font-bold text-blue-700">{formatRupiah(totalRealisasi)}</p>
+            {/* Color-graded performance references */}
+            <div className="w-full mt-4 space-y-1.5 text-[10px] bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+              <div className="flex justify-between items-center text-[9px] font-black uppercase text-slate-500 pb-1 border-b">
+                <span>Rujukan Status Kinerja</span>
+                <span>Alokasi</span>
               </div>
-              <div className="p-2 bg-slate-50 rounded-xl border border-slate-100">
-                <p className="text-slate-500 font-medium">Sisa Kas</p>
-                <p className="font-bold text-slate-700">{formatRupiah(totalSisa)}</p>
+              <div className="flex justify-between">
+                <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-500"></span> Tinggi (&gt;= 80%)</span>
+                <span className="font-bold text-emerald-800">{persentaseSerapan >= 80 ? "Aktif" : "-"}</span>
               </div>
+              <div className="flex justify-between">
+                <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-blue-500"></span> Sedang (50% - 79%)</span>
+                <span className="font-bold text-blue-800">{(persentaseSerapan >= 50 && persentaseSerapan < 80) ? "Aktif" : "-"}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-amber-500"></span> Lambat (&lt; 50%)</span>
+                <span className="font-bold text-amber-700">{persentaseSerapan < 50 ? "Aktif" : "-"}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4 w-full mt-4 text-center text-xs border-t border-slate-100 pt-3">
+            <div className="p-2 bg-blue-50/50 rounded-xl border border-blue-100/50">
+              <p className="text-slate-500 font-semibold text-[10px] uppercase">Realisasi</p>
+              <p className="font-bold text-blue-700 font-mono text-[11px] mt-0.5">{formatRupiah(totalRealisasi)}</p>
+            </div>
+            <div className="p-2 bg-slate-50 rounded-xl border border-slate-100">
+              <p className="text-slate-500 font-semibold text-[10px] uppercase">Sisa Kas</p>
+              <p className="font-bold text-slate-750 font-mono text-[11px] mt-0.5">{formatRupiah(totalSisa)}</p>
             </div>
           </div>
         </div>
@@ -366,6 +441,56 @@ export default function DashboardView({
         </div>
 
       </div>
+
+      {/* Informational Lightbox Overlay Modal */}
+      {selectedInfo && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 antialiased" id="info-overlay-lightbox">
+          <div className="bg-white rounded-2xl border border-slate-100 shadow-2xl max-w-lg w-full overflow-hidden transform scale-100 transition-all duration-300">
+            {/* Header */}
+            <div className={`p-5 text-white ${selectedInfo.type === 'alert' ? 'bg-gradient-to-r from-amber-600 to-amber-700' : 'bg-gradient-to-r from-[#172554] to-blue-750'}`}>
+              <div className="flex items-center gap-2.5">
+                {selectedInfo.type === 'alert' ? <AlertTriangle size={20} className="animate-pulse text-white" /> : <Activity size={20} className="text-white" />}
+                <h3 className="font-bold text-sm tracking-tight">{selectedInfo.title}</h3>
+              </div>
+            </div>
+            
+            {/* Contents */}
+            <div className="p-6 space-y-4">
+              <p className="text-slate-700 text-xs leading-relaxed whitespace-pre-wrap font-semibold">
+                {selectedInfo.content}
+              </p>
+
+              {/* Decorative Guide Blocks */}
+              {selectedInfo.type === 'guide' && (
+                <div className="bg-slate-50 p-4 rounded-xl border border-slate-150 space-y-2.5 mt-3 text-[11px] text-slate-650">
+                  <div className="flex items-start gap-2">
+                    <span className="text-[#10409F] font-extrabold font-mono">1.</span>
+                    <p><b>Hierarki Program</b>: Klik nama Program/Kegiatan di halaman Program & Kegiatan untuk menelusuri penyerapan mendalam secara interaktif.</p>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <span className="text-[#10409F] font-extrabold font-mono">2.</span>
+                    <p><b>Filter Uraian</b>: Klik nama Uraian Belanja di daftar realisasi SP2D untuk menyeleksi rekap kas bulanan secara instan.</p>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <span className="text-[#10409F] font-extrabold font-mono">3.</span>
+                    <p><b>Administrasi Pejabat</b>: Mengubah penandatangan laporan di menu administrasi sistem secara permanen.</p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end">
+              <button 
+                onClick={() => setSelectedInfo(null)}
+                className="px-4 py-2 text-xs font-black bg-slate-900 hover:bg-slate-800 text-white rounded-lg transition shadow-xs cursor-pointer"
+              >
+                Tutup Informasi
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

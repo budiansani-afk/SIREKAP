@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Settings, 
   Database, 
@@ -28,10 +28,24 @@ export default function PengaturanView({
   currentUserEmail,
   onUpdateSettings
 }: PengaturanViewProps) {
-  const [instNama, setInstNama] = useState(settings?.nama_instansi || 'Dinas Perumahan dan Kawasan Permukiman Kabupaten Bima');
-  const [instLogo, setInstLogo] = useState(settings?.logo_instansi || '');
-  const [fiscalYear, setFiscalYear] = useState<number>(settings?.tahun_anggaran_aktif || 2026);
+  const [instNama, setInstNama] = useState('');
+  const [instLogo, setInstLogo] = useState('');
+  const [fiscalYear, setFiscalYear] = useState<number>(2026);
   const [logoFileName, setLogoFileName] = useState('');
+  const [namaPejabatTtd, setNamaPejabatTtd] = useState('');
+  const [jabatanPejabatTtd, setJabatanPejabatTtd] = useState('');
+  const [nipPejabatTtd, setNipPejabatTtd] = useState('');
+
+  useEffect(() => {
+    if (settings) {
+      setInstNama(settings.nama_instansi || 'Dinas Perumahan dan Kawasan Permukiman Kabupaten Bima');
+      setInstLogo(settings.logo_instansi || '');
+      setFiscalYear(settings.tahun_anggaran_aktif || 2026);
+      setNamaPejabatTtd(settings.nama_pejabat_ttd || '');
+      setJabatanPejabatTtd(settings.jabatan_pejabat_ttd || '');
+      setNipPejabatTtd(settings.nip_pejabat_ttd || '');
+    }
+  }, [settings]);
 
   // Backup / Restore states
   const [backupFileUrl, setBackupFileUrl] = useState('');
@@ -64,7 +78,10 @@ export default function PengaturanView({
       await onUpdateSettings({
         nama_instansi: instNama.trim(),
         logo_instansi: instLogo,
-        tahun_anggaran_aktif: fiscalYear
+        tahun_anggaran_aktif: fiscalYear,
+        nama_pejabat_ttd: namaPejabatTtd.trim(),
+        jabatan_pejabat_ttd: jabatanPejabatTtd.trim(),
+        nip_pejabat_ttd: nipPejabatTtd.trim()
       });
 
       // AuditTrail Log
@@ -77,7 +94,10 @@ export default function PengaturanView({
         {
           nama_instansi: instNama,
           logo_instansi: instLogo ? 'TERLAMPIR_BASE64' : 'KOSONG',
-          tahun_anggaran_aktif: fiscalYear
+          tahun_anggaran_aktif: fiscalYear,
+          nama_pejabat_ttd: namaPejabatTtd,
+          jabatan_pejabat_ttd: jabatanPejabatTtd,
+          nip_pejabat_ttd: nipPejabatTtd
         }
       );
 
@@ -214,6 +234,48 @@ export default function PengaturanView({
                       className="absolute inset-0 opacity-0 cursor-pointer"
                     />
                   </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Pejabat Penandatangan Inputs */}
+            <div className="border-t border-slate-200/60 pt-3 mt-3 space-y-3">
+              <span className="text-[10px] uppercase tracking-wider font-extrabold text-blue-800">Spesimen Pejabat Penandatangan Dokumen</span>
+              
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">Nama Lengkap Pejabat</label>
+                <input 
+                  type="text"
+                  placeholder="e.g. Drs. H. Budiansani, M.Si"
+                  value={namaPejabatTtd}
+                  onChange={(e) => setNamaPejabatTtd(e.target.value)}
+                  disabled={!canEdit}
+                  className="w-full p-2.5 border border-slate-200 rounded-lg bg-slate-50 disabled:bg-slate-100/50 outline-blue-600 focus:bg-white text-slate-900 font-semibold"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">Jabatan Resmi</label>
+                  <input 
+                    type="text"
+                    placeholder="e.g. Kepala Bidang Sektor Pertanahan"
+                    value={jabatanPejabatTtd}
+                    onChange={(e) => setJabatanPejabatTtd(e.target.value)}
+                    disabled={!canEdit}
+                    className="w-full p-2.5 border border-slate-200 rounded-lg bg-slate-50 disabled:bg-slate-100/50 outline-blue-600 focus:bg-white text-slate-900"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">NIP Pejabat</label>
+                  <input 
+                    type="text"
+                    placeholder="e.g. 19780512 200501 1 002"
+                    value={nipPejabatTtd}
+                    onChange={(e) => setNipPejabatTtd(e.target.value)}
+                    disabled={!canEdit}
+                    className="w-full p-2.5 border border-slate-200 rounded-lg bg-slate-50 disabled:bg-slate-100/50 outline-blue-600 focus:bg-white text-slate-900"
+                  />
                 </div>
               </div>
             </div>

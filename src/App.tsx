@@ -99,6 +99,9 @@ export default function App() {
   const [dokumens, setDokumens] = useState<DokumenArsip[]>([]);
   const [logs, setLogs] = useState<ActivityLog[]>([]);
   const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
+  const [seenLogsCount, setSeenLogsCount] = useState<number>(() => {
+    return Number(localStorage.getItem('seen_logs_count') || 0);
+  });
 
   // Logged-in credentials
   const [user, setUser] = useState<any>(null);
@@ -238,7 +241,10 @@ export default function App() {
           id: docSnap.id,
           tahun_anggaran_aktif: d.tahun_anggaran_aktif || 2026,
           nama_instansi: d.nama_instansi || "Dinas Perumahan dan Kawasan Permukiman",
-          logo_instansi: d.logo_instansi || ""
+          logo_instansi: d.logo_instansi || "",
+          nama_pejabat_ttd: d.nama_pejabat_ttd || "",
+          jabatan_pejabat_ttd: d.jabatan_pejabat_ttd || "",
+          nip_pejabat_ttd: d.nip_pejabat_ttd || ""
         });
       }
     });
@@ -256,6 +262,14 @@ export default function App() {
     };
 
   }, [user]);
+
+  // Sync log notifications as seen
+  useEffect(() => {
+    if (activePage === 'logs' && logs.length > 0) {
+      localStorage.setItem('seen_logs_count', String(logs.length));
+      setSeenLogsCount(logs.length);
+    }
+  }, [activePage, logs.length]);
 
   // Handle Authentication attempts
   const handleLogin = async (e: React.FormEvent) => {
@@ -348,13 +362,20 @@ export default function App() {
         <div className="absolute bottom-20 right-20 text-indigo-900/20 font-black tracking-widest text-[160px] select-none uppercase pointer-events-none font-mono">2026</div>
 
         <div className="sm:mx-auto sm:w-full sm:max-w-md z-10">
-          <div className="flex justify-center">
-            <Building className="text-blue-500" size={56} />
+          <div className="flex justify-center mb-2">
+            <div className="w-24 h-24 bg-white rounded-full flex items-center justify-center p-0.5 shadow-2xl border-2 border-orange-500 overflow-hidden">
+              <img 
+                src="https://res.cloudinary.com/de4prnqa4/image/upload/v1780640818/logo_sibiru_y2jgaw.jpg" 
+                alt="Logo SIBIRU" 
+                className="w-full h-full object-cover rounded-full"
+                referrerPolicy="no-referrer"
+              />
+            </div>
           </div>
-          <h2 className="mt-4 text-center text-2xl font-black tracking-tight text-white uppercase">
-            Aplikasi SIBIRU
+          <h2 className="mt-2 text-center text-3xl font-black tracking-tight">
+            <span className="text-blue-400">SIBIRU</span> <span className="text-orange-500">TANAH</span>
           </h2>
-          <p className="mt-1.5 text-center text-xs font-semibold text-slate-400 tracking-wide uppercase">
+          <p className="mt-2 text-center text-xs font-semibold text-slate-400 tracking-wide uppercase">
             Sistem Informasi Belanja & Realisasi Keuangan 2026
           </p>
           <div className="mt-0.5 text-center font-mono text-[10px] text-blue-400 font-black uppercase tracking-wider">
@@ -492,6 +513,7 @@ export default function App() {
             programs={programs} 
             kegiatans={kegiatans} 
             subKegiatans={subKegiatans} 
+            rkaList={rkaList}
             currentUserRole={userRole} 
             currentUserEmail={user.email} 
           />
@@ -637,12 +659,19 @@ export default function App() {
             {/* Sidebar Branding Header */}
             <div className="p-5 border-b border-blue-800/50 bg-[#172554]">
               <div className="flex items-center gap-3">
-                <div className="w-9 h-9 bg-white rounded-lg flex items-center justify-center shrink-0">
-                  <Building className="text-[#1e3a8a]" size={20} />
+                <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center shrink-0 border border-orange-500 overflow-hidden">
+                  <img 
+                    src="https://res.cloudinary.com/de4prnqa4/image/upload/v1780640818/logo_sibiru_y2jgaw.jpg" 
+                    alt="Logo SIBIRU" 
+                    className="w-full h-full object-cover"
+                    referrerPolicy="no-referrer"
+                  />
                 </div>
                 <div>
-                  <h1 className="text-lg font-bold tracking-tight text-white font-display">SIBIRU</h1>
-                  <p className="text-[9px] uppercase tracking-wider text-blue-300">Pertanahan Kab. Bima</p>
+                  <h1 className="text-base font-black tracking-tight font-display text-white">
+                    <span className="text-blue-350">SIBIRU</span> <span className="text-orange-400">TANAH</span>
+                  </h1>
+                  <p className="text-[9px] uppercase tracking-wider text-blue-300 font-bold">Pertanahan Kab. Bima</p>
                 </div>
               </div>
             </div>
@@ -654,20 +683,33 @@ export default function App() {
             <nav className="p-3 space-y-1 text-xs">
               {menuItems.map((item) => {
                 const isActive = activePage === item.id;
+                // Calculate unread activity logs
+                let badgeCount = 0;
+                if (item.id === 'logs') {
+                  badgeCount = Math.max(0, logs.length - seenLogsCount);
+                }
+
                 return (
                   <button
                     key={item.id}
                     onClick={() => setActivePage(item.id as ViewPage)}
-                    className={`w-full flex items-center gap-2.5 px-3.5 py-2.5 rounded-lg transition-all text-left cursor-pointer ${
+                    className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-lg transition-all text-left cursor-pointer ${
                       isActive 
                         ? 'bg-blue-850 text-white font-bold border-l-4 border-blue-400 shadow-inner' 
                         : 'hover:bg-blue-800/60 text-blue-100 font-medium'
                     }`}
                   >
-                    <span className={`${isActive ? 'text-blue-300' : 'opacity-70'}`}>
-                      {item.icon}
-                    </span>
-                    <span>{item.label}</span>
+                    <div className="flex items-center gap-2.5">
+                      <span className={`${isActive ? 'text-blue-300' : 'opacity-70'}`}>
+                        {item.icon}
+                      </span>
+                      <span>{item.label}</span>
+                    </div>
+                    {badgeCount > 0 && (
+                      <span className="bg-orange-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full animate-pulse shrink-0">
+                        {badgeCount}
+                      </span>
+                    )}
                   </button>
                 );
               })}
