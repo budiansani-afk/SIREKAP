@@ -310,7 +310,21 @@ export default function DokumenView({
               {fileName && (
                 <div className="p-2.5 bg-blue-50 border border-blue-100/50 text-blue-900 rounded-lg font-mono text-[10px] flex justify-between items-center">
                   <span className="truncate max-w-[170px]" title={fileName}>{fileName}</span>
-                  <span className="bg-indigo-100 text-indigo-900 px-1 rounded font-bold">{fileSizeStr}</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="bg-indigo-100 text-indigo-900 px-1 rounded font-bold">{fileSizeStr}</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFileName('');
+                        setFileBase64('');
+                        setFileType('');
+                        setFileSizeStr('');
+                      }}
+                      className="text-red-700 hover:text-red-900 font-bold ml-1 hover:underline cursor-pointer"
+                    >
+                      Hapus
+                    </button>
+                  </div>
                 </div>
               )}
 

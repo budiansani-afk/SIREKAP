@@ -11,7 +11,7 @@ import {
   Activity,
   Award
 } from 'lucide-react';
-import { Program, Kegiatan, SubKegiatan, Realisasi, MonitoringFisik } from '../types';
+import { Program, Kegiatan, SubKegiatan, Realisasi, MonitoringFisik, AppSettings } from '../types';
 import { formatRupiah, formatPercent } from '../utils/helpers';
 
 interface LaporanViewProps {
@@ -20,6 +20,7 @@ interface LaporanViewProps {
   subKegiatans: SubKegiatan[];
   realisasis: Realisasi[];
   monitorings: MonitoringFisik[];
+  settings?: AppSettings | null;
 }
 
 type LaporanType = 
@@ -29,7 +30,6 @@ type LaporanType =
   | "rekap_kegiatan" 
   | "rekap_sub_kegiatan" 
   | "bulanan" 
-  | "triwulan" 
   | "tahunan" 
   | "monitoring_fisik";
 
@@ -38,16 +38,22 @@ export default function LaporanView({
   kegiatans,
   subKegiatans,
   realisasis,
-  monitorings
+  monitorings,
+  settings
 }: LaporanViewProps) {
   const [selectedLaporan, setSelectedLaporan] = useState<LaporanType>("rekap_anggaran");
   const [selectedMonth, setSelectedMonth] = useState<string>("Semua");
-  const [selectedQuarter, setSelectedQuarter] = useState<string>("Semua");
 
   const monthsList = [
     "Januari", "Februari", "Maret", "April", "Mei", "Juni", 
     "Juli", "Agustus", "September", "Oktober", "November", "Desember"
   ];
+
+  // Official signature details derived from settings
+  const namaPejabat = settings?.nama_pejabat_ttd || "Drs. H. BUDIAN SANI, M.Si";
+  const jabatanPejabat = settings?.jabatan_pejabat_ttd || "Kepala Dinas Perkim Kabupaten Bima";
+  const nipPejabatRaw = settings?.nip_pejabat_ttd || "19741022 199803 1 004";
+  const nipPejabat = nipPejabatRaw.toUpperCase().startsWith("NIP") ? nipPejabatRaw : `NIP. ${nipPejabatRaw}`;
 
   // Title of the currently selected report
   const reportTitle = useMemo(() => {
@@ -58,12 +64,11 @@ export default function LaporanView({
       case "rekap_kegiatan": return "LAPORAN REALISASI ANGGARAN PER KEGIATAN";
       case "rekap_sub_kegiatan": return "LAPORAN REALISASI ANGGARAN PER SUB-KEGIATAN";
       case "bulanan": return `LAPORAN PERKEMBANGAN REALISASI BULANAN (${selectedMonth})`;
-      case "triwulan": return `LAPORAN PERKEMBANGAN REALISASI TRIWULAN (${selectedQuarter})`;
       case "tahunan": return "LAPORAN REKAPITULASI TAHUNAN KABUPATEN BIMA";
       case "monitoring_fisik": return "LAPORAN MONITORING FISIK LAPANGAN";
       default: return "LAPORAN KEUANGAN";
     }
-  }, [selectedLaporan, selectedMonth, selectedQuarter]);
+  }, [selectedLaporan, selectedMonth]);
 
   // Handle direct print trigger
   const handlePrint = () => {
@@ -112,23 +117,6 @@ export default function LaporanView({
           sisa: r.sisa_anggaran,
           persen: r.persentase_realisasi
         }));
-      case "triwulan":
-        const filteredRealQ = realisasis.filter(r => {
-          if (selectedQuarter === "Semua") return true;
-          const idx = monthsList.indexOf(r.bulan);
-          if (selectedQuarter === "I") return idx >= 0 && idx <= 2;
-          if (selectedQuarter === "II") return idx >= 3 && idx <= 5;
-          if (selectedQuarter === "III") return idx >= 6 && idx <= 8;
-          return idx >= 9 && idx <= 11;
-        });
-        return filteredRealQ.map(r => ({
-          kode: r.tanggal,
-          nama: `${r.kode_sub_kegiatan} - ${r.uraian_belanja} (Bulan: ${r.bulan})`,
-          pagu: subKegiatans.find(s => s.kode_sub_kegiatan === r.kode_sub_kegiatan)?.pagu || 0,
-          realisasi: r.nominal_realisasi,
-          sisa: r.sisa_anggaran,
-          persen: r.persentase_realisasi
-        }));
       case "monitoring_fisik":
         return monitorings.map(m => ({
           kode: m.tanggal,
@@ -150,7 +138,7 @@ export default function LaporanView({
           persen: s.persentase
         }));
     }
-  }, [selectedLaporan, programs, kegiatans, subKegiatans, realisasis, monitorings, selectedMonth, selectedQuarter]);
+  }, [selectedLaporan, programs, kegiatans, subKegiatans, realisasis, monitorings, selectedMonth]);
 
   // Aggregate totals
   const totalPaguSum = useMemo(() => reportRows.reduce((s, r) => s + r.pagu, 0), [reportRows]);
@@ -192,9 +180,8 @@ export default function LaporanView({
             <option value="rekap_kegiatan">4. Laporan Serapan Anggaran per Kegiatan</option>
             <option value="rekap_sub_kegiatan">5. Laporan Serapan Anggaran per Sub-Kegiatan</option>
             <option value="bulanan">6. Laporan Realisasi Bulanan Berjalan</option>
-            <option value="triwulan">7. Laporan Realisasi Triwulan (Termin)</option>
-            <option value="tahunan">8. Laporan Kinerja Belanja Tahunan</option>
-            <option value="monitoring_fisik">9. Laporan Kinerja Fisik Sengketa Lahan</option>
+            <option value="tahunan">7. Laporan Kinerja Belanja Tahunan</option>
+            <option value="monitoring_fisik">8. Laporan Kinerja Fisik Sengketa Lahan</option>
           </select>
         </div>
 
@@ -206,19 +193,6 @@ export default function LaporanView({
               <select value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="p-2 border border-slate-200 rounded-md bg-white">
                 <option value="Semua">Semua Bulan</option>
                 {monthsList.map((m, idx) => <option key={idx} value={m}>{m}</option>)}
-              </select>
-            </div>
-          )}
-
-          {selectedLaporan === "triwulan" && (
-            <div>
-              <label className="block text-slate-500 font-bold mb-1">Filter Triwulan (Termin)</label>
-              <select value={selectedQuarter} onChange={(e) => setSelectedQuarter(e.target.value)} className="p-2 border border-slate-200 rounded-md bg-white">
-                <option value="Semua">Semua Triwulan</option>
-                <option value="I">Triwulan I (Jan-Mar)</option>
-                <option value="II">Triwulan II (Apr-Jun)</option>
-                <option value="III">Triwulan III (Jul-Sep)</option>
-                <option value="IV">Triwulan IV (Okt-Des)</option>
               </select>
             </div>
           )}
@@ -250,11 +224,14 @@ export default function LaporanView({
         {/* Formal Header Logo / Kop Surat */}
         <div className="border-b-4 border-double border-slate-800 pb-5 text-center relative flex flex-col items-center" id="kop-surat">
           <div className="flex items-center justify-center gap-4">
-            <Building className="text-blue-900" size={54} />
-            <div>
+            {settings?.logo_instansi ? (
+              <img src={settings.logo_instansi} alt="Logo Dinas" className="w-16 h-16 object-contain" referrerPolicy="no-referrer" />
+            ) : (
+              <img src="https://res.cloudinary.com/de4prnqa4/image/upload/v1780640818/logo_sibiru_y2jgaw.jpg" alt="Logo SIBIRU" className="w-15 h-15 object-contain" referrerPolicy="no-referrer" />
+            )}
+            <div className="text-left">
               <h1 className="text-base font-black tracking-widest text-slate-900 uppercase">PEMERINTAH KABUPATEN BIMA</h1>
               <h2 className="text-sm font-extrabold tracking-widest text-slate-800 uppercase mt-0.5">DINAS PERUMAHAN DAN KAWASAN PERMUKIMAN</h2>
-              <p className="text-[10px] text-slate-600 font-bold uppercase tracking-wider">BIDANG PERTANAHAN KABUPATEN BIMA TAHUN ANGGARAN 2026</p>
               <p className="text-[9px] text-slate-500 font-semibold italic mt-0.5">Kompleks Perkantoran Pemkab Bima - Woha, Nusa Tenggara Barat</p>
             </div>
           </div>
@@ -290,18 +267,18 @@ export default function LaporanView({
             <tbody className="divide-y text-slate-800">
               {reportRows.map((row, index) => (
                 <tr key={index} className="hover:bg-slate-50/20 divide-x font-medium">
-                  <td className="p-2.5 border border-slate-200 font-mono font-semibold">{row.kode}</td>
-                  <td className="p-2.5 border border-slate-200 max-w-xs truncate">{row.nama}</td>
-                  <td className="p-2.5 border border-slate-200 text-right lg:font-bold">
+                  <td className="p-2.5 border border-slate-200 font-mono font-semibold whitespace-nowrap">{row.kode}</td>
+                  <td className="p-2.5 border border-slate-200 break-words whitespace-normal min-w-[260px] max-w-md font-semibold text-slate-900 leading-snug">{row.nama}</td>
+                  <td className="p-2.5 border border-slate-200 text-right lg:font-bold whitespace-nowrap">
                     {selectedLaporan === "monitoring_fisik" ? `${row.pagu}%` : formatRupiah(row.pagu)}
                   </td>
-                  <td className="p-2.5 border border-slate-200 text-right text-emerald-800 font-semibold">
+                  <td className="p-2.5 border border-slate-200 text-right text-emerald-800 font-semibold whitespace-nowrap">
                     {selectedLaporan === "monitoring_fisik" ? `${row.realisasi}%` : formatRupiah(row.realisasi)}
                   </td>
-                  <td className="p-2.5 border border-slate-200 text-right text-slate-600">
+                  <td className="p-2.5 border border-slate-200 text-right text-slate-600 whitespace-nowrap">
                     {selectedLaporan === "monitoring_fisik" ? `${row.sisa}%` : formatRupiah(row.sisa)}
                   </td>
-                  <td className="p-2.5 border border-slate-200 text-center font-bold">
+                  <td className="p-2.5 border border-slate-200 text-center font-bold whitespace-nowrap">
                     {row.persen}%
                   </td>
                 </tr>
@@ -331,12 +308,12 @@ export default function LaporanView({
         <div className="grid grid-cols-2 gap-4 pt-12 text-center text-xs select-none" id="signing-block font-medium">
           <div>
             <p className="text-slate-500 font-semibold uppercase">Mengetahui & Menyetujui,</p>
-            <p className="text-slate-800 font-extrabold mt-0.5">Kepala Dinas Perkim Kabupaten Bima</p>
+            <p className="text-slate-800 font-extrabold mt-0.5">{jabatanPejabat}</p>
             <div className="h-16 flex items-center justify-center">
               <Award className="text-blue-900 opacity-20" size={36} />
             </div>
-            <p className="text-slate-900 font-extrabold underline uppercase">Drs. H. BUDIAN SANI, M.Si</p>
-            <p className="text-[10px] text-slate-500 font-bold font-mono">NIP. 19741022 199803 1 004</p>
+            <p className="text-slate-900 font-extrabold underline uppercase">{namaPejabat}</p>
+            <p className="text-[10px] text-slate-500 font-bold font-mono">{nipPejabat}</p>
           </div>
 
           <div>

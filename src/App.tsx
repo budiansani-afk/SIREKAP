@@ -567,6 +567,7 @@ export default function App() {
             subKegiatans={subKegiatans} 
             realisasis={realisasis} 
             monitorings={monitorings} 
+            settings={appSettings}
           />
         );
       case "analisis":

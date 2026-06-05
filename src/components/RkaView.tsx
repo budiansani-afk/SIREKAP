@@ -162,15 +162,13 @@ export default function RkaView({
       return;
     }
 
-    // Sum of Q1-Q4 must match computedJumlah
-    const sumTws = formTw1 + formTw2 + formTw3 + formTw4;
-    if (sumTws !== computedJumlah) {
-      const adjust = window.confirm(`Peringatan: Jumlah breakdown Triwulan (${formatRupiah(sumTws)}) tidak sesuai dengan total Uraian Belanja (${formatRupiah(computedJumlah)}). Apakah Anda ingin menyesuaikan Triwulan secara merata otomatis?`);
-      if (adjust) {
-        allocateTwEvenly();
-        return;
-      }
-    }
+    // Automatically divide computedJumlah evenly across 4 quarters since Triwulan is disabled/hidden from form view
+    const quarterAmt = Math.floor(computedJumlah / 4);
+    const balanceRemainder = computedJumlah - (quarterAmt * 4);
+    const tw1Val = quarterAmt + balanceRemainder;
+    const tw2Val = quarterAmt;
+    const tw3Val = quarterAmt;
+    const tw4Val = quarterAmt;
 
     try {
       const docId = editItem ? editItem.id : `rka_${Date.now()}`;
@@ -186,10 +184,10 @@ export default function RkaView({
         satuan: formSatuan,
         harga_satuan: formHarga,
         jumlah: computedJumlah,
-        tw1: formTw1,
-        tw2: formTw2,
-        tw3: formTw3,
-        tw4: formTw4
+        tw1: tw1Val,
+        tw2: tw2Val,
+        tw3: tw3Val,
+        tw4: tw4Val
       };
 
       await setDoc(doc(db, COLL_RKA, docId), payload).catch(err => handleFirestoreError(err, OperationType.WRITE, `${COLL_RKA}/${docId}`));
@@ -505,41 +503,32 @@ export default function RkaView({
               <tr className="bg-slate-50 border-b border-slate-100 font-semibold text-slate-600">
                 <th className="p-3 pl-4 w-12">TA</th>
                 <th className="p-3 w-40">Sub Kegiatan / Rekening</th>
-                <th className="p-3">Uraian Detail Belanja</th>
+                <th className="p-3 min-w-[220px]">Uraian Detail Belanja</th>
                 <th className="p-3 text-center w-16">Vol</th>
                 <th className="p-3 text-center w-16">Satuan</th>
-                <th className="p-3 text-right">Harga Satuan</th>
-                <th className="p-3 text-right">Jumlah Belanja</th>
-                <th className="p-3 text-right pr-4">Rincian Triwulan (I s.d IV)</th>
+                <th className="p-3 text-right w-28">Harga Satuan</th>
+                <th className="p-3 text-right w-32">Jumlah Belanja</th>
                 {canEdit && <th className="p-3 text-center w-24">Aksi</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-slate-700">
               {filteredRka.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="p-8 text-center text-slate-500 font-semibold">Tabel Rencana Kerja Anggaran kosong / Saring filter lain.</td>
+                  <td colSpan={8} className="p-8 text-center text-slate-500 font-semibold">Tabel Rencana Kerja Anggaran kosong / Saring filter lain.</td>
                 </tr>
               ) : (
                 filteredRka.map((r, i) => (
                   <tr key={i} className="hover:bg-slate-50/50 transition antialiased">
                     <td className="p-3 pl-4 font-mono font-bold text-slate-900">{r.tahun}</td>
                     <td className="p-3">
-                      <p className="font-bold text-slate-900 font-mono text-[11px]">{r.kode_sub_kegiatan}</p>
-                      <span className="text-[10px] text-slate-500 font-mono font-medium">{r.kode_rekening || '-'}</span>
+                      <p className="font-bold text-slate-900 font-mono text-[11px] whitespace-normal break-all">{r.kode_sub_kegiatan}</p>
+                      <span className="text-[10px] text-slate-500 font-mono font-medium whitespace-normal break-all">{r.kode_rekening || '-'}</span>
                     </td>
-                    <td className="p-3 font-semibold text-slate-900 max-w-xs truncate" title={r.uraian_belanja}>{r.uraian_belanja}</td>
+                    <td className="p-3 font-semibold text-slate-900 break-words whitespace-normal min-w-[220px] max-w-sm">{r.uraian_belanja}</td>
                     <td className="p-3 text-center font-bold">{r.volume}</td>
                     <td className="p-3 text-center text-slate-600 font-medium">{r.satuan}</td>
                     <td className="p-3 text-right font-medium">{formatRupiah(r.harga_satuan)}</td>
                     <td className="p-3 text-right font-black text-blue-900">{formatRupiah(r.jumlah)}</td>
-                    <td className="p-3 text-right pr-4">
-                      <div className="grid grid-cols-4 gap-1 text-[9px] font-mono font-bold text-slate-600">
-                        <div className="bg-slate-100 px-1 py-0.5 rounded" title="TW I">A: {formatRupiah(r.tw1 || 0).replace('Rp', '')}</div>
-                        <div className="bg-slate-100 px-1 py-0.5 rounded" title="TW II">B: {formatRupiah(r.tw2 || 0).replace('Rp', '')}</div>
-                        <div className="bg-slate-100 px-1 py-0.5 rounded" title="TW III">C: {formatRupiah(r.tw3 || 0).replace('Rp', '')}</div>
-                        <div className="bg-slate-100 px-1 py-0.5 rounded" title="TW IV">D: {formatRupiah(r.tw4 || 0).replace('Rp', '')}</div>
-                      </div>
-                    </td>
                     {canEdit && (
                       <td className="p-3 text-center">
                         <div className="flex items-center justify-center gap-1">
@@ -660,37 +649,7 @@ export default function RkaView({
                 <span className="text-base text-blue-700">{formatRupiah(computedJumlah)}</span>
               </div>
 
-              {/* Triwulans allocation split */}
-              <div className="space-y-2 border-t border-slate-100 pt-3">
-                <div className="flex justify-between items-center mb-1">
-                  <label className="text-slate-800 font-extrabold block">Breakdown Triwulan Belanja</label>
-                  <button 
-                    type="button" 
-                    onClick={allocateTwEvenly}
-                    className="text-blue-700 hover:underline font-bold text-[10px]"
-                  >
-                    Bagi Rata Otomatis
-                  </button>
-                </div>
-                <div className="grid grid-cols-4 gap-2">
-                  <div>
-                    <label className="block mb-1 text-slate-600 font-semibold">Triwulan I</label>
-                    <input type="number" value={formTw1} onChange={(e) => setFormTw1(Number(e.target.value))} className="w-full p-1.5 border border-slate-200 rounded" />
-                  </div>
-                  <div>
-                    <label className="block mb-1 text-slate-600 font-semibold">Triwulan II</label>
-                    <input type="number" value={formTw2} onChange={(e) => setFormTw2(Number(e.target.value))} className="w-full p-1.5 border border-slate-200 rounded" />
-                  </div>
-                  <div>
-                    <label className="block mb-1 text-slate-600 font-semibold">Triwulan III</label>
-                    <input type="number" value={formTw3} onChange={(e) => setFormTw3(Number(e.target.value))} className="w-full p-1.5 border border-slate-200 rounded" />
-                  </div>
-                  <div>
-                    <label className="block mb-1 text-slate-600 font-semibold">Triwulan IV</label>
-                    <input type="number" value={formTw4} onChange={(e) => setFormTw4(Number(e.target.value))} className="w-full p-1.5 border border-slate-200 rounded" />
-                  </div>
-                </div>
-              </div>
+
 
               <div className="flex items-center gap-2 pt-4 justify-end border-t border-slate-100" id="rka-form-actions">
                 <button type="button" onClick={() => setShowForm(false)} className="px-4 py-2 font-semibold text-slate-700 border border-slate-200 rounded-lg">Batal</button>
