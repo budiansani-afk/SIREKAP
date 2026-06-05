@@ -68,6 +68,7 @@ export interface Realisasi {
   sisa_anggaran: number;
   keterangan: string;
   bukti_transaksi?: string; // Base64 data url or name
+  bukti_transaksi_public_id?: string; // Cloudinary public_id for real-time deletion
 }
 
 export interface MonitoringFisik {
@@ -81,17 +82,19 @@ export interface MonitoringFisik {
   persentase: number; // e.g. 93.75 (%)
   kendala: string;
   tindak_lanjut: string;
-  foto_kegiatan?: string; // Base64 data url
+  foto_kegiatan?: string; // Base64 or Cloudinary secure URL
+  foto_kegiatan_public_id?: string; // Cloudinary public_id
 }
 
 export interface DokumenArsip {
   id: string;
   nama_dokumen: string;
-  kategori: string; // "RKA" | "DPA" | "DPPA" | "SK" | "Surat Tugas" | "Kontrak" | "Kwitansi" | "SPJ" | "Berita Acara" | "Foto Kegiatan" | "Dokumen Pendukung"
+  kategori: string; // "RKA" | "DPA" ...
   tanggal_upload: string;
   tipe_file: string;
   ukuran_file: string;
-  data_url: string; // Base64 string for previewing/downloading
+  data_url: string; // Base64 string or Cloudinary secure URL
+  cloudinary_public_id?: string; // Cloudinary public ID
 }
 
 export interface Pengguna {
@@ -129,7 +132,8 @@ export interface PengaturanSistem {
   id: string; // e.g., "aktif"
   tahun_anggaran_aktif: number;
   nama_instansi: string;
-  logo_instansi: string; // base64 logo
+  logo_instansi: string; // base64 logo or Cloudinary secure URL
+  logo_instansi_public_id?: string;
   nama_pejabat_ttd?: string;
   jabatan_pejabat_ttd?: string;
   nip_pejabat_ttd?: string;

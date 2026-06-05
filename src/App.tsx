@@ -242,6 +242,7 @@ export default function App() {
           tahun_anggaran_aktif: d.tahun_anggaran_aktif || 2026,
           nama_instansi: d.nama_instansi || "Dinas Perumahan dan Kawasan Permukiman",
           logo_instansi: d.logo_instansi || "",
+          logo_instansi_public_id: d.logo_instansi_public_id || "",
           nama_pejabat_ttd: d.nama_pejabat_ttd || "",
           jabatan_pejabat_ttd: d.jabatan_pejabat_ttd || "",
           nip_pejabat_ttd: d.nip_pejabat_ttd || ""

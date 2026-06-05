@@ -18,6 +18,7 @@ import { formatRupiah, exportToCSV } from '../utils/helpers';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { doc, setDoc, deleteDoc } from 'firebase/firestore';
 import { COLL_REALISASI, createAuditLog, synchronizeCalculations } from '../dbService';
+import { uploadToCloudinary, deleteFromCloudinary } from '../utils/cloudinary';
 
 interface RealisasiViewProps {
   realisasis: Realisasi[];
@@ -54,6 +55,7 @@ export default function RealisasiView({
   const [formKeterangan, setFormKeterangan] = useState<string>('');
   const [formBuktiBase64, setFormBuktiBase64] = useState<string>('');
   const [formBuktiFileName, setFormBuktiFileName] = useState<string>('');
+  const [isSaving, setIsSaving] = useState(false);
 
   const canEdit = currentUserRole === UserRole.ADMIN || currentUserRole === UserRole.OPERATOR;
 
@@ -78,6 +80,12 @@ export default function RealisasiView({
   const handleProofUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      alert("SIMPAN DITOLAK: Hanya file berupa foto/gambar bukti kuitansi (.png, .jpg, .jpeg) yang diperkenankan!");
+      e.target.value = "";
+      return;
+    }
 
     setFormBuktiFileName(file.name);
     const reader = new FileReader();
@@ -197,7 +205,39 @@ export default function RealisasiView({
       if (!proceed) return;
     }
 
+    setIsSaving(true);
     try {
+      let cloudinaryUrl = formBuktiBase64;
+      let cloudinaryPublicId = editItem?.bukti_transaksi_public_id || '';
+
+      // If a new base64 file is uploaded
+      if (formBuktiBase64 && formBuktiBase64.startsWith('data:image/')) {
+        // If there is an old photo on Cloudinary, delete it first
+        if (editItem?.bukti_transaksi_public_id) {
+          try {
+            await deleteFromCloudinary(editItem.bukti_transaksi_public_id);
+          } catch (cloudinaryErr) {
+            console.warn("Sedang menghapus, Gagal menghapus asset Cloudinary lama:", cloudinaryErr);
+          }
+        }
+
+        // Upload the new image to Cloudinary
+        const uploadRes = await uploadToCloudinary(formBuktiBase64, "sibiru_realisasi_bukti");
+        cloudinaryUrl = uploadRes.secure_url;
+        cloudinaryPublicId = uploadRes.public_id;
+      } else if (!formBuktiBase64) {
+        // If the user removed the image completely
+        if (editItem?.bukti_transaksi_public_id) {
+          try {
+            await deleteFromCloudinary(editItem.bukti_transaksi_public_id);
+          } catch (cloudinaryErr) {
+            console.warn("Gagal menghapus asset Cloudinary lama:", cloudinaryErr);
+          }
+        }
+        cloudinaryUrl = '';
+        cloudinaryPublicId = '';
+      }
+
       const docId = editItem ? editItem.id : `realisasi_${Date.now()}`;
       
       const computedPersentaseOfSub = linkedSub.pagu > 0 ? (formNominal / linkedSub.pagu) * 100 : 0;
@@ -215,7 +255,8 @@ export default function RealisasiView({
         persentase_realisasi: parseFloat(computedPersentaseOfSub.toFixed(2)),
         sisa_anggaran: computedSisaValue,
         keterangan: formKeterangan.trim(),
-        bukti_transaksi: formBuktiBase64 || undefined
+        bukti_transaksi: cloudinaryUrl || undefined,
+        bukti_transaksi_public_id: cloudinaryPublicId || undefined
       };
 
       await setDoc(doc(db, COLL_REALISASI, docId), payload).catch(err => handleFirestoreError(err, OperationType.WRITE, `${COLL_REALISASI}/${docId}`));
@@ -233,10 +274,14 @@ export default function RealisasiView({
       // Trigger structural budgets calculations
       await synchronizeCalculations();
 
+      alert(`[NOTIFIKASI DATA BERUBAH]\nBerhasil menyimpan realisasi belanja: "${payload.uraian_belanja}" senilai ${formatRupiah(payload.nominal_realisasi)}. Log audit telah dicatat.`);
+
       setShowForm(false);
       setEditItem(null);
     } catch (err) {
       alert("Gagal memproses realisasi: " + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -246,6 +291,16 @@ export default function RealisasiView({
     if (!isConfirmed) return;
 
     try {
+      // Clean up Cloudinary asset
+      if (item.bukti_transaksi_public_id) {
+        try {
+          await deleteFromCloudinary(item.bukti_transaksi_public_id);
+          console.log(`Berhasil menghapus bukti transaksi dari Cloudinary: ${item.bukti_transaksi_public_id}`);
+        } catch (cloudinaryErr) {
+          console.warn("Gagal menghapus bukti dari Cloudinary:", cloudinaryErr);
+        }
+      }
+
       await deleteDoc(doc(db, COLL_REALISASI, item.id)).catch(err => handleFirestoreError(err, OperationType.DELETE, `${COLL_REALISASI}/${item.id}`));
       
       await createAuditLog(
@@ -259,6 +314,8 @@ export default function RealisasiView({
 
       // Re-calculate structural cascades
       await synchronizeCalculations();
+
+      alert(`[NOTIFIKASI DATA BERUBAH]\nBerhasil menghapus pencatatan realisasi "${item.uraian_belanja}" dari basis data & Cloudinary. Anggaran dikoordinasikan ulang.`);
     } catch (err) {
       alert("Gagal menghapus realisasi: " + (err instanceof Error ? err.message : String(err)));
     }
@@ -579,9 +636,9 @@ export default function RealisasiView({
                 />
               </div>
 
-              {/* Upload Proof / Lampiran (SP2D Receipt) */}
+               {/* Upload Proof / Lampiran (SP2D Receipt) */}
               <div>
-                <label className="block text-slate-700 font-bold mb-1">Lampirkan Bukti SP2D / Kwitansi</label>
+                <label className="block text-slate-700 font-bold mb-1">Lampirkan Bukti SP2D / Kwitansi (*Hanya Foto saja)</label>
                 <div className="flex flex-wrap items-center gap-3">
                   <div className="relative overflow-hidden bg-slate-50 border border-slate-200 px-3 py-2 rounded-lg cursor-pointer hover:bg-slate-100 flex items-center gap-2">
                     <Camera size={14} className="text-slate-500" />
@@ -590,7 +647,8 @@ export default function RealisasiView({
                       type="file" 
                       accept="image/*"
                       onChange={handleProofUpload}
-                      className="absolute inset-0 opacity-0 cursor-pointer"
+                      disabled={isSaving}
+                      className="absolute inset-0 opacity-0 cursor-pointer disabled:cursor-not-allowed"
                     />
                   </div>
                   <span className="text-[10px] text-slate-500 truncate max-w-[200px]" title={formBuktiFileName}>
@@ -599,11 +657,12 @@ export default function RealisasiView({
                   {formBuktiFileName && (
                     <button
                       type="button"
+                      disabled={isSaving}
                       onClick={() => {
                         setFormBuktiBase64('');
                         setFormBuktiFileName('');
                       }}
-                      className="px-2.5 py-1 text-red-700 bg-red-50 hover:bg-red-100 hover:text-red-800 rounded text-[10px] font-bold border border-red-200 transition cursor-pointer"
+                      className="px-2.5 py-1 text-red-700 bg-red-50 hover:bg-red-100 hover:text-red-800 rounded text-[10px] font-bold border border-red-200 transition cursor-pointer disabled:opacity-55"
                       title="Klik untuk menghapus berkas yang telah diunggah ini"
                     >
                       Hapus Berkas
@@ -613,8 +672,21 @@ export default function RealisasiView({
               </div>
 
               <div className="flex items-center gap-2 pt-4 justify-end border-t border-slate-100" id="form-actions">
-                <button type="button" onClick={() => setShowForm(false)} className="px-4 py-2 font-semibold text-slate-700 border border-slate-200 rounded-lg">Batal</button>
-                <button type="submit" className="px-5 py-2 font-black text-white bg-blue-700 hover:bg-blue-800 rounded-lg shadow">Simpan & Laporkan Audit</button>
+                <button type="button" disabled={isSaving} onClick={() => setShowForm(false)} className="px-4 py-2 font-semibold text-slate-700 border border-slate-200 rounded-lg disabled:opacity-50">Batal</button>
+                <button 
+                  type="submit" 
+                  disabled={isSaving}
+                  className="px-5 py-2 font-black text-white bg-blue-700 hover:bg-blue-800 rounded-lg shadow disabled:bg-blue-400 disabled:cursor-not-allowed flex items-center gap-1.5"
+                >
+                  {isSaving ? (
+                    <>
+                      <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                      Menyimpan...
+                    </>
+                  ) : (
+                    "Simpan & Laporkan Audit"
+                  )}
+                </button>
               </div>
 
             </form>

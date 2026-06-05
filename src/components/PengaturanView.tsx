@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { AppSettings, UserRole } from '../types';
 import { backupDatabaseToJSON, restoreDatabaseFromJSON, createAuditLog } from '../dbService';
+import { uploadToCloudinary, deleteFromCloudinary } from '../utils/cloudinary';
 
 interface PengaturanViewProps {
   settings: AppSettings | null;
@@ -33,6 +34,7 @@ export default function PengaturanView({
   const [fiscalYear, setFiscalYear] = useState<number>(2026);
   const [logoFileName, setLogoFileName] = useState('');
   const [namaPejabatTtd, setNamaPejabatTtd] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
   const [jabatanPejabatTtd, setJabatanPejabatTtd] = useState('');
   const [nipPejabatTtd, setNipPejabatTtd] = useState('');
 
@@ -58,6 +60,12 @@ export default function PengaturanView({
     const file = e.target.files?.[0];
     if (!file) return;
 
+    if (!file.type.startsWith('image/')) {
+      alert("SIMPAN DITOLAK: Logo instansi harus berupa berkas gambar/foto (.png, .jpg, .jpeg)!");
+      e.target.value = "";
+      return;
+    }
+
     setLogoFileName(file.name);
     const reader = new FileReader();
     reader.onload = () => {
@@ -74,10 +82,32 @@ export default function PengaturanView({
       return;
     }
 
+    setIsSaving(true);
     try {
+      let cloudinaryUrl = instLogo;
+      let cloudinaryPublicId = settings?.logo_instansi_public_id || '';
+
+      // If a new base64 logo file was uploaded locally
+      if (instLogo && instLogo.startsWith('data:image/')) {
+        // If there is an old photo on Cloudinary, delete it first
+        if (settings?.logo_instansi_public_id) {
+          try {
+            await deleteFromCloudinary(settings.logo_instansi_public_id);
+          } catch (cloudinaryErr) {
+            console.warn("Gagal menghapus logo instansi lama di Cloudinary:", cloudinaryErr);
+          }
+        }
+
+        // Upload the new logo to Cloudinary
+        const uploadRes = await uploadToCloudinary(instLogo, "sibiru_set_logo");
+        cloudinaryUrl = uploadRes.secure_url;
+        cloudinaryPublicId = uploadRes.public_id;
+      }
+
       await onUpdateSettings({
         nama_instansi: instNama.trim(),
-        logo_instansi: instLogo,
+        logo_instansi: cloudinaryUrl,
+        logo_instansi_public_id: cloudinaryPublicId,
         tahun_anggaran_aktif: fiscalYear,
         nama_pejabat_ttd: namaPejabatTtd.trim(),
         jabatan_pejabat_ttd: jabatanPejabatTtd.trim(),
@@ -93,7 +123,8 @@ export default function PengaturanView({
         settings,
         {
           nama_instansi: instNama,
-          logo_instansi: instLogo ? 'TERLAMPIR_BASE64' : 'KOSONG',
+          logo_instansi: cloudinaryUrl ? 'TERLAMPIR_BASE64' : 'KOSONG',
+          logo_instansi_public_id: cloudinaryPublicId,
           tahun_anggaran_aktif: fiscalYear,
           nama_pejabat_ttd: namaPejabatTtd,
           jabatan_pejabat_ttd: jabatanPejabatTtd,
@@ -101,9 +132,11 @@ export default function PengaturanView({
         }
       );
 
-      alert("Pengaturan Berhasil Disimpan & Sinkronisasi Sistem!");
+      alert("[NOTIFIKASI DATA BERUBAH]\nPengaturan Berhasil Disimpan & Sinkronisasi Sistem Berhasil! Audit log dicatat.");
     } catch (err) {
       alert("Gagal merubah parameter: " + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -229,9 +262,9 @@ export default function PengaturanView({
                     <input 
                       type="file" 
                       accept="image/*"
-                      disabled={!canEdit}
+                      disabled={!canEdit || isSaving}
                       onChange={handleLogoUpload}
-                      className="absolute inset-0 opacity-0 cursor-pointer"
+                      className="absolute inset-0 opacity-0 cursor-pointer disabled:cursor-not-allowed"
                     />
                   </div>
                 </div>
@@ -249,7 +282,7 @@ export default function PengaturanView({
                   placeholder="e.g. Drs. H. Budiansani, M.Si"
                   value={namaPejabatTtd}
                   onChange={(e) => setNamaPejabatTtd(e.target.value)}
-                  disabled={!canEdit}
+                  disabled={!canEdit || isSaving}
                   className="w-full p-2.5 border border-slate-200 rounded-lg bg-slate-50 disabled:bg-slate-100/50 outline-blue-600 focus:bg-white text-slate-900 font-semibold"
                 />
               </div>
@@ -262,7 +295,7 @@ export default function PengaturanView({
                     placeholder="e.g. Kepala Bidang Sektor Pertanahan"
                     value={jabatanPejabatTtd}
                     onChange={(e) => setJabatanPejabatTtd(e.target.value)}
-                    disabled={!canEdit}
+                    disabled={!canEdit || isSaving}
                     className="w-full p-2.5 border border-slate-200 rounded-lg bg-slate-50 disabled:bg-slate-100/50 outline-blue-600 focus:bg-white text-slate-900"
                   />
                 </div>
@@ -273,7 +306,7 @@ export default function PengaturanView({
                     placeholder="e.g. 19780512 200501 1 002"
                     value={nipPejabatTtd}
                     onChange={(e) => setNipPejabatTtd(e.target.value)}
-                    disabled={!canEdit}
+                    disabled={!canEdit || isSaving}
                     className="w-full p-2.5 border border-slate-200 rounded-lg bg-slate-50 disabled:bg-slate-100/50 outline-blue-600 focus:bg-white text-slate-900"
                   />
                 </div>
@@ -286,14 +319,27 @@ export default function PengaturanView({
                 <img src={instLogo} alt="Preview_Logo" className="w-12 h-12 object-contain bg-white p-1 rounded" referrerPolicy="no-referrer" />
                 <div>
                   <p className="font-bold text-slate-850">Preview Logo Terlampir</p>
-                  <p className="text-[10px] text-slate-400 font-semibold font-mono">Tipe: Base64 data asset (Kop_Surat_Format)</p>
+                  <p className="text-[10px] text-slate-400 font-semibold font-mono">Penyimpanan: Cloudinary Secure CDN / Base64</p>
                 </div>
               </div>
             )}
 
             {canEdit && (
               <div className="pt-2 text-right border-t">
-                <button type="submit" className="px-5 py-2 text-white bg-blue-700 hover:bg-blue-800 font-bold shadow-sm rounded-lg">Simpan Kustomisasi Brand</button>
+                <button 
+                  type="submit" 
+                  disabled={isSaving}
+                  className="px-5 py-2 text-white bg-blue-700 hover:bg-blue-800 disabled:bg-blue-400 disabled:cursor-not-allowed font-bold shadow-sm rounded-lg flex items-center gap-1.5 ml-auto"
+                >
+                  {isSaving ? (
+                    <>
+                      <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                      Menyimak...
+                    </>
+                  ) : (
+                    "Simpan Kustomisasi Brand"
+                  )}
+                </button>
               </div>
             )}
           </form>

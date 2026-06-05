@@ -16,6 +16,7 @@ import { DokumenArsip, UserRole } from '../types';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { doc, setDoc, deleteDoc } from 'firebase/firestore';
 import { COLL_DOKUMEN, createAuditLog } from '../dbService';
+import { uploadToCloudinary, deleteFromCloudinary } from '../utils/cloudinary';
 
 interface DokumenViewProps {
   dokumens: DokumenArsip[];
@@ -39,6 +40,7 @@ export default function DokumenView({
   const [fileName, setFileName] = useState('');
   const [fileSizeStr, setFileSizeStr] = useState('');
   const [fileType, setFileType] = useState('');
+  const [isUploading, setIsUploading] = useState(false);
 
   const canEdit = currentUserRole === UserRole.ADMIN || currentUserRole === UserRole.OPERATOR;
 
@@ -60,6 +62,13 @@ export default function DokumenView({
     const file = e.target.files?.[0];
     if (!file) return;
 
+    // Enforce that only image/photo files are allowed
+    if (!file.type.startsWith('image/')) {
+      alert("SIMPAN DITOLAK: Hanya file berupa foto/gambar saja (.png, .jpg, .jpeg, .gif, .webp) yang diizinkan!");
+      e.target.value = "";
+      return;
+    }
+
     setFileName(file.name);
     setFormNamaDokumen(file.name.split('.').slice(0, -1).join('.'));
     setFileType(file.type || 'application/octet-stream');
@@ -79,11 +88,15 @@ export default function DokumenView({
   const handleUploadSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formNamaDokumen.trim() || !fileBase64) {
-      alert("Harap pilih berkas PDF/Gambar/XLSX dan beri nama dokumen.");
+      alert("Harap pilih berkas foto terlebih dahulu dan masukkan nama.");
       return;
     }
 
+    setIsUploading(true);
     try {
+      // 1. Upload Base64 to Cloudinary
+      const cloudinaryRes = await uploadToCloudinary(fileBase64, "sibiru_arsip_dokumen");
+
       const docId = `dok_${Date.now()}`;
       const payload: DokumenArsip = {
         id: docId,
@@ -92,7 +105,8 @@ export default function DokumenView({
         tanggal_upload: new Date().toISOString().substring(0, 10),
         tipe_file: fileType,
         ukuran_file: fileSizeStr,
-        data_url: fileBase64
+        data_url: cloudinaryRes.secure_url,
+        cloudinary_public_id: cloudinaryRes.public_id
       };
 
       await setDoc(doc(db, COLL_DOKUMEN, docId), payload).catch(err => handleFirestoreError(err, OperationType.WRITE, `${COLL_DOKUMEN}/${docId}`));
@@ -101,37 +115,54 @@ export default function DokumenView({
       await createAuditLog(
         currentUserEmail,
         currentUserRole,
-        "UPLOAD ARSIP DOKUMEN",
+        "UPLOAD ARSIP DOKUMEN (CLOUDINARY)",
         "DOKUMEN_ARSIP",
         null,
         payload
       );
+
+      // Notify the user about data change
+      alert(`[NOTIFIKASI DATA BERUBAH]\nBerhasil mengunggah foto "${payload.nama_dokumen}" ke Cloudinary!\nURL: ${payload.data_url}`);
 
       setShowUploadModal(false);
       setFormNamaDokumen('');
       setFileBase64('');
       setFileName('');
     } catch (err) {
-      alert("Gagal mengunggah dokumen: " + (err instanceof Error ? err.message : String(err)));
+      alert("Gagal mengunggah dokumen ke Cloudinary: " + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setIsUploading(false);
     }
   };
 
   // Delete document
   const handleDelete = async (item: DokumenArsip) => {
-    const isConfirmed = window.confirm(`Hapus dokumen arsip "${item.nama_dokumen}" dari system permanen?`);
+    const isConfirmed = window.confirm(`Hapus dokumen arsip "${item.nama_dokumen}" dari sistem dan Cloudinary secara permanen?`);
     if (!isConfirmed) return;
 
     try {
+      // Delete from Cloudinary if it has a public_id
+      if (item.cloudinary_public_id) {
+        try {
+          await deleteFromCloudinary(item.cloudinary_public_id);
+          console.log(`Berhasil menghapus asset Cloudinary: ${item.cloudinary_public_id}`);
+        } catch (cloudinaryErr) {
+          console.warn("Sedang menghapus, Cloudinary asset error (mungkin sudah dihapus manual):", cloudinaryErr);
+        }
+      }
+
       await deleteDoc(doc(db, COLL_DOKUMEN, item.id)).catch(err => handleFirestoreError(err, OperationType.DELETE, `${COLL_DOKUMEN}/${item.id}`));
       
       await createAuditLog(
         currentUserEmail,
         currentUserRole,
-        "HAPUS ARSIP DOKUMEN",
+        "HAPUS ARSIP DOKUMEN (CLOUDINARY)",
         "DOKUMEN_ARSIP",
         item,
         null
       );
+
+      alert(`[NOTIFIKASI DATA BERUBAH]\nBerhasil menghapus data arsip "${item.nama_dokumen}" secara permanen dari database & Cloudinary.`);
     } catch (err) {
       alert("Gagal menghapus: " + (err instanceof Error ? err.message : String(err)));
     }
@@ -298,13 +329,15 @@ export default function DokumenView({
               <div className="border-2 border-dashed border-slate-200 hover:border-blue-500 rounded-xl p-4 text-center cursor-pointer transition relative bg-slate-50/50">
                 <input 
                   type="file"
+                  accept="image/*"
                   onChange={handleFileUploadAndConvertObj}
                   required
-                  className="absolute inset-0 opacity-0 cursor-pointer"
+                  disabled={isUploading}
+                  className="absolute inset-0 opacity-0 cursor-pointer disabled:cursor-not-allowed"
                 />
-                <Upload className="mx-auto text-blue-800 mb-1" size={24} />
-                <p className="font-bold text-slate-700">Pilih Berkas Upload</p>
-                <p className="text-[10px] text-slate-400 mt-0.5">PDF, Gambar HP, Excel RKA</p>
+                <Upload className="mx-auto text-blue-800 mb-1 animate-pulse" size={24} />
+                <p className="font-bold text-slate-700">Pilih Berkas Foto / Gambar</p>
+                <p className="text-[10px] text-slate-400 mt-0.5">Hanya file Foto (PNG, JPG, JPEG, WEBP, GIF)</p>
               </div>
 
               {fileName && (
@@ -314,13 +347,14 @@ export default function DokumenView({
                     <span className="bg-indigo-100 text-indigo-900 px-1 rounded font-bold">{fileSizeStr}</span>
                     <button
                       type="button"
+                      disabled={isUploading}
                       onClick={() => {
                         setFileName('');
                         setFileBase64('');
                         setFileType('');
                         setFileSizeStr('');
                       }}
-                      className="text-red-700 hover:text-red-900 font-bold ml-1 hover:underline cursor-pointer"
+                      className="text-red-700 hover:text-red-900 font-bold ml-1 hover:underline cursor-pointer disabled:opacity-50"
                     >
                       Hapus
                     </button>
@@ -329,8 +363,21 @@ export default function DokumenView({
               )}
 
               <div className="flex items-center gap-2 pt-4 justify-end border-t border-slate-100" id="form-actions">
-                <button type="button" onClick={() => setShowUploadModal(false)} className="px-4 py-2 font-semibold text-slate-700 border border-slate-200 rounded-lg">Batal</button>
-                <button type="submit" className="px-5 py-2 font-black text-white bg-blue-700 hover:bg-blue-800 rounded-lg shadow">Berhasil Simpan</button>
+                <button type="button" disabled={isUploading} onClick={() => setShowUploadModal(false)} className="px-4 py-2 font-semibold text-slate-700 border border-slate-200 rounded-lg disabled:opacity-50">Batal</button>
+                <button 
+                  type="submit" 
+                  disabled={isUploading}
+                  className="px-5 py-2 font-black text-white bg-blue-700 hover:bg-blue-800 rounded-lg shadow disabled:bg-blue-400 disabled:cursor-not-allowed flex items-center gap-1.5"
+                >
+                  {isUploading ? (
+                    <>
+                      <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                      Mengunggah...
+                    </>
+                  ) : (
+                    "Berhasil Simpan"
+                  )}
+                </button>
               </div>
 
             </form>

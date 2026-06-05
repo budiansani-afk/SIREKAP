@@ -19,6 +19,7 @@ import { formatRupiah, exportToCSV } from '../utils/helpers';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { doc, setDoc, deleteDoc } from 'firebase/firestore';
 import { COLL_MONITORING_FISIK, createAuditLog } from '../dbService';
+import { uploadToCloudinary, deleteFromCloudinary } from '../utils/cloudinary';
 
 interface MonitoringViewProps {
   monitorings: MonitoringFisik[];
@@ -53,6 +54,7 @@ export default function MonitoringView({
   const [formTindakLanjut, setFormTindakLanjut] = useState<string>('');
   const [formFotoBase64, setFormFotoBase64] = useState<string>('');
   const [formFotoFileName, setFormFotoFileName] = useState<string>('');
+  const [isSaving, setIsSaving] = useState(false);
 
   const canEdit = currentUserRole === UserRole.ADMIN || currentUserRole === UserRole.OPERATOR;
 
@@ -70,6 +72,12 @@ export default function MonitoringView({
   const handleFotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      alert("SIMPAN DITOLAK: Hanya berkas foto/gambar kegiatan lapangan (.png, .jpg, .jpeg) yang diperkenankan!");
+      e.target.value = "";
+      return;
+    }
 
     setFormFotoFileName(file.name);
     const reader = new FileReader();
@@ -126,7 +134,39 @@ export default function MonitoringView({
       return;
     }
 
+    setIsSaving(true);
     try {
+      let cloudinaryUrl = formFotoBase64;
+      let cloudinaryPublicId = editItem?.foto_kegiatan_public_id || '';
+
+      // If a new base64 file is uploaded
+      if (formFotoBase64 && formFotoBase64.startsWith('data:image/')) {
+        // If there is an old photo on Cloudinary, delete it first
+        if (editItem?.foto_kegiatan_public_id) {
+          try {
+            await deleteFromCloudinary(editItem.foto_kegiatan_public_id);
+          } catch (cloudinaryErr) {
+            console.warn("Sedang menghapus, Gagal menghapus asset Cloudinary lama:", cloudinaryErr);
+          }
+        }
+
+        // Upload the new image to Cloudinary
+        const uploadRes = await uploadToCloudinary(formFotoBase64, "sibiru_monitoring_foto");
+        cloudinaryUrl = uploadRes.secure_url;
+        cloudinaryPublicId = uploadRes.public_id;
+      } else if (!formFotoBase64) {
+        // If the user removed the image completely
+        if (editItem?.foto_kegiatan_public_id) {
+          try {
+            await deleteFromCloudinary(editItem.foto_kegiatan_public_id);
+          } catch (cloudinaryErr) {
+            console.warn("Gagal menghapus asset Cloudinary lama:", cloudinaryErr);
+          }
+        }
+        cloudinaryUrl = '';
+        cloudinaryPublicId = '';
+      }
+
       const docId = editItem ? editItem.id : `monitor_${Date.now()}`;
       const payload: MonitoringFisik = {
         id: docId,
@@ -139,7 +179,8 @@ export default function MonitoringView({
         persentase: computedPercent,
         kendala: formKendala.trim(),
         tindak_lanjut: formTindakLanjut.trim(),
-        foto_kegiatan: formFotoBase64 || undefined
+        foto_kegiatan: cloudinaryUrl || undefined,
+        foto_kegiatan_public_id: cloudinaryPublicId || undefined
       };
 
       await setDoc(doc(db, COLL_MONITORING_FISIK, docId), payload).catch(err => handleFirestoreError(err, OperationType.WRITE, `${COLL_MONITORING_FISIK}/${docId}`));
@@ -154,10 +195,14 @@ export default function MonitoringView({
         payload
       );
 
+      alert(`[NOTIFIKASI DATA BERUBAH]\nBerhasil menyimpan realisasi fisik untuk sub-kegiatan ${payload.kode_sub_kegiatan} dengan capaian ${payload.persentase}%. Log audit dicatat.`);
+
       setShowForm(false);
       setEditItem(null);
     } catch (err) {
       alert("Gagal memproses monitoring: " + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -167,6 +212,16 @@ export default function MonitoringView({
     if (!isConfirmed) return;
 
     try {
+      // Clean up Cloudinary asset
+      if (item.foto_kegiatan_public_id) {
+        try {
+          await deleteFromCloudinary(item.foto_kegiatan_public_id);
+          console.log(`Berhasil menghapus foto kegiatan dari Cloudinary: ${item.foto_kegiatan_public_id}`);
+        } catch (cloudinaryErr) {
+          console.warn("Gagal menghapus foto dari Cloudinary:", cloudinaryErr);
+        }
+      }
+
       await deleteDoc(doc(db, COLL_MONITORING_FISIK, item.id)).catch(err => handleFirestoreError(err, OperationType.DELETE, `${COLL_MONITORING_FISIK}/${item.id}`));
       
       await createAuditLog(
@@ -177,6 +232,8 @@ export default function MonitoringView({
         item,
         null
       );
+
+      alert(`[NOTIFIKASI DATA BERUBAH]\nPencatatan monitoring fisik sub-kegiatan ${item.kode_sub_kegiatan} berhasil dipindahkan secara permanen.`);
     } catch (err) {
       alert("Gagal menghapus: " + (err instanceof Error ? err.message : String(err)));
     }
@@ -420,7 +477,7 @@ export default function MonitoringView({
 
               {/* Photo Upload for photographic evidence */}
               <div>
-                <label className="block text-slate-700 font-bold mb-1">Ganti/Unggah Foto Lapangan</label>
+                <label className="block text-slate-700 font-bold mb-1">Ganti/Unggah Foto Lapangan (*Hanya Foto saja)</label>
                 <div className="flex flex-wrap items-center gap-3">
                   <div className="relative overflow-hidden bg-slate-50 border border-slate-200 px-3 py-2 rounded-lg cursor-pointer hover:bg-slate-100 flex items-center gap-2">
                     <Camera size={14} className="text-slate-500" />
@@ -429,7 +486,8 @@ export default function MonitoringView({
                       type="file" 
                       accept="image/*"
                       onChange={handleFotoUpload}
-                      className="absolute inset-0 opacity-0 cursor-pointer"
+                      disabled={isSaving}
+                      className="absolute inset-0 opacity-0 cursor-pointer disabled:cursor-not-allowed"
                     />
                   </div>
                   <span className="text-[10px] text-slate-500 truncate max-w-[200px]" title={formFotoFileName}>
@@ -438,11 +496,12 @@ export default function MonitoringView({
                   {formFotoFileName && (
                     <button
                       type="button"
+                      disabled={isSaving}
                       onClick={() => {
                         setFormFotoBase64('');
                         setFormFotoFileName('');
                       }}
-                      className="px-2.5 py-1 text-red-700 bg-red-50 hover:bg-red-100 hover:text-red-800 rounded text-[10px] font-bold border border-red-200 transition cursor-pointer"
+                      className="px-2.5 py-1 text-red-700 bg-red-50 hover:bg-red-100 hover:text-red-800 rounded text-[10px] font-bold border border-red-200 transition cursor-pointer disabled:opacity-55"
                       title="Klik untuk menghapus foto yang telah diunggah ini"
                     >
                       Hapus Foto
@@ -452,8 +511,21 @@ export default function MonitoringView({
               </div>
 
               <div className="flex items-center gap-2 pt-4 justify-end border-t border-slate-100" id="form-actions">
-                <button type="button" onClick={() => setShowForm(false)} className="px-4 py-2 font-semibold text-slate-700 border border-slate-200 rounded-lg">Batal</button>
-                <button type="submit" className="px-5 py-2 font-black text-white bg-blue-700 hover:bg-blue-800 rounded-lg shadow">Simpan & Sync Capaian</button>
+                <button type="button" disabled={isSaving} onClick={() => setShowForm(false)} className="px-4 py-2 font-semibold text-slate-700 border border-slate-200 rounded-lg disabled:opacity-50">Batal</button>
+                <button 
+                  type="submit" 
+                  disabled={isSaving}
+                  className="px-5 py-2 font-black text-white bg-blue-700 hover:bg-blue-800 rounded-lg shadow disabled:bg-blue-400 disabled:cursor-not-allowed flex items-center gap-1.5"
+                >
+                  {isSaving ? (
+                    <>
+                      <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                      Menyimpan...
+                    </>
+                  ) : (
+                    "Simpan & Sync Capaian"
+                  )}
+                </button>
               </div>
 
             </form>
