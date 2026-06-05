@@ -1,0 +1,302 @@
+import React, { useState, useMemo } from 'react';
+import { 
+  Settings, 
+  Database, 
+  Download, 
+  Upload, 
+  Layers, 
+  Building2, 
+  TrendingUp, 
+  CheckCircle,
+  FileText,
+  Camera,
+  Crown
+} from 'lucide-react';
+import { AppSettings, UserRole } from '../types';
+import { backupDatabaseToJSON, restoreDatabaseFromJSON, createAuditLog } from '../dbService';
+
+interface PengaturanViewProps {
+  settings: AppSettings | null;
+  currentUserRole: UserRole;
+  currentUserEmail: string;
+  onUpdateSettings: (newSettings: Partial<AppSettings>) => Promise<void>;
+}
+
+export default function PengaturanView({
+  settings,
+  currentUserRole,
+  currentUserEmail,
+  onUpdateSettings
+}: PengaturanViewProps) {
+  const [instNama, setInstNama] = useState(settings?.nama_instansi || 'Dinas Perumahan dan Kawasan Permukiman Kabupaten Bima');
+  const [instLogo, setInstLogo] = useState(settings?.logo_instansi || '');
+  const [fiscalYear, setFiscalYear] = useState<number>(settings?.tahun_anggaran_aktif || 2026);
+  const [logoFileName, setLogoFileName] = useState('');
+
+  // Backup / Restore states
+  const [backupFileUrl, setBackupFileUrl] = useState('');
+  const [restoreMessage, setRestoreMessage] = useState<string | null>(null);
+
+  const canEdit = currentUserRole === UserRole.ADMIN;
+
+  // Handle Logo Upload base64
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setLogoFileName(file.name);
+    const reader = new FileReader();
+    reader.onload = () => {
+      setInstLogo(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // Submit main parameters
+  const handleSubmitSettings = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!instNama.trim()) {
+      alert("Nama Instansi wajib diisi!");
+      return;
+    }
+
+    try {
+      await onUpdateSettings({
+        nama_instansi: instNama.trim(),
+        logo_instansi: instLogo,
+        tahun_anggaran_aktif: fiscalYear
+      });
+
+      // AuditTrail Log
+      await createAuditLog(
+        currentUserEmail,
+        currentUserRole,
+        "UPDATE SETTINGS PARAMETERS",
+        "PENGATURAN",
+        settings,
+        {
+          nama_instansi: instNama,
+          logo_instansi: instLogo ? 'TERLAMPIR_BASE64' : 'KOSONG',
+          tahun_anggaran_aktif: fiscalYear
+        }
+      );
+
+      alert("Pengaturan Berhasil Disimpan & Sinkronisasi Sistem!");
+    } catch (err) {
+      alert("Gagal merubah parameter: " + (err instanceof Error ? err.message : String(err)));
+    }
+  };
+
+  // Trigger whole database export to JSON
+  const handleExportBackup = async () => {
+    try {
+      const dataObj = await backupDatabaseToJSON();
+      const dataStr = JSON.stringify(dataObj, null, 2);
+      const blob = new Blob([dataStr], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `SIBIRU_BackUp_Database_TA2026_${new Date().toISOString().substring(0,10)}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      await createAuditLog(
+        currentUserEmail,
+        currentUserRole,
+        "EXPORT BACKUP DATABASE",
+        "DATABASE_BACK_RECOV",
+        null,
+        { status: 'SUCCESS' }
+      );
+    } catch (err) {
+      alert("Gagal melakukan export backup: " + (err instanceof Error ? err.message : String(err)));
+    }
+  };
+
+  // Handle Restore file select loader
+  const handleRestoreFileSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const isConfirmed = window.confirm(`WARNING: Anda memilih file "${file.name}". Melakukan Restore database akan menduplikat atau menimpa koleksi sibiru_* yang ada. Apakah Anda ingin melanjutkan proses recovery ini?`);
+    if (!isConfirmed) return;
+
+    const reader = new FileReader();
+    reader.onload = async () => {
+      try {
+        const textStr = reader.result as string;
+        setRestoreMessage("Sedang mengupload & memvalidasi skema data...");
+        
+        const backupObj = JSON.parse(textStr);
+        await restoreDatabaseFromJSON(backupObj, currentUserEmail, currentUserRole);
+
+        setRestoreMessage("✓ Database berhasil dipulihkan & Sinkronisasi sistem RKA selesai!");
+
+        await createAuditLog(
+          currentUserEmail,
+          currentUserRole,
+          "RESTORE DATABASE RECOVERY",
+          "DATABASE_BACK_RECOV",
+          null,
+          { file_name: file.name, status: 'RESTORE_SUCCESS' }
+        );
+
+        // Soft reload to cascade state triggers
+        setTimeout(() => {
+          window.location.reload();
+        }, 1500);
+
+      } catch (err) {
+        setRestoreMessage("❌ Gagal memulihkan database. Cek apakah format berkas JSON murni backup yang benar.");
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  return (
+    <div className="space-y-6" id="pengaturan-module-root">
+      
+      {/* Title */}
+      <div className="flex items-center gap-1.5 p-4 bg-white rounded-xl border border-slate-100 shadow-sm" id="set-title-card">
+        <Settings className="text-blue-800 animate-spin" size={22} />
+        <div>
+          <h2 className="text-xl font-bold text-slate-800">Administrasi & Backup Recovery</h2>
+          <p className="text-xs text-slate-600">Atur parameter dinas instansi, kustomisasi logo pemkab, dan sinkronkan salinan basis data cadangan.</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6" id="set-content-grid">
+        
+        {/* Main Brand Settings */}
+        <div className="bg-white p-5 rounded-xl border border-slate-100 shadow-sm space-y-4" id="brand-settings-panel">
+          <h4 className="text-xs font-bold text-slate-800 border-b border-dashed pb-2 flex items-center gap-1">
+            <Building2 size={14} className="text-blue-800" />
+            Parameter Instansi & Pemda Berjalan
+          </h4>
+
+          <form onSubmit={handleSubmitSettings} className="space-y-4 text-xs">
+            <div>
+              <label className="block text-slate-700 font-bold mb-1">Nama Instansi Dinas Pemerintahan</label>
+              <textarea 
+                value={instNama} 
+                onChange={(e) => setInstNama(e.target.value)} 
+                disabled={!canEdit}
+                rows={2}
+                className="w-full p-2.5 border border-slate-200 rounded-lg bg-slate-50 disabled:bg-slate-100/50 outline-blue-600 focus:bg-white"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">Tahun Anggaran Aktif</label>
+                <input 
+                  type="number"
+                  value={fiscalYear}
+                  onChange={(e) => setFiscalYear(Number(e.target.value))}
+                  disabled={!canEdit}
+                  className="w-full p-2.5 border border-slate-200 rounded-lg bg-slate-50 disabled:bg-slate-100/50 focus:bg-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">Logo Instansi (Kop Surat)</label>
+                <div className="flex items-center gap-2">
+                  <div className="relative overflow-hidden bg-slate-50 border px-3 py-2 rounded-lg cursor-pointer hover:bg-slate-100 flex items-center gap-1.5">
+                    <Camera size={13} />
+                    <span>Upload Logo</span>
+                    <input 
+                      type="file" 
+                      accept="image/*"
+                      disabled={!canEdit}
+                      onChange={handleLogoUpload}
+                      className="absolute inset-0 opacity-0 cursor-pointer"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Logo Preview box */}
+            {instLogo && (
+              <div className="p-3 bg-slate-50 rounded-lg border border-slate-100 flex items-center gap-3">
+                <img src={instLogo} alt="Preview_Logo" className="w-12 h-12 object-contain bg-white p-1 rounded" referrerPolicy="no-referrer" />
+                <div>
+                  <p className="font-bold text-slate-850">Preview Logo Terlampir</p>
+                  <p className="text-[10px] text-slate-400 font-semibold font-mono">Tipe: Base64 data asset (Kop_Surat_Format)</p>
+                </div>
+              </div>
+            )}
+
+            {canEdit && (
+              <div className="pt-2 text-right border-t">
+                <button type="submit" className="px-5 py-2 text-white bg-blue-700 hover:bg-blue-800 font-bold shadow-sm rounded-lg">Simpan Kustomisasi Brand</button>
+              </div>
+            )}
+          </form>
+        </div>
+
+        {/* Database Disaster Backup & Recovery Panel */}
+        <div className="bg-white p-5 rounded-xl border border-slate-100 shadow-sm space-y-4" id="db-recoveries">
+          <h4 className="text-xs font-bold text-slate-800 border-b border-dashed pb-2 flex items-center gap-1.5">
+            <Database size={14} className="text-emerald-800" />
+            Database Backup & Recovery Control (JSON)
+          </h4>
+
+          <div className="space-y-4 text-xs">
+            <div className="p-4 bg-emerald-50 border border-emerald-100 text-emerald-950 rounded-lg flex flex-col justify-between">
+              <div>
+                <p className="font-black flex items-center gap-1 text-emerald-900">
+                  <Download size={14} />
+                  Satu Tombol Pencadangan (Full Export)
+                </p>
+                <p className="text-[11px] text-emerald-800 mt-1">Mengunduh seluruh isi koleksi <b>sibiru_program, sibiru_kegiatan, sibiru_sub_kegiatan, sibiru_rka</b> dan <b>realisasi</b> dalam bentuk berkas tunggal JSON ramah-ke-disk lokal.</p>
+              </div>
+              <button 
+                onClick={handleExportBackup}
+                className="mt-4 px-4 py-2 bg-emerald-800 hover:bg-emerald-950 text-white font-bold rounded-lg shadow-xs flex items-center gap-1.5 self-start"
+              >
+                <Download size={14} />
+                Ekspor Semua Basis Data (JSON)
+              </button>
+            </div>
+
+            {/* Database Restore Action Box */}
+            {canEdit ? (
+              <div className="p-4 bg-orange-50 border border-orange-100 text-orange-950 rounded-lg">
+                <p className="font-black flex items-center gap-1 text-orange-950">
+                  <Upload size={14} />
+                  Pemulihan Basis Data (Restore Recovery)
+                </p>
+                <p className="text-[11px] text-orange-800 mt-1">Pilih file JSON hasil backup sebelumnya untuk memulihkan seluruh struktur data belanja satker pertanahan Bima.</p>
+                
+                <div className="mt-4 relative overflow-hidden bg-white hover:bg-orange-100/50 border border-orange-200 px-4 py-2 rounded-lg cursor-pointer flex items-center justify-center gap-1.5 font-bold self-start max-w-xs transition">
+                  <Database size={13} className="text-orange-900" />
+                  <span>Pilih File Backup (.json)</span>
+                  <input 
+                    type="file" 
+                    accept=".json"
+                    onChange={handleRestoreFileSelected}
+                    className="absolute inset-0 opacity-0 cursor-pointer"
+                  />
+                </div>
+
+                {restoreMessage && (
+                  <p className="mt-2 text-[10px] font-mono font-bold text-orange-950 uppercase">{restoreMessage}</p>
+                )}
+              </div>
+            ) : (
+              <div className="p-4 bg-slate-50 rounded-lg border text-slate-500 font-bold flex items-center gap-1">
+                <Crown size={14} className="text-amber-600 animate-pulse" />
+                Hanya Administrator yang memiliki akses Disaster Recovery Pemulihan Database.
+              </div>
+            )}
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+  );
+}

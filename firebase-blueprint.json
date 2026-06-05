@@ -1,0 +1,204 @@
+{
+  "entities": {
+    "Program": {
+      "title": "Program",
+      "description": "Informasi Program Pembelanjaan",
+      "type": "object",
+      "properties": {
+        "kode_program": { "type": "string" },
+        "nama_program": { "type": "string" },
+        "pagu": { "type": "number" },
+        "realisasi": { "type": "number" },
+        "sisa": { "type": "number" },
+        "persentase": { "type": "number" }
+      },
+      "required": ["kode_program", "nama_program", "pagu"]
+    },
+    "Kegiatan": {
+      "title": "Kegiatan",
+      "description": "Informasi Kegiatan Pembelanjaan",
+      "type": "object",
+      "properties": {
+        "kode_kegiatan": { "type": "string" },
+        "nama_kegiatan": { "type": "string" },
+        "kode_program": { "type": "string" },
+        "pagu": { "type": "number" },
+        "realisasi": { "type": "number" },
+        "sisa": { "type": "number" },
+        "persentase": { "type": "number" }
+      },
+      "required": ["kode_kegiatan", "nama_kegiatan", "kode_program", "pagu"]
+    },
+    "SubKegiatan": {
+      "title": "SubKegiatan",
+      "description": "Informasi Sub Kegiatan Pembelanjaan",
+      "type": "object",
+      "properties": {
+        "kode_sub_kegiatan": { "type": "string" },
+        "nama_sub_kegiatan": { "type": "string" },
+        "kode_program": { "type": "string" },
+        "kode_kegiatan": { "type": "string" },
+        "pagu": { "type": "number" },
+        "realisasi": { "type": "number" },
+        "sisa": { "type": "number" },
+        "persentase": { "type": "number" }
+      },
+      "required": ["kode_sub_kegiatan", "nama_sub_kegiatan", "kode_program", "kode_kegiatan", "pagu"]
+    },
+    "RKA": {
+      "title": "RKA",
+      "description": "Rencana Kerja & Anggaran Detail Belanja",
+      "type": "object",
+      "properties": {
+        "tahun": { "type": "number" },
+        "kode_program": { "type": "string" },
+        "kode_kegiatan": { "type": "string" },
+        "kode_sub_kegiatan": { "type": "string" },
+        "kode_rekening": { "type": "string" },
+        "uraian_belanja": { "type": "string" },
+        "volume": { "type": "number" },
+        "satuan": { "type": "string" },
+        "harga_satuan": { "type": "number" },
+        "jumlah": { "type": "number" },
+        "tw1": { "type": "number" },
+        "tw2": { "type": "number" },
+        "tw3": { "type": "number" },
+        "tw4": { "type": "number" }
+      },
+      "required": ["tahun", "kode_sub_kegiatan", "uraian_belanja", "jumlah"]
+    },
+    "Realisasi": {
+      "title": "Realisasi",
+      "description": "Catatan Realisasi Keuangan",
+      "type": "object",
+      "properties": {
+        "tanggal": { "type": "string" },
+        "bulan": { "type": "string" },
+        "kode_program": { "type": "string" },
+        "kode_kegiatan": { "type": "string" },
+        "kode_sub_kegiatan": { "type": "string" },
+        "uraian_belanja": { "type": "string" },
+        "nominal_realisasi": { "type": "number" },
+        "persentase_realisasi": { "type": "number" },
+        "sisa_anggaran": { "type": "number" },
+        "keterangan": { "type": "string" },
+        "bukti_transaksi": { "type": "string" }
+      },
+      "required": ["tanggal", "bulan", "kode_sub_kegiatan", "nominal_realisasi"]
+    },
+    "MonitoringFisik": {
+      "title": "MonitoringFisik",
+      "description": "Catatan Capaian Target & Realisasi Fisik",
+      "type": "object",
+      "properties": {
+        "tanggal": { "type": "string" },
+        "kode_program": { "type": "string" },
+        "kode_kegiatan": { "type": "string" },
+        "kode_sub_kegiatan": { "type": "string" },
+        "target_fisik": { "type": "number" },
+        "realisasi_fisik": { "type": "number" },
+        "persentase": { "type": "number" },
+        "kendala": { "type": "string" },
+        "tindak_lanjut": { "type": "string" },
+        "foto_kegiatan": { "type": "string" }
+      },
+      "required": ["tanggal", "kode_sub_kegiatan", "target_fisik", "realisasi_fisik"]
+    },
+    "Dokumen": {
+      "title": "Dokumen",
+      "description": "Arsip dan Klasifikasi Dokumen",
+      "type": "object",
+      "properties": {
+        "nama_dokumen": { "type": "string" },
+        "kategori": { "type": "string" },
+        "tanggal_upload": { "type": "string" },
+        "tipe_file": { "type": "string" },
+        "ukuran_file": { "type": "string" },
+        "data_url": { "type": "string" }
+      },
+      "required": ["nama_dokumen", "kategori", "tanggal_upload"]
+    },
+    "Pengguna": {
+      "title": "Pengguna",
+      "description": "Pengguna aplikasi dan role mereka",
+      "type": "object",
+      "properties": {
+        "nama": { "type": "string" },
+        "email": { "type": "string" },
+        "role": { "type": "string" },
+        "aktif": { "type": "boolean" }
+      },
+      "required": ["nama", "email", "role"]
+    },
+    "LogAktivitas": {
+      "title": "LogAktivitas",
+      "description": "Catatan log audit aktivitas pengguna",
+      "type": "object",
+      "properties": {
+        "waktu": { "type": "string" },
+        "nama_pengguna": { "type": "string" },
+        "role": { "type": "string" },
+        "aksi": { "type": "string" },
+        "modul": { "type": "string" },
+        "data_lama": { "type": "string" },
+        "data_baru": { "type": "string" },
+        "ip_address": { "type": "string" },
+        "browser": { "type": "string" }
+      },
+      "required": ["waktu", "nama_pengguna", "aksi", "modul"]
+    },
+    "Pengaturan": {
+      "title": "Pengaturan",
+      "description": "Pengaturan master Sistem",
+      "type": "object",
+      "properties": {
+        "tahun_anggaran_aktif": { "type": "number" },
+        "nama_instansi": { "type": "string" },
+        "logo_instansi": { "type": "string" }
+      },
+      "required": ["tahun_anggaran_aktif", "nama_instansi"]
+    }
+  },
+  "firestore": {
+    "sibiru_program": {
+      "schema": { "$ref": "#/entities/Program" },
+      "description": "Koleksi program kerja"
+    },
+    "sibiru_kegiatan": {
+      "schema": { "$ref": "#/entities/Kegiatan" },
+      "description": "Koleksi kegiatan belanja"
+    },
+    "sibiru_sub_kegiatan": {
+      "schema": { "$ref": "#/entities/SubKegiatan" },
+      "description": "Koleksi sub kegiatan belanja"
+    },
+    "sibiru_rka": {
+      "schema": { "$ref": "#/entities/RKA" },
+      "description": "Koleksi item perencanaan RKA"
+    },
+    "sibiru_realisasi": {
+      "schema": { "$ref": "#/entities/Realisasi" },
+      "description": "Koleksi realisasi anggaran belanja"
+    },
+    "sibiru_monitoring_fisik": {
+      "schema": { "$ref": "#/entities/MonitoringFisik" },
+      "description": "Koleksi pemantauan fisik kegiatan"
+    },
+    "sibiru_dokumen": {
+      "schema": { "$ref": "#/entities/Dokumen" },
+      "description": "Koleksi data arsip dokumen"
+    },
+    "sibiru_pengguna": {
+      "schema": { "$ref": "#/entities/Pengguna" },
+      "description": "Koleksi data pengguna system"
+    },
+    "sibiru_log_aktivitas": {
+      "schema": { "$ref": "#/entities/LogAktivitas" },
+      "description": "Koleksi log aktivitas audit"
+    },
+    "sibiru_pengaturan": {
+      "schema": { "$ref": "#/entities/Pengaturan" },
+      "description": "Koleksi konfigurasi system"
+    }
+  }
+}
