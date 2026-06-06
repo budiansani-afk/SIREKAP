@@ -57,7 +57,7 @@ cloudinary.config({
 // JSON API Route: Cloudinary Upload Proxy
 app.post("/api/cloudinary/upload", async (req, res) => {
   try {
-    const { image, folder } = req.body;
+    const { image, folder, filename } = req.body;
     if (!image) {
       return res.status(400).json({ error: "Required: 'image' (Base64 data URL) in request body" });
     }
@@ -67,13 +67,66 @@ app.post("/api/cloudinary/upload", async (req, res) => {
       return res.status(400).json({ error: "Sistem hanya mengizinkan pengunggahan file data URL (.png, .jpg, .pdf, dsb)." });
     }
 
+    let finalPublicId: string | undefined = undefined;
+
+    if (filename) {
+      try {
+        const lastDot = filename.lastIndexOf(".");
+        const base = lastDot !== -1 ? filename.substring(0, lastDot) : filename;
+        const cleanedBase = base.replace(/[^a-zA-Z0-9_\-]/g, "_").replace(/_+/g, "_");
+        
+        const folderName = folder || "sirekap";
+        let trialBase = cleanedBase;
+        let isUnique = false;
+        let suffixCounter = 0;
+
+        while (!isUnique && suffixCounter < 5) {
+          const fullCheckId = `${folderName}/${trialBase}`;
+          console.log(`[Cloudinary Signature Loader] Checking if asset exists: "${fullCheckId}"`);
+          try {
+            let exists = false;
+            for (const type of ["image", "raw", "video"]) {
+              try {
+                await cloudinary.api.resource(fullCheckId, { resource_type: type });
+                exists = true;
+                break;
+              } catch (e) {
+                // Not found is expected throwing resource not found
+              }
+            }
+
+            if (exists) {
+              suffixCounter++;
+              const randomCode = Math.random().toString(36).substring(2, 6).toUpperCase();
+              trialBase = `${cleanedBase}_${randomCode}`;
+              console.log(`[Cloudinary Signature Loader] Collision detected! Appending unique code: "${trialBase}"`);
+            } else {
+              finalPublicId = trialBase;
+              isUnique = true;
+            }
+          } catch (err) {
+            trialBase = `${cleanedBase}_${Date.now()}`;
+            finalPublicId = trialBase;
+            isUnique = true;
+          }
+        }
+        
+        if (!isUnique || !finalPublicId) {
+          finalPublicId = `${cleanedBase}_${Date.now()}`;
+        }
+      } catch (e: any) {
+        console.warn("[Cloudinary Proxy] Failed to compute unique filename base, using default auto-generation:", e.message || e);
+      }
+    }
+
     let uploadResponse;
 
     try {
       // 1. Direct signed upload (No preset required because we sign with our API secret!). This is the most robust method in production.
-      console.log(`Mencoba upload Cloudinary langsung ke folder: ${folder || "sirekap"}`);
+      console.log(`Mencoba upload Cloudinary langsung ke folder: ${folder || "sirekap"}, public_id: ${finalPublicId || "auto-generate"}`);
       uploadResponse = await cloudinary.uploader.upload(image, {
         folder: folder || "sirekap",
+        public_id: finalPublicId,
         resource_type: "auto"
       });
     } catch (directError: any) {
@@ -83,6 +136,7 @@ app.post("/api/cloudinary/upload", async (req, res) => {
         uploadResponse = await cloudinary.uploader.upload(image, {
           folder: folder || "sirekap",
           upload_preset: preset,
+          public_id: finalPublicId,
           resource_type: "auto"
         });
       } catch (presetError: any) {
@@ -91,6 +145,7 @@ app.post("/api/cloudinary/upload", async (req, res) => {
         try {
           uploadResponse = await cloudinary.uploader.unsigned_upload(image, preset, {
             folder: folder || "sirekap",
+            public_id: finalPublicId,
             resource_type: "auto"
           });
         } catch (unsignedError: any) {

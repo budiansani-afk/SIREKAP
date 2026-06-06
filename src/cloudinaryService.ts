@@ -18,7 +18,8 @@ export interface CloudinaryServiceResponse {
  */
 export async function uploadFile(
   base64DataUrl: string,
-  folder = "sirekap"
+  folder = "sirekap",
+  filename?: string
 ): Promise<CloudinaryServiceResponse> {
   if (!base64DataUrl) {
     throw new Error("No file content provided for upload.");
@@ -32,7 +33,7 @@ export async function uploadFile(
   // Method 1: Upload via Server-side Proxy (Handles the signature securely via Cloudinary's API key/secret)
   let lastServerError = "";
   try {
-    console.log(`[CloudinaryService] Attempting server-signed proxy upload to folder: ${folder}`);
+    console.log(`[CloudinaryService] Attempting server-signed proxy upload to folder: ${folder}, filename: ${filename || "none"}`);
     const response = await fetch("/api/cloudinary/upload", {
       method: "POST",
       headers: {
@@ -41,6 +42,7 @@ export async function uploadFile(
       body: JSON.stringify({
         image: base64DataUrl,
         folder,
+        filename,
       }),
     });
 
@@ -75,6 +77,11 @@ export async function uploadFile(
     formData.append("file", base64DataUrl);
     formData.append("upload_preset", uploadPreset);
     formData.append("folder", folder);
+    if (filename) {
+      formData.append("filename_override", filename);
+      formData.append("use_filename", "true");
+      formData.append("unique_filename", "true");
+    }
 
     const response = await fetch(url, {
       method: "POST",

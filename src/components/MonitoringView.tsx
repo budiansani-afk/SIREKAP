@@ -151,7 +151,7 @@ export default function MonitoringView({
         }
 
         // Upload the new image to Cloudinary
-        const uploadRes = await uploadFile(formFotoBase64, "sirekap");
+        const uploadRes = await uploadFile(formFotoBase64, "sirekap", formFotoFileName);
         cloudinaryUrl = uploadRes.secure_url;
         cloudinaryPublicId = uploadRes.public_id;
       } else if (!formFotoBase64) {
