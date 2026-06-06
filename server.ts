@@ -114,34 +114,102 @@ app.post("/api/cloudinary/upload", async (req, res) => {
 // JSON API Route: Cloudinary Delete Proxy
 app.post("/api/cloudinary/delete", async (req, res) => {
   try {
-    const { public_id } = req.body;
+    const { public_id, resource_type } = req.body;
     if (!public_id) {
       return res.status(400).json({ error: "Required: 'public_id' in request body" });
     }
 
-    console.log(`Mencoba menghapus file Cloudinary public_id: ${public_id}`);
+    console.log(`[Server Cloudinary Delete] Request received for public_id: "${public_id}", resource_type: "${resource_type || "auto"}"`);
 
-    // Loop through resource types because a direct destroy defaults to 'image'. If the file was a PDF,
-    // it was uploaded as 'raw', so destroying as 'image' returns 'not found'.
-    let deleteResult = await cloudinary.uploader.destroy(public_id, { resource_type: "image" });
-    console.log(`Hapus sebagai 'image' hasil:`, deleteResult);
+    const types = ["image", "raw", "video"];
+    const attempts: { id: string; type: string }[] = [];
 
-    if (deleteResult.result === "not found") {
-      console.log(`Tidak ditemukan sebagai image, mencoba hapus sebagai 'raw' (misal .pdf): ${public_id}`);
-      deleteResult = await cloudinary.uploader.destroy(public_id, { resource_type: "raw" });
-      console.log(`Hapus sebagai 'raw' hasil:`, deleteResult);
+    // 1. Add provided resource type if valid
+    if (resource_type && types.includes(resource_type)) {
+      attempts.push({ id: public_id, type: resource_type });
     }
 
-    if (deleteResult.result === "not found") {
-      console.log(`Tidak ditemukan sebagai raw, mencoba hapus sebagai 'video': ${public_id}`);
-      deleteResult = await cloudinary.uploader.destroy(public_id, { resource_type: "video" });
-      console.log(`Hapus sebagai 'video' hasil:`, deleteResult);
+    // 2. Add default variations for original public_id
+    for (const t of types) {
+      attempts.push({ id: public_id, type: t });
     }
 
-    res.json({
-      result: deleteResult.result,
-      public_id
-    });
+    // Extract raw filename without folders
+    let rawId = public_id;
+    const lastSlashIdx = public_id.lastIndexOf("/");
+    if (lastSlashIdx !== -1) {
+      rawId = public_id.substring(lastSlashIdx + 1);
+    }
+
+    // 3. Add attempts for rawId without folder prefix
+    if (rawId !== public_id) {
+      for (const t of types) {
+        attempts.push({ id: rawId, type: t });
+      }
+    }
+
+    // 4. Force check with 'sirekap' prefix in case preset uploaded it under sirekap folder
+    const sirekapPrefixed = `sirekap/${rawId}`;
+    if (sirekapPrefixed !== public_id && sirekapPrefixed !== rawId) {
+      for (const t of types) {
+        attempts.push({ id: sirekapPrefixed, type: t });
+      }
+    }
+
+    // Deduplicate attempts
+    const uniqueAttempts: { id: string; type: string }[] = [];
+    const seen = new Set<string>();
+    for (const a of attempts) {
+      const key = `${a.id}:${a.type}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        uniqueAttempts.push(a);
+      }
+    }
+
+    console.log(`[Server Cloudinary Delete] Target attempts total: ${uniqueAttempts.length}`);
+
+    let lastResult: any = { result: "not found" };
+    let successDeleted = false;
+    let deletedDetails = null;
+
+    for (const attempt of uniqueAttempts) {
+      try {
+        console.log(`[Server Cloudinary Delete] Trying destroy: ID="${attempt.id}", TYPE="${attempt.type}"`);
+        const result = await cloudinary.uploader.destroy(attempt.id, { resource_type: attempt.type });
+        console.log(`[Server Cloudinary Delete] Result:`, result);
+        
+        if (result && result.result === "ok") {
+          successDeleted = true;
+          deletedDetails = { id: attempt.id, type: attempt.type };
+          lastResult = result;
+          break; // Stop on first successful deletion!
+        } else {
+          lastResult = result;
+        }
+      } catch (err: any) {
+        console.warn(`[Server Cloudinary Delete] Attempt failed for ID="${attempt.id}" TYPE="${attempt.type}":`, err.message || err);
+      }
+    }
+
+    if (successDeleted) {
+      console.log(`[Server Cloudinary Delete] SUCCESS! File successfully destroyed:`, deletedDetails);
+      return res.json({
+        success: true,
+        result: "ok",
+        public_id,
+        attempt: deletedDetails
+      });
+    } else {
+      console.warn(`[Server Cloudinary Delete] FAILED! File could not be deleted from Cloudinary.`);
+      // Even if not found on Cloudinary (e.g. already deleted manually), return 200 with result: "not found"
+      // to let the client clean up local state if needed, but indicate success: false for the Cloudinary hook
+      return res.json({
+        success: false,
+        result: lastResult?.result || "not found",
+        public_id
+      });
+    }
   } catch (error: any) {
     console.error("Cloudinary Delete Error:", error);
     res.status(500).json({ error: error.message || "Gagal menghapus file dari Cloudinary" });

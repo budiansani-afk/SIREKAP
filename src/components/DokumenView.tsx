@@ -141,20 +141,22 @@ export default function DokumenView({
     if (!isConfirmed) return;
 
     try {
-      // Delete from Cloudinary if it has a public_id
-      if (item.cloudinary_public_id) {
+      // Determine deletion target: prefer raw public ID, fallback to Cloudinary URL parsing if present
+      const deleteTarget = item.cloudinary_public_id || (item.data_url?.includes("res.cloudinary.com") ? item.data_url : null);
+
+      if (deleteTarget) {
         console.log(`[DEBUG_HAPUS] Memulai proses penghapusan asset Cloudinary.`);
-        console.log(`[DEBUG_HAPUS] Parameter public_id yang akan dikirim: "${item.cloudinary_public_id}"`);
+        console.log(`[DEBUG_HAPUS] Parameter / URL yang akan dikirim: "${deleteTarget}"`);
         try {
-          await deleteFile(item.cloudinary_public_id);
-          console.log(`[DEBUG_HAPUS] Berhasil menghapus asset Cloudinary dengan public_id: ${item.cloudinary_public_id}`);
+          await deleteFile(deleteTarget);
+          console.log(`[DEBUG_HAPUS] Berhasil memproses permintaan hapus Cloudinary untuk target: ${deleteTarget}`);
         } catch (cloudinaryErr: any) {
           console.error("[DEBUG_HAPUS] Terjadi kesalahan fatal saat memanggil fungsi hapus Cloudinary!");
           console.error("[DEBUG_HAPUS] Detail Error Object:", cloudinaryErr);
           console.error("[DEBUG_HAPUS] Pesan Error:", cloudinaryErr?.message || String(cloudinaryErr));
           
           const forceConfirm = window.confirm(
-            `KONEKSI CLOUDINARY GAGAL UNTUK PUBLIC_ID: "${item.cloudinary_public_id}"\n\n` +
+            `KONEKSI CLOUDINARY GAGAL UNTUK TARGET: "${deleteTarget}"\n\n` +
             `Detail Error:\n${cloudinaryErr.message || cloudinaryErr}\n\n` +
             `Apakah Anda ingin tetap memaksa menghapus record dokumen ini secara permanen dari database Firestore?`
           );
@@ -164,7 +166,7 @@ export default function DokumenView({
           }
         }
       } else {
-        console.log(`[DEBUG_HAPUS] Dokumen tidak memiliki cloudinary_public_id, lanjut menghapus dari Firestore.`);
+        console.log(`[DEBUG_HAPUS] Dokumen tidak memiliki metadata penyimpanan Cloudinary, langsung menghapus dari Firestore.`);
       }
 
       await deleteDoc(doc(db, COLL_DOKUMEN, item.id)).catch(err => handleFirestoreError(err, OperationType.DELETE, `${COLL_DOKUMEN}/${item.id}`));
