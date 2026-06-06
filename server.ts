@@ -27,9 +27,27 @@ const apiKey = getSanitizedEnv("CLOUDINARY_API_KEY", "522531551358338");
 const apiSecret = getSanitizedEnv("CLOUDINARY_API_SECRET", "phNUcFk3bY4zsNJwBH8ffrNIbWk");
 const preset = getSanitizedEnv("CLOUDINARY_PRESET", "sirekap");
 
-console.log(`Cloudinary Configured: cloudName=${cloudName}, api_key_length=${apiKey.length}, preset=${preset}`);
+// Generate masked representations of API credentials for debugging/diagnosing environment overrides safely
+const maskCred = (val: string) => {
+  if (!val) return "empty";
+  if (val.length <= 8) return "*".repeat(val.length);
+  return `${val.slice(0, 4)}...${val.slice(-4)} (length: ${val.length})`;
+};
 
-// Cloudinary configuration using your credentials of project sibirutanah
+console.log("==========================================");
+console.log("CLOUDINARY SERVER CONFIGURATION ENGINE");
+console.log(`- Cloud Name: ${cloudName}`);
+console.log(`- API Key:    ${maskCred(apiKey)}`);
+console.log(`- API Secret: ${maskCred(apiSecret)}`);
+console.log(`- Preset:     ${preset}`);
+if (apiSecret !== "phNUcFk3bY4zsNJwBH8ffrNIbWk") {
+  console.log(`[PEMANDU] Perhatian: API Secret dimuat dari sistem environment variable, BUKAN dari hardcoded fallback ("phNUcFk3bY4zsNJwBH8ffrNIbWk")!`);
+} else {
+  console.log(`[PEMANDU] Info: API Secret menggunakan default fallback "phNUcFk3bY4zsNJwBH8ffrNIbWk".`);
+}
+console.log("==========================================");
+
+// Cloudinary configuration using credentials
 cloudinary.config({
   cloud_name: cloudName,
   api_key: apiKey,

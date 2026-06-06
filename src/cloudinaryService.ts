@@ -30,6 +30,7 @@ export async function uploadFile(
   }
 
   // Method 1: Upload via Server-side Proxy (Handles the signature securely via Cloudinary's API key/secret)
+  let lastServerError = "";
   try {
     console.log(`[CloudinaryService] Attempting server-signed proxy upload to folder: ${folder}`);
     const response = await fetch("/api/cloudinary/upload", {
@@ -54,9 +55,12 @@ export async function uploadFile(
       }
     }
     
-    const errorText = await response.text();
-    console.warn("[CloudinaryService] Server-signed upload returned non-ok status:", response.status, errorText);
-  } catch (proxyError) {
+    // Parse error response if available from JSON or text
+    const errorBody = await response.json().catch(() => null);
+    lastServerError = errorBody?.error || errorBody?.message || await response.text() || `Status: ${response.status}`;
+    console.warn("[CloudinaryService] Server-signed upload returned non-ok status:", response.status, lastServerError);
+  } catch (proxyError: any) {
+    lastServerError = proxyError?.message || String(proxyError);
     console.warn("[CloudinaryService] Server-signed upload failed, trying direct fallback:", proxyError);
   }
 
@@ -90,7 +94,13 @@ export async function uploadFile(
     };
   } catch (directError: any) {
     console.error("[CloudinaryService] Both upload methods failed:", directError);
-    throw new Error(`Gagal mengunggah file ke Cloudinary: ${directError?.message || directError}`);
+    const clientError = directError?.message || String(directError);
+    throw new Error(
+      `Gagal mengunggah file ke Cloudinary. \n\n` +
+      `- Error Server Backend: ${lastServerError}\n` +
+      `- Error Akses Langsung Client: ${clientError}\n\n` +
+      `Silakan periksa apakah API Secret di .env atau Pengaturan sudah cocok.`
+    );
   }
 }
 
