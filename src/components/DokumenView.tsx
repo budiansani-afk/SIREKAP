@@ -16,7 +16,7 @@ import { DokumenArsip, UserRole } from '../types';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { doc, setDoc, deleteDoc } from 'firebase/firestore';
 import { COLL_DOKUMEN, createAuditLog } from '../dbService';
-import { uploadToCloudinary, deleteFromCloudinary } from '../utils/cloudinary';
+import { uploadFile, deleteFile } from '../cloudinaryService';
 
 interface DokumenViewProps {
   dokumens: DokumenArsip[];
@@ -95,7 +95,7 @@ export default function DokumenView({
     setIsUploading(true);
     try {
       // 1. Upload Base64 to Cloudinary
-      const cloudinaryRes = await uploadToCloudinary(fileBase64, "sirekap");
+      const cloudinaryRes = await uploadFile(fileBase64, "sirekap");
 
       const docId = `dok_${Date.now()}`;
       const payload: DokumenArsip = {
@@ -144,7 +144,7 @@ export default function DokumenView({
       // Delete from Cloudinary if it has a public_id
       if (item.cloudinary_public_id) {
         try {
-          await deleteFromCloudinary(item.cloudinary_public_id);
+          await deleteFile(item.cloudinary_public_id);
           console.log(`Berhasil menghapus asset Cloudinary: ${item.cloudinary_public_id}`);
         } catch (cloudinaryErr) {
           console.warn("Sedang menghapus, Cloudinary asset error (mungkin sudah dihapus manual):", cloudinaryErr);

@@ -32,7 +32,8 @@ import {
   Layers,
   Building,
   RotateCcw,
-  AlertCircle
+  AlertCircle,
+  Github
 } from 'lucide-react';
 import { auth, db } from './firebase';
 import { 
@@ -669,6 +670,16 @@ export default function App() {
               </div>
             </div>
             
+            <a 
+              href="https://github.com/budiansani-afk/SIREKAP"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="p-2 hover:bg-slate-100 text-slate-500 hover:text-slate-900 rounded-lg transition-colors cursor-pointer flex items-center justify-center"
+              title="Kunjungi GitHub Repository SIREKAP"
+            >
+              <Github size={16} />
+            </a>
+
             <button 
               onClick={handleSignOut}
               className="p-2 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded-lg transition-colors cursor-pointer"

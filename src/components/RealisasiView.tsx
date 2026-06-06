@@ -18,7 +18,7 @@ import { formatRupiah, exportToCSV } from '../utils/helpers';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { doc, setDoc, deleteDoc } from 'firebase/firestore';
 import { COLL_REALISASI, createAuditLog, synchronizeCalculations } from '../dbService';
-import { uploadToCloudinary, deleteFromCloudinary } from '../utils/cloudinary';
+import { uploadFile, deleteFile } from '../cloudinaryService';
 
 interface RealisasiViewProps {
   realisasis: Realisasi[];
@@ -265,21 +265,21 @@ export default function RealisasiView({
         // If there is an old photo on Cloudinary, delete it first
         if (editItem?.bukti_transaksi_public_id) {
           try {
-            await deleteFromCloudinary(editItem.bukti_transaksi_public_id);
+            await deleteFile(editItem.bukti_transaksi_public_id);
           } catch (cloudinaryErr) {
             console.warn("Sedang menghapus, Gagal menghapus asset Cloudinary lama:", cloudinaryErr);
           }
         }
 
         // Upload the new image to Cloudinary
-        const uploadRes = await uploadToCloudinary(formBuktiBase64, "sirekap");
+        const uploadRes = await uploadFile(formBuktiBase64, "sirekap");
         cloudinaryUrl = uploadRes.secure_url;
         cloudinaryPublicId = uploadRes.public_id;
       } else if (!formBuktiBase64) {
         // If the user removed the image completely
         if (editItem?.bukti_transaksi_public_id) {
           try {
-            await deleteFromCloudinary(editItem.bukti_transaksi_public_id);
+            await deleteFile(editItem.bukti_transaksi_public_id);
           } catch (cloudinaryErr) {
             console.warn("Gagal menghapus asset Cloudinary lama:", cloudinaryErr);
           }
@@ -344,7 +344,7 @@ export default function RealisasiView({
       // Clean up Cloudinary asset
       if (item.bukti_transaksi_public_id) {
         try {
-          await deleteFromCloudinary(item.bukti_transaksi_public_id);
+          await deleteFile(item.bukti_transaksi_public_id);
           console.log(`Berhasil menghapus bukti transaksi dari Cloudinary: ${item.bukti_transaksi_public_id}`);
         } catch (cloudinaryErr) {
           console.warn("Gagal menghapus bukti dari Cloudinary:", cloudinaryErr);

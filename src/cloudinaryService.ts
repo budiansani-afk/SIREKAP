@@ -1,0 +1,128 @@
+/**
+ * Cloudinary Robust Integration Service
+ * Handles uploading and deleting assets with server-signed proxy and direct client-side fallbacks.
+ */
+
+export interface CloudinaryServiceResponse {
+  secure_url: string;
+  public_id: string;
+}
+
+/**
+ * Robustly uploads a file (Base64 data URL) to Cloudinary.
+ * First uses our secure server-side proxy (which handles the signature process correctly).
+ * If that fails, it falls back to direct client-side unsigned upload using the 'sirekap' upload_preset.
+ *
+ * @param base64DataUrl The base64-encoded file data URL (e.g. "data:image/png;base64,...")
+ * @param folder The folder to store the asset inside Cloudinary
+ */
+export async function uploadFile(
+  base64DataUrl: string,
+  folder = "sirekap"
+): Promise<CloudinaryServiceResponse> {
+  if (!base64DataUrl) {
+    throw new Error("No file content provided for upload.");
+  }
+
+  // Ensure it's a valid data URL
+  if (!base64DataUrl.startsWith("data:")) {
+    throw new Error("Only Base64 Data URLs are supported for secure uploading.");
+  }
+
+  // Method 1: Upload via Server-side Proxy (Handles the signature securely via Cloudinary's API key/secret)
+  try {
+    console.log(`[CloudinaryService] Attempting server-signed proxy upload to folder: ${folder}`);
+    const response = await fetch("/api/cloudinary/upload", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        image: base64DataUrl,
+        folder,
+      }),
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      if (data && data.secure_url && data.public_id) {
+        console.log("[CloudinaryService] Server-signed upload succeeded:", data.public_id);
+        return {
+          secure_url: data.secure_url,
+          public_id: data.public_id,
+        };
+      }
+    }
+    
+    const errorText = await response.text();
+    console.warn("[CloudinaryService] Server-signed upload returned non-ok status:", response.status, errorText);
+  } catch (proxyError) {
+    console.warn("[CloudinaryService] Server-signed upload failed, trying direct fallback:", proxyError);
+  }
+
+  // Method 2: Direct Client-side Unsigned Upload to Cloudinary (using 'sirekap' preset as fallback)
+  try {
+    console.log("[CloudinaryService] Attempting direct client-side fallback upload to Cloudinary...");
+    const cloudName = "de4prnqa4";
+    const uploadPreset = "sirekap";
+    const url = `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`;
+    
+    const formData = new FormData();
+    formData.append("file", base64DataUrl);
+    formData.append("upload_preset", uploadPreset);
+    formData.append("folder", folder);
+
+    const response = await fetch(url, {
+      method: "POST",
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errResponse = await response.json().catch(() => ({}));
+      throw new Error(errResponse?.error?.message || `Cloudinary direct response error (status: ${response.status})`);
+    }
+
+    const data = await response.json();
+    console.log("[CloudinaryService] Direct client-side upload succeeded:", data.public_id);
+    return {
+      secure_url: data.secure_url,
+      public_id: data.public_id,
+    };
+  } catch (directError: any) {
+    console.error("[CloudinaryService] Both upload methods failed:", directError);
+    throw new Error(`Gagal mengunggah file ke Cloudinary: ${directError?.message || directError}`);
+  }
+}
+
+/**
+ * Deletes a file from Cloudinary securely via server-side API proxy.
+ * 
+ * @param publicId Unique identifier of the asset on Cloudinary to delete
+ */
+export async function deleteFile(
+  publicId: string
+): Promise<{ result: string; public_id: string }> {
+  if (!publicId) {
+    throw new Error("No public_id provided for deletion.");
+  }
+
+  console.log(`[CloudinaryService] Requesting file deletion for public_id: ${publicId}`);
+  const response = await fetch("/api/cloudinary/delete", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      public_id: publicId,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.error || `Gagal menghapus file dari Cloudinary (status: ${response.status})`);
+  }
+
+  const data = await response.json();
+  console.log("[CloudinaryService] Deletion succeeded:", data);
+  return data;
+}

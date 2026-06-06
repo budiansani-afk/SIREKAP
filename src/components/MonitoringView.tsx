@@ -19,7 +19,7 @@ import { formatRupiah, exportToCSV } from '../utils/helpers';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { doc, setDoc, deleteDoc } from 'firebase/firestore';
 import { COLL_MONITORING_FISIK, createAuditLog } from '../dbService';
-import { uploadToCloudinary, deleteFromCloudinary } from '../utils/cloudinary';
+import { uploadFile, deleteFile } from '../cloudinaryService';
 
 interface MonitoringViewProps {
   monitorings: MonitoringFisik[];
@@ -144,21 +144,21 @@ export default function MonitoringView({
         // If there is an old photo on Cloudinary, delete it first
         if (editItem?.foto_kegiatan_public_id) {
           try {
-            await deleteFromCloudinary(editItem.foto_kegiatan_public_id);
+            await deleteFile(editItem.foto_kegiatan_public_id);
           } catch (cloudinaryErr) {
             console.warn("Sedang menghapus, Gagal menghapus asset Cloudinary lama:", cloudinaryErr);
           }
         }
 
         // Upload the new image to Cloudinary
-        const uploadRes = await uploadToCloudinary(formFotoBase64, "sirekap");
+        const uploadRes = await uploadFile(formFotoBase64, "sirekap");
         cloudinaryUrl = uploadRes.secure_url;
         cloudinaryPublicId = uploadRes.public_id;
       } else if (!formFotoBase64) {
         // If the user removed the image completely
         if (editItem?.foto_kegiatan_public_id) {
           try {
-            await deleteFromCloudinary(editItem.foto_kegiatan_public_id);
+            await deleteFile(editItem.foto_kegiatan_public_id);
           } catch (cloudinaryErr) {
             console.warn("Gagal menghapus asset Cloudinary lama:", cloudinaryErr);
           }
@@ -215,7 +215,7 @@ export default function MonitoringView({
       // Clean up Cloudinary asset
       if (item.foto_kegiatan_public_id) {
         try {
-          await deleteFromCloudinary(item.foto_kegiatan_public_id);
+          await deleteFile(item.foto_kegiatan_public_id);
           console.log(`Berhasil menghapus foto kegiatan dari Cloudinary: ${item.foto_kegiatan_public_id}`);
         } catch (cloudinaryErr) {
           console.warn("Gagal menghapus foto dari Cloudinary:", cloudinaryErr);

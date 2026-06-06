@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { AppSettings, UserRole } from '../types';
 import { backupDatabaseToJSON, restoreDatabaseFromJSON, createAuditLog } from '../dbService';
-import { uploadToCloudinary, deleteFromCloudinary } from '../utils/cloudinary';
+import { uploadFile, deleteFile } from '../cloudinaryService';
 
 interface PengaturanViewProps {
   settings: AppSettings | null;
@@ -94,18 +94,18 @@ export default function PengaturanView({
       let cloudinaryPublicId = settings?.logo_instansi_public_id || '';
 
       // If a new base64 logo file was uploaded locally
-      if (instLogo && instLogo.startsWith('data:image/')) {
+      if (instLogo && instLogo.startsWith('data:')) {
         // If there is an old photo on Cloudinary, delete it first
         if (settings?.logo_instansi_public_id) {
           try {
-            await deleteFromCloudinary(settings.logo_instansi_public_id);
+            await deleteFile(settings.logo_instansi_public_id);
           } catch (cloudinaryErr) {
             console.warn("Gagal menghapus logo instansi lama di Cloudinary:", cloudinaryErr);
           }
         }
 
         // Upload the new logo to Cloudinary
-        const uploadRes = await uploadToCloudinary(instLogo, "sirekap");
+        const uploadRes = await uploadFile(instLogo, "sirekap");
         cloudinaryUrl = uploadRes.secure_url;
         cloudinaryPublicId = uploadRes.public_id;
       }
