@@ -11,16 +11,20 @@ const PORT = 3000;
 app.use(express.json({ limit: "30mb" }));
 app.use(express.urlencoded({ limit: "30mb", extended: true }));
 
-// Helper helper to sanitize environment variables that might be wrapped in quotes
+// Helper helper to sanitize environment variables that might be wrapped in quotes or represent missing variables
 const getSanitizedEnv = (key: string, fallback: string): string => {
   const value = process.env[key];
   if (!value) return fallback;
-  return value.replace(/^["']|["']$/g, "").trim();
+  const cleaned = value.replace(/^["']|["']$/g, "").trim();
+  if (cleaned === "" || cleaned === "undefined" || cleaned === "null") {
+    return fallback;
+  }
+  return cleaned;
 };
 
 const cloudName = getSanitizedEnv("CLOUDINARY_CLOUD_NAME", "de4prnqa4");
 const apiKey = getSanitizedEnv("CLOUDINARY_API_KEY", "522531551358338");
-const apiSecret = getSanitizedEnv("CLOUDINARY_API_SECRET", "17j1h0HMoBTG8LUpX3k7gnjDuH0");
+const apiSecret = getSanitizedEnv("CLOUDINARY_API_SECRET", "phNUcFk3bY4zsNJwBH8ffrNIbWk");
 const preset = getSanitizedEnv("CLOUDINARY_PRESET", "sirekap");
 
 console.log(`Cloudinary Configured: cloudName=${cloudName}, api_key_length=${apiKey.length}, preset=${preset}`);
@@ -48,28 +52,32 @@ app.post("/api/cloudinary/upload", async (req, res) => {
     let uploadResponse;
 
     try {
-      // 1. Try traditional signed upload with the custom preset (if preset is signed in Cloudinary)
-      console.log(`Mencoba upload Cloudinary ke folder: ${folder || "sirekap"} dengan preset: ${preset}`);
+      // 1. Direct signed upload (No preset required because we sign with our API secret!). This is the most robust method in production.
+      console.log(`Mencoba upload Cloudinary langsung ke folder: ${folder || "sirekap"}`);
       uploadResponse = await cloudinary.uploader.upload(image, {
         folder: folder || "sirekap",
-        upload_preset: preset,
         resource_type: "auto"
       });
-    } catch (presetError: any) {
-      console.warn("Upload dengan preset gagal, mencoba unsigned upload...", presetError.message || presetError);
-      // 2. Try unsigned upload with the preset (if preset is configured as unsigned in Cloudinary)
+    } catch (directError: any) {
+      console.warn("Upload langsung tanpa preset gagal. Mencoba upload dengan preset: " + (directError.message || directError));
       try {
-        uploadResponse = await cloudinary.uploader.unsigned_upload(image, preset, {
-          folder: folder || "sirekap",
-          resource_type: "auto"
-        });
-      } catch (unsignedError: any) {
-        console.warn("Unsigned upload gagal juga. Mencoba fallback upload langsung tanpa preset...", unsignedError.message || unsignedError);
-        // 3. Robust fallback: traditional direct signed upload into the folder without any preset
+        // 2. Try signed upload with the custom preset
         uploadResponse = await cloudinary.uploader.upload(image, {
           folder: folder || "sirekap",
+          upload_preset: preset,
           resource_type: "auto"
         });
+      } catch (presetError: any) {
+        console.warn("Upload dengan preset gagal, mencoba unsigned upload...", presetError.message || presetError);
+        // 3. Try unsigned upload with the preset
+        try {
+          uploadResponse = await cloudinary.uploader.unsigned_upload(image, preset, {
+            folder: folder || "sirekap",
+            resource_type: "auto"
+          });
+        } catch (unsignedError: any) {
+          throw new Error(`Semua metode upload gagal. Detail error langsung: ${directError.message || directError}. Detail preset: ${presetError.message || presetError}`);
+        }
       }
     }
 
@@ -93,7 +101,25 @@ app.post("/api/cloudinary/delete", async (req, res) => {
       return res.status(400).json({ error: "Required: 'public_id' in request body" });
     }
 
-    const deleteResult = await cloudinary.uploader.destroy(public_id);
+    console.log(`Mencoba menghapus file Cloudinary public_id: ${public_id}`);
+
+    // Loop through resource types because a direct destroy defaults to 'image'. If the file was a PDF,
+    // it was uploaded as 'raw', so destroying as 'image' returns 'not found'.
+    let deleteResult = await cloudinary.uploader.destroy(public_id, { resource_type: "image" });
+    console.log(`Hapus sebagai 'image' hasil:`, deleteResult);
+
+    if (deleteResult.result === "not found") {
+      console.log(`Tidak ditemukan sebagai image, mencoba hapus sebagai 'raw' (misal .pdf): ${public_id}`);
+      deleteResult = await cloudinary.uploader.destroy(public_id, { resource_type: "raw" });
+      console.log(`Hapus sebagai 'raw' hasil:`, deleteResult);
+    }
+
+    if (deleteResult.result === "not found") {
+      console.log(`Tidak ditemukan sebagai raw, mencoba hapus sebagai 'video': ${public_id}`);
+      deleteResult = await cloudinary.uploader.destroy(public_id, { resource_type: "video" });
+      console.log(`Hapus sebagai 'video' hasil:`, deleteResult);
+    }
+
     res.json({
       result: deleteResult.result,
       public_id
