@@ -143,12 +143,28 @@ export default function DokumenView({
     try {
       // Delete from Cloudinary if it has a public_id
       if (item.cloudinary_public_id) {
+        console.log(`[DEBUG_HAPUS] Memulai proses penghapusan asset Cloudinary.`);
+        console.log(`[DEBUG_HAPUS] Parameter public_id yang akan dikirim: "${item.cloudinary_public_id}"`);
         try {
           await deleteFile(item.cloudinary_public_id);
-          console.log(`Berhasil menghapus asset Cloudinary: ${item.cloudinary_public_id}`);
-        } catch (cloudinaryErr) {
-          console.warn("Sedang menghapus, Cloudinary asset error (mungkin sudah dihapus manual):", cloudinaryErr);
+          console.log(`[DEBUG_HAPUS] Berhasil menghapus asset Cloudinary dengan public_id: ${item.cloudinary_public_id}`);
+        } catch (cloudinaryErr: any) {
+          console.error("[DEBUG_HAPUS] Terjadi kesalahan fatal saat memanggil fungsi hapus Cloudinary!");
+          console.error("[DEBUG_HAPUS] Detail Error Object:", cloudinaryErr);
+          console.error("[DEBUG_HAPUS] Pesan Error:", cloudinaryErr?.message || String(cloudinaryErr));
+          
+          const forceConfirm = window.confirm(
+            `KONEKSI CLOUDINARY GAGAL UNTUK PUBLIC_ID: "${item.cloudinary_public_id}"\n\n` +
+            `Detail Error:\n${cloudinaryErr.message || cloudinaryErr}\n\n` +
+            `Apakah Anda ingin tetap memaksa menghapus record dokumen ini secara permanen dari database Firestore?`
+          );
+          if (!forceConfirm) {
+            console.log("[DEBUG_HAPUS] Proses penghapusan dibatalkan oleh pengguna karena kegagalan Cloudinary.");
+            return; // Abort deletion
+          }
         }
+      } else {
+        console.log(`[DEBUG_HAPUS] Dokumen tidak memiliki cloudinary_public_id, lanjut menghapus dari Firestore.`);
       }
 
       await deleteDoc(doc(db, COLL_DOKUMEN, item.id)).catch(err => handleFirestoreError(err, OperationType.DELETE, `${COLL_DOKUMEN}/${item.id}`));
