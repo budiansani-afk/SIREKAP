@@ -151,7 +151,7 @@ export default function MonitoringView({
         }
 
         // Upload the new image to Cloudinary
-        const uploadRes = await uploadToCloudinary(formFotoBase64, "sibiru_monitoring_foto");
+        const uploadRes = await uploadToCloudinary(formFotoBase64, "sirekap");
         cloudinaryUrl = uploadRes.secure_url;
         cloudinaryPublicId = uploadRes.public_id;
       } else if (!formFotoBase64) {

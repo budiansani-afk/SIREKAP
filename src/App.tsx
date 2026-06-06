@@ -639,10 +639,10 @@ export default function App() {
             </div>
             
             <div className="flex flex-col justify-center border-l border-slate-200 pl-3">
-              <h1 className="text-xs sm:text-xs md:text-[13px] font-black tracking-wider text-orange-600 uppercase">
-                SIREKAP TAHUN ANGGARAN 2026 • Bidang Pertanahan
+              <h1 className="text-sm sm:text-base md:text-md lg:text-[17px] font-black tracking-tight text-blue-900 uppercase">
+                SIREKAP TAHUN ANGGARAN 2026 - BIDANG PERTANAHAN
               </h1>
-              <p className="text-sm md:text-[15px] font-extrabold font-display text-blue-950 tracking-tight leading-snug mt-0.5">
+              <p className="text-[10px] sm:text-[11px] font-extrabold font-sans text-slate-500 tracking-wider uppercase mt-0.5">
                 Sistem Informasi Rekapitulasi, Evaluasi, dan Kinerja Anggaran Pertanahan
               </p>
             </div>
@@ -695,13 +695,6 @@ export default function App() {
                   <h2 className="text-xs sm:text-xs font-black text-orange-400 font-display tracking-wide uppercase leading-tight mt-1 truncate">
                     {menuItems.find(item => item.id === activePage)?.label || "Dashboard Utama"}
                   </h2>
-                  <div className="flex items-center gap-1.5 mt-1.5">
-                    <span className="relative flex h-1.5 w-1.5 shrink-0">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-orange-550"></span>
-                    </span>
-                    <span className="text-[10px] text-blue-300 font-mono tracking-wide font-black">T.A. {appSettings?.tahun_anggaran_aktif || 2026}</span>
-                  </div>
                 </div>
               ) : (
                 <div className="flex items-center justify-center h-10 w-10 mx-auto rounded-lg bg-orange-500/10 text-orange-400 font-black text-[11px] border border-orange-500/30 animate-fade-in" title={menuItems.find(item => item.id === activePage)?.label}>

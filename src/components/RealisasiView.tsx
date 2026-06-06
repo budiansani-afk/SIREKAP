@@ -272,7 +272,7 @@ export default function RealisasiView({
         }
 
         // Upload the new image to Cloudinary
-        const uploadRes = await uploadToCloudinary(formBuktiBase64, "sibiru_realisasi_bukti");
+        const uploadRes = await uploadToCloudinary(formBuktiBase64, "sirekap");
         cloudinaryUrl = uploadRes.secure_url;
         cloudinaryPublicId = uploadRes.public_id;
       } else if (!formBuktiBase64) {

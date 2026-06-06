@@ -105,7 +105,7 @@ export default function PengaturanView({
         }
 
         // Upload the new logo to Cloudinary
-        const uploadRes = await uploadToCloudinary(instLogo, "sibiru_set_logo");
+        const uploadRes = await uploadToCloudinary(instLogo, "sirekap");
         cloudinaryUrl = uploadRes.secure_url;
         cloudinaryPublicId = uploadRes.public_id;
       }

@@ -95,7 +95,7 @@ export default function DokumenView({
     setIsUploading(true);
     try {
       // 1. Upload Base64 to Cloudinary
-      const cloudinaryRes = await uploadToCloudinary(fileBase64, "sibiru_arsip_dokumen");
+      const cloudinaryRes = await uploadToCloudinary(fileBase64, "sirekap");
 
       const docId = `dok_${Date.now()}`;
       const payload: DokumenArsip = {
