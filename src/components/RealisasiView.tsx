@@ -468,6 +468,7 @@ export default function RealisasiView({
                 <th className="p-3.5">Uraian / Keterangan</th>
                 <th className="p-3.5 text-right w-36">Pagu Anggaran</th>
                 <th className="p-3.5 text-right w-36">Nominal Realisasi</th>
+                <th className="p-3.5 text-right w-36">Sisa Anggaran</th>
                 <th className="p-3.5 text-center w-28">Persen Serapan</th>
                 <th className="p-3.5 text-center w-28">Lampiran / Bukti</th>
                 {canEdit && <th className="p-3.5 text-center w-24">Aksi</th>}
@@ -476,12 +477,13 @@ export default function RealisasiView({
             <tbody className="divide-y divide-slate-100 text-slate-700">
               {filteredRealisasis.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="p-8 text-center text-slate-500 font-semibold">Tabel realisasi kosong / Atur saringan filter.</td>
+                  <td colSpan={9} className="p-8 text-center text-slate-500 font-semibold">Tabel realisasi kosong / Atur saringan filter.</td>
                 </tr>
               ) : (
                 filteredRealisasis.map((r, i) => {
                   const subKeg = subKegiatans.find(s => s.kode_sub_kegiatan === r.kode_sub_kegiatan);
                   const paguAmt = subKeg ? subKeg.pagu : 0;
+                  const sisaAmt = subKeg ? subKeg.sisa : r.sisa_anggaran;
 
                   return (
                     <tr key={i} className="hover:bg-slate-50/50 transition antialiased">
@@ -502,6 +504,7 @@ export default function RealisasiView({
                       </td>
                       <td className="p-3.5 text-right font-black text-slate-900">{formatRupiah(paguAmt)}</td>
                       <td className="p-3.5 text-right font-black text-rose-950">{formatRupiah(r.nominal_realisasi)}</td>
+                      <td className="p-3.5 text-right font-black text-indigo-900">{formatRupiah(sisaAmt)}</td>
                       <td className="p-3.5 text-center">
                         <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-900 font-black text-[10px]">{r.persentase_realisasi}%</span>
                       </td>

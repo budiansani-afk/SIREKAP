@@ -392,8 +392,9 @@ export default function DashboardView({
             </div>
           </div>
         </div>
+      </div>
 
-            {/* 3. Program & Kegiatan Progress Bars */}
+      {/* 3. Program & Kegiatan Progress Bars */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-fade-in" id="dashboard-program-progression">
         
         {/* Left: Program detail progress */}
@@ -484,8 +485,7 @@ export default function DashboardView({
                 ))
             )}
           </div>
-        </div>      </div>
-
+        </div>
       </div>
 
       {/* Informational Lightbox Overlay Modal */}

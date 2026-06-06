@@ -32,20 +32,27 @@ app.post("/api/cloudinary/upload", async (req, res) => {
     }
 
     let uploadResponse;
+    const preset = process.env.CLOUDINARY_PRESET || "sibirutanah";
+
     try {
-      // Attempt upload using the custom upload_preset specified by the user
-      const preset = process.env.CLOUDINARY_PRESET || "sibirutanah";
+      // 1. Try traditional signed upload with the custom preset (if preset is signed in Cloudinary)
       uploadResponse = await cloudinary.uploader.upload(image, {
         folder: folder || "sibirutanah",
         upload_preset: preset
       });
     } catch (presetError: any) {
-      // Log as standard info to prevent triggering test suite warnings or stderr exceptions,
-      // then execute a robust, secure signed upload fallback directly into the specified folder.
-      console.log(`Info: Preset '${process.env.CLOUDINARY_PRESET || "sibirutanah"}' tidak ditemukan atau belum disetup sebagai preset signed di dashboard Cloudinary. Mengunggah secara langsung menggunakan metode autentikasi API.`);
-      uploadResponse = await cloudinary.uploader.upload(image, {
-        folder: folder || "sibirutanah"
-      });
+      // 2. Try unsigned upload with the preset (if preset is configured as unsigned in Cloudinary)
+      try {
+        uploadResponse = await cloudinary.uploader.unsigned_upload(image, preset, {
+          folder: folder || "sibirutanah"
+        });
+      } catch (unsignedError: any) {
+        // 3. Robust fallback: traditional direct signed upload into the folder without any preset
+        console.log(`Info: Preset '${preset}' gagal digunakan (signed/unsigned). Melakukan fallback upload langsung...`);
+        uploadResponse = await cloudinary.uploader.upload(image, {
+          folder: folder || "sibirutanah"
+        });
+      }
     }
 
     res.json({
