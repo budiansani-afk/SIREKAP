@@ -612,7 +612,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#ebf4fc] via-[#f0f7ff] to-[#fff3e0] flex flex-col font-sans text-slate-800 animate-fade-in" id="sibiru-container">
+    <div className="h-screen overflow-hidden bg-gradient-to-br from-[#ebf4fc] via-[#f0f7ff] to-[#fff3e0] flex flex-col font-sans text-slate-800 animate-fade-in" id="sibiru-container">
       
       {/* Top running gradient bar (Blue with Orange gradient banner decoration) */}
       <div className="h-1.5 bg-gradient-to-r from-blue-700 via-blue-500 to-orange-500 w-full sticky top-0 z-50 print:hidden shadow-xs" />

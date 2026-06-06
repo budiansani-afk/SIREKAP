@@ -140,7 +140,7 @@ export default function MonitoringView({
       let cloudinaryPublicId = editItem?.foto_kegiatan_public_id || '';
 
       // If a new base64 file is uploaded
-      if (formFotoBase64 && formFotoBase64.startsWith('data:image/')) {
+      if (formFotoBase64 && formFotoBase64.startsWith('data:')) {
         // If there is an old photo on Cloudinary, delete it first
         if (editItem?.foto_kegiatan_public_id) {
           try {

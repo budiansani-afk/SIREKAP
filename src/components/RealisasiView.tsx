@@ -261,7 +261,7 @@ export default function RealisasiView({
       let cloudinaryPublicId = editItem?.bukti_transaksi_public_id || '';
 
       // If a new base64 file is uploaded
-      if (formBuktiBase64 && formBuktiBase64.startsWith('data:image/')) {
+      if (formBuktiBase64 && formBuktiBase64.startsWith('data:')) {
         // If there is an old photo on Cloudinary, delete it first
         if (editItem?.bukti_transaksi_public_id) {
           try {
