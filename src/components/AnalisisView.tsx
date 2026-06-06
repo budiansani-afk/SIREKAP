@@ -180,19 +180,53 @@ export default function AnalisisView({
 
         {/* Sizing comparative chart */}
         <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-xs space-y-4">
-          <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5 uppercase">
-            <PieIcon size={14} className="text-blue-800" />
-            Alokasi Pagu vs Realisasi per Program Kegiatan
-          </h4>
+          <div className="flex justify-between items-center">
+            <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5 uppercase">
+              <PieIcon size={14} className="text-blue-800" />
+              Alokasi Pagu vs Realisasi per Program Kegiatan
+            </h4>
+            <span className="text-[10px] bg-blue-100/60 text-blue-900 border border-blue-200 px-2 py-0.5 rounded font-black font-mono">DPA TERVAKID</span>
+          </div>
           <div className="h-64 w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={programChartData}>
+              <BarChart data={programChartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="paguGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#1d4ed8" />
+                    <stop offset="100%" stopColor="#60a5fa" />
+                  </linearGradient>
+                  <linearGradient id="realisasiGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#ea580c" />
+                    <stop offset="100%" stopColor="#fdbc74" />
+                  </linearGradient>
+                </defs>
                 <XAxis dataKey="name" stroke="#64748b" style={{ fontSize: '10px', fontWeight: 'bold' }} />
                 <YAxis stroke="#64748b" style={{ fontSize: '10px' }} />
-                <Tooltip formatter={(value) => [formatRupiah(Number(value))]} />
-                <Legend />
-                <Bar dataKey="Pagu" fill="#1e3a8a" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="Realisasi" fill="#000000" radius={[4, 4, 0, 0]} />
+                <Tooltip 
+                  content={({ active, payload, label }) => {
+                    if (active && payload && payload.length) {
+                      const paguVal = Number(payload[0].value || 0);
+                      const realisasiVal = Number(payload[1].value || 0);
+                      const sisa = Math.max(0, paguVal - realisasiVal);
+                      const p = paguVal > 0 ? (realisasiVal / paguVal) * 100 : 0;
+                      return (
+                        <div className="bg-slate-900 text-white p-3 rounded-xl shadow-xl border border-slate-700 text-xs text-left max-w-[240px] space-y-1.5">
+                          <p className="font-extrabold border-b border-slate-700 pb-1 text-slate-350 font-mono">KODE: {label}</p>
+                          <div className="space-y-0.5 font-semibold">
+                            <p className="flex justify-between gap-4"><span className="text-blue-300">Pagu:</span> <span className="font-mono">{formatRupiah(paguVal)}</span></p>
+                            <p className="flex justify-between gap-4"><span className="text-orange-350 text-orange-400">Realisasi:</span> <span className="font-mono text-orange-300 font-extrabold">{formatRupiah(realisasiVal)}</span></p>
+                            <p className="flex justify-between gap-4 border-t border-dashed border-slate-700/50 pt-1"><span className="text-slate-405">Sisa:</span> <span className="font-mono">{formatRupiah(sisa)}</span></p>
+                            <p className="flex justify-between gap-4 text-emerald-400 font-black"><span className="uppercase text-[9px] tracking-wider leading-relaxed">Rasio Serapan:</span> <span>{p.toFixed(2)}%</span></p>
+                          </div>
+                        </div>
+                      );
+                    }
+                    return null;
+                  }}
+                />
+                <Legend iconSize={10} style={{ fontSize: '11px', fontWeight: 'bold' }} />
+                <Bar dataKey="Pagu" fill="url(#paguGrad)" radius={[4, 4, 0, 0]} name="Alokasi Pagu DPA" />
+                <Bar dataKey="Realisasi" fill="url(#realisasiGrad)" radius={[4, 4, 0, 0]} name="Realisasi Diserap" />
               </BarChart>
             </ResponsiveContainer>
           </div>

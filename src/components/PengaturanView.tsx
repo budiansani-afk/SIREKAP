@@ -37,6 +37,9 @@ export default function PengaturanView({
   const [isSaving, setIsSaving] = useState(false);
   const [jabatanPejabatTtd, setJabatanPejabatTtd] = useState('');
   const [nipPejabatTtd, setNipPejabatTtd] = useState('');
+  const [namaBendahara, setNamaBendahara] = useState('');
+  const [jabatanBendahara, setJabatanBendahara] = useState('');
+  const [nipBendahara, setNipBendahara] = useState('');
 
   useEffect(() => {
     if (settings) {
@@ -46,6 +49,9 @@ export default function PengaturanView({
       setNamaPejabatTtd(settings.nama_pejabat_ttd || '');
       setJabatanPejabatTtd(settings.jabatan_pejabat_ttd || '');
       setNipPejabatTtd(settings.nip_pejabat_ttd || '');
+      setNamaBendahara(settings.nama_bendahara || '');
+      setJabatanBendahara(settings.jabatan_bendahara || 'Bendahara Pengeluaran');
+      setNipBendahara(settings.nip_bendahara || '');
     }
   }, [settings]);
 
@@ -111,7 +117,10 @@ export default function PengaturanView({
         tahun_anggaran_aktif: fiscalYear,
         nama_pejabat_ttd: namaPejabatTtd.trim(),
         jabatan_pejabat_ttd: jabatanPejabatTtd.trim(),
-        nip_pejabat_ttd: nipPejabatTtd.trim()
+        nip_pejabat_ttd: nipPejabatTtd.trim(),
+        nama_bendahara: namaBendahara.trim(),
+        jabatan_bendahara: jabatanBendahara.trim(),
+        nip_bendahara: nipBendahara.trim()
       });
 
       // AuditTrail Log
@@ -128,7 +137,10 @@ export default function PengaturanView({
           tahun_anggaran_aktif: fiscalYear,
           nama_pejabat_ttd: namaPejabatTtd,
           jabatan_pejabat_ttd: jabatanPejabatTtd,
-          nip_pejabat_ttd: nipPejabatTtd
+          nip_pejabat_ttd: nipPejabatTtd,
+          nama_bendahara: namaBendahara,
+          jabatan_bendahara: jabatanBendahara,
+          nip_bendahara: nipBendahara
         }
       );
 
@@ -306,6 +318,48 @@ export default function PengaturanView({
                     placeholder="e.g. 19780512 200501 1 002"
                     value={nipPejabatTtd}
                     onChange={(e) => setNipPejabatTtd(e.target.value)}
+                    disabled={!canEdit || isSaving}
+                    className="w-full p-2.5 border border-slate-200 rounded-lg bg-slate-50 disabled:bg-slate-100/50 outline-blue-600 focus:bg-white text-slate-900"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Spesimen Bendahara Pengeluaran */}
+            <div className="border-t border-slate-200/60 pt-3 mt-3 space-y-3">
+              <span className="text-[10px] uppercase tracking-wider font-extrabold text-orange-600 block">Spesimen Bendahara Pengeluaran</span>
+              
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">Nama Lengkap Bendahara</label>
+                <input 
+                  type="text"
+                  placeholder="e.g. Rohana, S.E."
+                  value={namaBendahara}
+                  onChange={(e) => setNamaBendahara(e.target.value)}
+                  disabled={!canEdit || isSaving}
+                  className="w-full p-2.5 border border-slate-200 rounded-lg bg-slate-50 disabled:bg-slate-100/50 outline-blue-600 focus:bg-white text-slate-900 font-semibold"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">Jabatan Bendahara</label>
+                  <input 
+                    type="text"
+                    placeholder="e.g. Bendahara Pengeluaran"
+                    value={jabatanBendahara}
+                    onChange={(e) => setJabatanBendahara(e.target.value)}
+                    disabled={!canEdit || isSaving}
+                    className="w-full p-2.5 border border-slate-200 rounded-lg bg-slate-50 disabled:bg-slate-100/50 outline-blue-600 focus:bg-white text-slate-900"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">NIP Bendahara</label>
+                  <input 
+                    type="text"
+                    placeholder="e.g. 19850614 201101 2 004"
+                    value={nipBendahara}
+                    onChange={(e) => setNipBendahara(e.target.value)}
                     disabled={!canEdit || isSaving}
                     className="w-full p-2.5 border border-slate-200 rounded-lg bg-slate-50 disabled:bg-slate-100/50 outline-blue-600 focus:bg-white text-slate-900"
                   />

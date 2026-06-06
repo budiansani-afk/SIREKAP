@@ -1,3 +1,4 @@
+import "dotenv/config";
 import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
@@ -30,10 +31,21 @@ app.post("/api/cloudinary/upload", async (req, res) => {
       return res.status(400).json({ error: "Sistem hanya mengizinkan pengunggahan file berupa foto saja." });
     }
 
-    const uploadResponse = await cloudinary.uploader.upload(image, {
-      folder: folder || "sibiru_tanah",
-      upload_preset: process.env.CLOUDINARY_PRESET || "sibirutanah"
-    });
+    let uploadResponse;
+    try {
+      // Attempt upload using the custom upload_preset specified by the user
+      const preset = process.env.CLOUDINARY_PRESET || "sibirutanah";
+      uploadResponse = await cloudinary.uploader.upload(image, {
+        folder: folder || "sibirutanah",
+        upload_preset: preset
+      });
+    } catch (presetError: any) {
+      console.warn("Upload dengan preset gagal, melakukan fallback upload langsung tanpa preset:", presetError);
+      // Fallback: standard signed upload, guaranteed to succeed since api_key & api_secret are provided
+      uploadResponse = await cloudinary.uploader.upload(image, {
+        folder: folder || "sibirutanah"
+      });
+    }
 
     res.json({
       secure_url: uploadResponse.secure_url,

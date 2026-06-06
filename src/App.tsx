@@ -245,7 +245,10 @@ export default function App() {
           logo_instansi_public_id: d.logo_instansi_public_id || "",
           nama_pejabat_ttd: d.nama_pejabat_ttd || "",
           jabatan_pejabat_ttd: d.jabatan_pejabat_ttd || "",
-          nip_pejabat_ttd: d.nip_pejabat_ttd || ""
+          nip_pejabat_ttd: d.nip_pejabat_ttd || "",
+          nama_bendahara: d.nama_bendahara || "",
+          jabatan_bendahara: d.jabatan_bendahara || "",
+          nip_bendahara: d.nip_bendahara || ""
         });
       }
     });
@@ -374,7 +377,7 @@ export default function App() {
             </div>
           </div>
           <h2 className="mt-2 text-center text-3xl font-black tracking-tight">
-            <span className="text-blue-400">SIBIRU</span> <span className="text-orange-500">TANAH</span>
+            <span className="text-blue-600">SIBIRU</span> <span className="text-orange-500">TANAH</span>
           </h2>
           <p className="mt-2 text-center text-xs font-semibold text-slate-400 tracking-wide uppercase">
             Sistem Informasi Belanja & Realisasi Keuangan 2026
@@ -506,6 +509,7 @@ export default function App() {
             realisasis={realisasis} 
             monitorings={monitorings}
             dokumens={dokumens}
+            onNavigate={(page) => setActivePage(page as any)}
           />
         );
       case "program":
@@ -599,7 +603,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-[#f8fafc] flex flex-col font-sans text-slate-800" id="sibiru-container">
+    <div className="min-h-screen bg-[#ebf4fc] flex flex-col font-sans text-slate-800" id="sibiru-container">
       
       {/* Top Header navbar panel (Professional Polish: white bg, border, clear typography) */}
       <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 sticky top-0 z-40 select-none print:hidden shadow-sm" id="main-topbar">
@@ -610,13 +614,21 @@ export default function App() {
           >
             <Menu size={20} />
           </button>
-          <div className="flex items-center gap-3">
-            <h2 className="text-base font-bold text-slate-850 font-display tracking-tight uppercase">
-              {menuItems.find(item => item.id === activePage)?.label || "Dashboard Utama"}
-            </h2>
-            <span className="px-2.5 py-0.5 bg-blue-50 text-blue-700 text-[10px] font-bold rounded-full uppercase font-mono tracking-wide">
-              T.A. {appSettings?.tahun_anggaran_aktif || 2026}
+          
+          <div className="flex items-center gap-3.5">
+            {/* Title SIBIRU in outstanding Blue with Orange gradient accent */}
+            <span className="text-xs sm:text-sm font-black text-blue-600 tracking-wider font-display border-r pr-3 border-slate-200">
+              SIBIRU
             </span>
+            
+            <div className="flex flex-col justify-center">
+              <h2 className="text-xs sm:text-xs md:text-sm font-black text-slate-800 font-display tracking-tight uppercase leading-none">
+                {menuItems.find(item => item.id === activePage)?.label || "Dashboard Utama"}
+              </h2>
+              <span className="text-[10px] md:text-[11px] text-slate-500 font-bold mt-1 font-sans leading-none block">
+                T.A. {appSettings?.tahun_anggaran_aktif || 2026}
+              </span>
+            </div>
           </div>
         </div>
 
@@ -671,7 +683,7 @@ export default function App() {
                 </div>
                 <div>
                   <h1 className="text-base font-black tracking-tight font-display text-white">
-                    <span className="text-blue-350">SIBIRU</span> <span className="text-orange-400">TANAH</span>
+                    <span className="text-blue-500 text-blue-400">SIBIRU</span> <span className="text-orange-400">TANAH</span>
                   </h1>
                   <p className="text-[9px] uppercase tracking-wider text-blue-300 font-bold">Pertanahan Kab. Bima</p>
                 </div>
@@ -733,7 +745,7 @@ export default function App() {
         </aside>
 
         {/* Core Contents viewport with professional bg slate */}
-        <main className="flex-1 p-6 md:p-8 overflow-y-auto bg-[#f8fafc]" id="main-viewport-content">
+        <main className="flex-1 p-6 md:p-8 overflow-y-auto bg-[#ebf4fc]" id="main-viewport-content">
           {renderViewContent()}
         </main>
 

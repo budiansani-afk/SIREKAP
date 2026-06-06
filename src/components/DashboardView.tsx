@@ -21,6 +21,7 @@ interface DashboardProps {
   realisasis: Realisasi[];
   monitorings: MonitoringFisik[];
   dokumens: DokumenArsip[];
+  onNavigate?: (page: 'dashboard' | 'program' | 'rka' | 'realisasi' | 'monitoring' | 'dokumen' | 'laporan' | 'analisis' | 'logs' | 'pengaturan') => void;
 }
 
 export default function DashboardView({
@@ -29,7 +30,8 @@ export default function DashboardView({
   subKegiatans,
   realisasis,
   monitorings,
-  dokumens
+  dokumens,
+  onNavigate
 }: DashboardProps) {
   const [selectedInfo, setSelectedInfo] = React.useState<{ title: string; content: string; type: 'guide' | 'alert' } | null>(null);
 
@@ -92,54 +94,55 @@ export default function DashboardView({
       {/* Welcome Banner */}
       <div 
         onClick={() => setSelectedInfo({
-          title: "Panduan Penggunaan Sistem SIBIRU-TANAH 2026",
-          content: "Sistem Informasi Belanja dan Realisasi Keuangan Sektor Pertahanan & Pertanahan (SIBIRU TANAH) dirancang untuk menyinkronkan seluruh pengelolaan DPA, Program, Kegiatan Utama, Sub-Kegiatan, hingga Realisasi Anggaran Kas (RKA). Anda dapat memantau serapan kas bulanan, mengekspor laporan SP2D, serta mengelola berkas pertanahan secara digital.",
+          title: "Sistem SIBIRU Realoperasi - Informasi Lengkap",
+          content: "Sistem Informasi Belanja dan Realisasi Keuangan Sektor Pertanahan Kabupaten Bima, Provinsi Nusa Tenggara Barat. Seluruh data transaksi, cetakan laporan DPA, dan monitoring terdokumentasi serta tersinkronisasi secara real-time.\n\nPisau Analisis SIBIRU-TANAH 2026 dirancang untuk menyinkronkan seluruh pengelolaan DPA, Program, Kegiatan Utama, Sub-Kegiatan, hingga Realisasi Anggaran Kas (RKA). Anda dapat memantau serapan kas bulanan, mengekspor laporan SP2D, serta mengelola berkas pertanahan secara digital.",
           type: 'guide'
         })}
-        className="bg-gradient-to-r from-[#172554] via-[#1e3a8a] to-[#1e40af] hover:from-[#131d42] hover:to-[#17328c] rounded-xl p-6 text-white shadow-xs cursor-pointer group transition-all duration-300 relative overflow-hidden animate-fade-in" 
+        className="bg-gradient-to-r from-[#172554] via-[#1e3a8a] to-[#1e40af] hover:from-[#131d42] hover:to-[#17328c] rounded-xl p-4 text-white shadow-xs cursor-pointer group transition-all duration-300 relative overflow-hidden animate-fade-in flex flex-col sm:flex-row items-center justify-between gap-4" 
         id="welcome-pane"
         title="Klik untuk membuka informasi panduan sistem lengkap"
       >
         <div className="absolute right-0 bottom-0 opacity-10 transform translate-x-12 translate-y-6 group-hover:scale-105 transition-transform duration-300">
-          <Activity size={320} />
+          <Activity size={240} />
         </div>
-        <div className="relative z-10">
-          <h2 className="text-xl md:text-2xl font-bold font-display flex items-center gap-2">
-            <span className="bg-white/10 px-3 py-1 rounded-lg text-xs border border-white/20 select-none font-mono">TA 2026</span>
+        <div className="relative z-10 flex items-center gap-3">
+          <span className="bg-white/10 px-2.5 py-1 rounded-lg text-xs border border-white/20 select-none font-mono">T.A. 2026</span>
+          <h2 className="text-lg md:text-xl font-bold font-display tracking-tight">
             Sistem SIBIRU Realoperasi 
-            <span className="text-[11px] font-semibold bg-orange-500 text-white px-2 py-0.5 rounded-full ml-auto animate-pulse">Klik Info Detail</span>
           </h2>
-          <p className="text-blue-100/90 mt-1.5 max-w-2xl text-xs md:text-sm leading-relaxed group-hover:text-white transition-colors">
-            Sistem Informasi Belanja dan Realisasi Keuangan Sektor Pertanahan Kabupaten Bima, Provinsi Nusa Tenggara Barat. Seluruh data transaksi, cetakan laporan DPA, dan monitoring terdokumentasi serta tersinkronisasi secara real-time. Klik banner ini untuk melihat infografis panduan dasar.
-          </p>
+        </div>
+        <div className="relative z-10 mt-2 sm:mt-0">
+          <button 
+            type="button"
+            className="px-4 py-1.5 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 active:scale-95 text-white font-extrabold text-xs rounded-lg shadow-md transition flex items-center gap-1 cursor-pointer"
+          >
+            Klik info detail
+          </button>
         </div>
       </div>
 
-      {/* Alerts */}
+      {/* Compact Alerts (Sistem Peringatan Dini dibuat lebih kecil) */}
       {alerts.length > 0 && (
-        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-amber-900 space-y-2 text-sm shadow-2xs" id="dashboard-alerts">
-          <div className="flex items-center gap-2 font-black text-amber-950 uppercase tracking-wide border-b border-amber-200/50 pb-2 mb-2">
-            <AlertTriangle className="text-amber-600 animate-bounce" size={18} />
-            Sistem Peringatan Dini (Early Warning System)
+        <div className="bg-amber-50/90 border border-amber-200/80 rounded-lg p-2.5 text-amber-950 text-[11px] shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 border-l-4 border-l-amber-500" id="dashboard-alerts">
+          <div className="flex items-center gap-1.5 font-black uppercase tracking-wide shrink-0 text-amber-905 text-amber-900">
+            <AlertTriangle className="text-amber-600 animate-pulse shrink-0" size={14} />
+            <span>Peringatan Dini ({alerts.length})</span>
           </div>
-          <ul className="space-y-2.5">
-            {alerts.map((alert, i) => (
-              <li key={i}>
-                <button 
-                  onClick={() => setSelectedInfo({
-                    title: "Detail Notifikasi & Tindakan Preventif",
-                    content: alert + "\n\nLangkah Penanganan:\n1. Segera lakukan penyesuaian/revisi DPA melalui menu RKA belanja jika terdapat defisit belanja kas.\n2. Hubungi operator penanggung jawab kegiatan setempat untuk memvalidasi kelengkapan berkas fisik SP2D.\n3. Cetak rekap bulanan SP2D sebagai bahan verifikasi dalam Rapat Koordinasi Evaluasi Serapan Anggaran.",
-                    type: 'alert'
-                  })}
-                  className="text-left w-full hover:underline decoration-amber-500 hover:text-amber-950 flex items-start gap-2 cursor-pointer group"
-                >
-                  <span className="text-amber-500 font-extrabold group-hover:scale-125 transition-transform">•</span>
-                  <span className="flex-1 font-semibold text-amber-900 group-hover:text-amber-950">{alert}</span>
-                  <span className="text-[10px] text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded font-bold whitespace-nowrap">Detail Tindak</span>
-                </button>
-              </li>
-            ))}
-          </ul>
+          <div className="flex-1 min-w-0">
+            <marquee scrollamount="2.5" className="cursor-pointer font-semibold text-amber-900 block font-mono" title="Scroll Peringatan, klik Detail Tindak untuk petunjuk penanganan.">
+              {alerts.join(" | ")}
+            </marquee>
+          </div>
+          <button 
+            onClick={() => setSelectedInfo({
+              title: "Daftar Warning & Petunjuk Penanganan Defisit",
+              content: alerts.map((a, idx) => `${idx + 1}. ${a}`).join("\n\n") + "\n\nLangkah Penanganan:\n1. Segera lakukan penyesuaian/revisi DPA melalui menu RKA belanja jika terdapat defisit belanja kas.\n2. Hubungi operator penanggung jawab daerah setempat untuk memvalidasi kelengkapan berkas fisik SP2D.\n3. Cocokkan sisa DPA agar rasio tetap berada di zona hijau.",
+              type: 'alert'
+            })}
+            className="px-2 py-0.5 bg-amber-100 hover:bg-amber-205 text-[#7a4805] text-[10px] font-extrabold rounded cursor-pointer transition shrink-0 self-end sm:self-auto hover:bg-amber-200"
+          >
+            Detail Tindak
+          </button>
         </div>
       )}
 
@@ -200,34 +203,63 @@ export default function DashboardView({
       </div>
 
       {/* Structural Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4" id="stats-mini-grid">
-        <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 text-center hover:bg-slate-100/50 transition">
-          <Layers size={18} className="mx-auto text-slate-600 mb-1" />
-          <h4 className="text-emerald-700 text-lg font-bold">{programs.length}</h4>
-          <p className="text-slate-500 text-xs font-semibold uppercase tracking-wider">Program</p>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 animate-fade-in" id="stats-mini-grid">
+        <div 
+          onClick={() => onNavigate?.('program')}
+          className="bg-white p-4 rounded-xl border border-slate-200 text-center hover:bg-blue-50/50 hover:border-blue-400 cursor-pointer shadow-2xs group transition-all duration-200 animate-fade-in"
+          title="Klik untuk langsung menuju informasi Program"
+        >
+          <Layers size={18} className="mx-auto text-slate-500 mb-1 group-hover:text-blue-600 transition-colors" />
+          <h4 className="text-blue-900 text-lg font-black">{programs.length}</h4>
+          <p className="text-slate-600 text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1">
+            Info Program <span className="text-[10px] text-[#ea580c] shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">→</span>
+          </p>
         </div>
-        <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 text-center hover:bg-slate-100/50 transition">
-          <Briefcase size={18} className="mx-auto text-slate-600 mb-1" />
-          <h4 className="text-emerald-700 text-lg font-bold">{kegiatans.length}</h4>
-          <p className="text-slate-500 text-xs font-semibold uppercase tracking-wider">Kegiatan</p>
+        <div 
+          onClick={() => onNavigate?.('program')}
+          className="bg-white p-4 rounded-xl border border-slate-200 text-center hover:bg-blue-50/50 hover:border-blue-400 cursor-pointer shadow-2xs group transition-all duration-200 animate-fade-in"
+          title="Klik untuk langsung menuju informasi Kegiatan"
+        >
+          <Briefcase size={18} className="mx-auto text-slate-500 mb-1 group-hover:text-blue-600 transition-colors" />
+          <h4 className="text-blue-900 text-lg font-black">{kegiatans.length}</h4>
+          <p className="text-slate-600 text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1">
+            Info Kegiatan <span className="text-[10px] text-[#ea580c] shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">→</span>
+          </p>
         </div>
-        <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 text-center hover:bg-slate-100/50 transition">
-          <Layers size={18} className="mx-auto text-slate-600 mb-1" />
-          <h4 className="text-emerald-700 text-lg font-bold">{subKegiatans.length}</h4>
-          <p className="text-slate-500 text-xs font-semibold uppercase tracking-wider">Sub-Kegiatan</p>
+        <div 
+          onClick={() => onNavigate?.('program')}
+          className="bg-white p-4 rounded-xl border border-slate-200 text-center hover:bg-blue-50/50 hover:border-blue-400 cursor-pointer shadow-2xs group transition-all duration-200 animate-fade-in"
+          title="Klik untuk langsung menuju informasi Sub-Kegiatan"
+        >
+          <Layers size={18} className="mx-auto text-slate-500 mb-1 group-hover:text-blue-600 transition-colors" />
+          <h4 className="text-blue-900 text-lg font-black">{subKegiatans.length}</h4>
+          <p className="text-slate-600 text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1">
+            Info Sub Kegiatan <span className="text-[10px] text-[#ea580c] shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">→</span>
+          </p>
         </div>
-        <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 text-center hover:bg-slate-100/50 transition">
-          <FileCheck size={18} className="mx-auto text-slate-600 mb-1" />
-          <h4 className="text-emerald-700 text-lg font-bold">{dokumens.length}</h4>
-          <p className="text-slate-500 text-xs font-semibold uppercase tracking-wider">Arsip Dokumen</p>
+        <div 
+          onClick={() => onNavigate?.('dokumen')}
+          className="bg-white p-4 rounded-xl border border-slate-200 text-center hover:bg-blue-50/50 hover:border-blue-400 cursor-pointer shadow-2xs group transition-all duration-200 animate-fade-in"
+          title="Klik untuk langsung menuju bagian arsip dokumen"
+        >
+          <FileCheck size={18} className="mx-auto text-slate-500 mb-1 group-hover:text-blue-600 transition-colors" />
+          <h4 className="text-blue-900 text-lg font-black">{dokumens.length}</h4>
+          <p className="text-slate-600 text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1">
+            Arsip Dokumen <span className="text-[10px] text-[#ea580c] shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">→</span>
+          </p>
         </div>
       </div>
 
       {/* Charts Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6" id="dashboard-charts">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-in" id="dashboard-charts">
         
-        {/* 1. Serapan Bulanan (Bar Chart) */}
-        <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm lg:col-span-2 flex flex-col justify-between" id="chart-bulan">
+        {/* 1. Serapan Bulanan (Bar Chart) (Tren Realisasi Bulanan clickable) */}
+        <div 
+          onClick={() => onNavigate?.('analisis')}
+          className="bg-white p-6 rounded-2xl border border-slate-200 hover:border-blue-400 cursor-pointer shadow-sm lg:col-span-2 flex flex-col justify-between transition group duration-200" 
+          id="chart-bulan"
+          title="Klik untuk langsung menuju informasi Tren Realisasi Bulanan"
+        >
           <div>
             <div className="flex justify-between items-start">
               <div>
@@ -364,13 +396,21 @@ export default function DashboardView({
       </div>
 
       {/* 3. Program & Kegiatan Progress Bars */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6" id="dashboard-program-progression">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-fade-in" id="dashboard-program-progression">
         
         {/* Left: Program detail progress */}
-        <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm" id="prog-programs">
-          <h3 className="font-bold text-slate-800 flex items-center gap-2 mb-4">
-            <Layers size={18} className="text-blue-700" />
-            Alokasi & Penyerapan per Program
+        <div 
+          onClick={() => onNavigate?.('analisis')}
+          className="bg-white p-6 rounded-2xl border border-slate-200 hover:border-blue-400 cursor-pointer shadow-sm group transition duration-200" 
+          id="prog-programs"
+          title="Klik untuk langsung menuju porsi Alokasi dan Penyerapan per Program"
+        >
+          <h3 className="font-bold text-slate-800 flex items-center justify-between mb-4">
+            <span className="flex items-center gap-2">
+              <Layers size={18} className="text-blue-700" />
+              Alokasi & Penyerapan per Program
+            </span>
+            <span className="text-[10px] text-blue-600 font-bold opacity-0 group-hover:opacity-100 transition-opacity">Detail Analisis →</span>
           </h3>
           <div className="space-y-4">
             {programs.length === 0 ? (
@@ -402,10 +442,18 @@ export default function DashboardView({
         </div>
 
         {/* Right: Key Kegiatan Progress */}
-        <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm" id="prog-kegiatans">
-          <h3 className="font-bold text-slate-800 flex items-center gap-2 mb-4">
-            <Briefcase size={18} className="text-blue-700" />
-            Kegiatan dengan Porsi Pagu Terbesar
+        <div 
+          onClick={() => onNavigate?.('program')}
+          className="bg-white p-6 rounded-2xl border border-slate-200 hover:border-blue-400 cursor-pointer shadow-sm group transition duration-200" 
+          id="prog-kegiatans"
+          title="Klik untuk langsung menuju bagian Kegiatan"
+        >
+          <h3 className="font-bold text-slate-800 flex items-center justify-between mb-4">
+            <span className="flex items-center gap-2">
+              <Briefcase size={18} className="text-blue-700" />
+              Kegiatan dengan Porsi Pagu Terbesar
+            </span>
+            <span className="text-[10px] text-blue-600 font-bold opacity-0 group-hover:opacity-100 transition-opacity">Daftar Kegiatan →</span>
           </h3>
           <div className="space-y-4">
             {kegiatans.length === 0 ? (

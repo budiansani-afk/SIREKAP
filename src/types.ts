@@ -137,6 +137,9 @@ export interface PengaturanSistem {
   nama_pejabat_ttd?: string;
   jabatan_pejabat_ttd?: string;
   nip_pejabat_ttd?: string;
+  nama_bendahara?: string;
+  jabatan_bendahara?: string;
+  nip_bendahara?: string;
 }
 
 // Type Aliases for compatibility

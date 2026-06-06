@@ -55,6 +55,11 @@ export default function LaporanView({
   const nipPejabatRaw = settings?.nip_pejabat_ttd || "19741022 199803 1 004";
   const nipPejabat = nipPejabatRaw.toUpperCase().startsWith("NIP") ? nipPejabatRaw : `NIP. ${nipPejabatRaw}`;
 
+  const namaBendahara = settings?.nama_bendahara || "SUHARTINI, SE";
+  const jabatanBendahara = settings?.jabatan_bendahara || "Bendahara Pengeluaran";
+  const nipBendaharaRaw = settings?.nip_bendahara || "19820512 200904 2 003";
+  const nipBendahara = nipBendaharaRaw.toUpperCase().startsWith("NIP") ? nipBendaharaRaw : `NIP. ${nipBendaharaRaw}`;
+
   // Title of the currently selected report
   const reportTitle = useMemo(() => {
     switch (selectedLaporan) {
@@ -318,12 +323,12 @@ export default function LaporanView({
 
           <div>
             <p className="text-slate-500 font-semibold uppercase">Bima, {new Date().toLocaleDateString('id-ID', {year:'numeric', month:'long', day:'numeric'})}</p>
-            <p className="text-slate-800 font-extrabold mt-0.5">Bendahara Urusan Bidang Pertanahan</p>
+            <p className="text-slate-800 font-extrabold mt-0.5">{jabatanBendahara}</p>
             <div className="h-16 flex items-center justify-center">
               <CheckCircle className="text-emerald-800 opacity-15" size={32} />
             </div>
-            <p className="text-slate-900 font-extrabold underline uppercase">SUHARTINI, SE</p>
-            <p className="text-[10px] text-slate-500 font-bold font-mono">NIP. 19820512 200904 2 003</p>
+            <p className="text-slate-900 font-extrabold underline uppercase">{namaBendahara}</p>
+            <p className="text-[10px] text-slate-500 font-bold font-mono">{nipBendahara}</p>
           </div>
         </div>
 
