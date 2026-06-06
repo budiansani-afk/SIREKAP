@@ -21,7 +21,7 @@ interface DashboardProps {
   realisasis: Realisasi[];
   monitorings: MonitoringFisik[];
   dokumens: DokumenArsip[];
-  onNavigate?: (page: 'dashboard' | 'program' | 'rka' | 'realisasi' | 'monitoring' | 'dokumen' | 'laporan' | 'analisis' | 'logs' | 'pengaturan') => void;
+  onNavigate?: (page: 'dashboard' | 'program' | 'rka' | 'realisasi' | 'monitoring' | 'dokumen' | 'laporan' | 'analisis' | 'logs' | 'pengaturan', tabDetail?: string) => void;
 }
 
 export default function DashboardView({
@@ -205,7 +205,7 @@ export default function DashboardView({
       {/* Structural Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 animate-fade-in" id="stats-mini-grid">
         <div 
-          onClick={() => onNavigate?.('program')}
+          onClick={() => onNavigate?.('program', 'program')}
           className="bg-white p-4 rounded-xl border border-slate-200 text-center hover:bg-blue-50/50 hover:border-blue-400 cursor-pointer shadow-2xs group transition-all duration-200 animate-fade-in"
           title="Klik untuk langsung menuju informasi Program"
         >
@@ -216,7 +216,7 @@ export default function DashboardView({
           </p>
         </div>
         <div 
-          onClick={() => onNavigate?.('program')}
+          onClick={() => onNavigate?.('program', 'kegiatan')}
           className="bg-white p-4 rounded-xl border border-slate-200 text-center hover:bg-blue-50/50 hover:border-blue-400 cursor-pointer shadow-2xs group transition-all duration-200 animate-fade-in"
           title="Klik untuk langsung menuju informasi Kegiatan"
         >
@@ -227,7 +227,7 @@ export default function DashboardView({
           </p>
         </div>
         <div 
-          onClick={() => onNavigate?.('program')}
+          onClick={() => onNavigate?.('program', 'sub_kegiatan')}
           className="bg-white p-4 rounded-xl border border-slate-200 text-center hover:bg-blue-50/50 hover:border-blue-400 cursor-pointer shadow-2xs group transition-all duration-200 animate-fade-in"
           title="Klik untuk langsung menuju informasi Sub-Kegiatan"
         >
@@ -393,14 +393,12 @@ export default function DashboardView({
           </div>
         </div>
 
-      </div>
-
-      {/* 3. Program & Kegiatan Progress Bars */}
+            {/* 3. Program & Kegiatan Progress Bars */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-fade-in" id="dashboard-program-progression">
         
         {/* Left: Program detail progress */}
         <div 
-          onClick={() => onNavigate?.('analisis')}
+          onClick={() => onNavigate?.('program', 'program')}
           className="bg-white p-6 rounded-2xl border border-slate-200 hover:border-blue-400 cursor-pointer shadow-sm group transition duration-200" 
           id="prog-programs"
           title="Klik untuk langsung menuju porsi Alokasi dan Penyerapan per Program"
@@ -440,10 +438,10 @@ export default function DashboardView({
             )}
           </div>
         </div>
-
+ 
         {/* Right: Key Kegiatan Progress */}
         <div 
-          onClick={() => onNavigate?.('program')}
+          onClick={() => onNavigate?.('program', 'kegiatan')}
           className="bg-white p-6 rounded-2xl border border-slate-200 hover:border-blue-400 cursor-pointer shadow-sm group transition duration-200" 
           id="prog-kegiatans"
           title="Klik untuk langsung menuju bagian Kegiatan"
@@ -486,7 +484,7 @@ export default function DashboardView({
                 ))
             )}
           </div>
-        </div>
+        </div>      </div>
 
       </div>
 

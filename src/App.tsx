@@ -87,6 +87,7 @@ type ViewPage =
 
 export default function App() {
   const [activePage, setActivePage] = useState<ViewPage>("dashboard");
+  const [programActiveTab, setProgramActiveTab] = useState<'program' | 'kegiatan' | 'sub_kegiatan'>('program');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
   // States for DB synced collections
@@ -509,7 +510,12 @@ export default function App() {
             realisasis={realisasis} 
             monitorings={monitorings}
             dokumens={dokumens}
-            onNavigate={(page) => setActivePage(page as any)}
+            onNavigate={(page, tabDetail) => {
+              setActivePage(page as any);
+              if (page === "program" && tabDetail) {
+                setProgramActiveTab(tabDetail as any);
+              }
+            }}
           />
         );
       case "program":
@@ -521,6 +527,8 @@ export default function App() {
             rkaList={rkaList}
             currentUserRole={userRole} 
             currentUserEmail={user.email} 
+            activeTab={programActiveTab}
+            onChangeTab={setProgramActiveTab}
           />
         );
       case "rka":
@@ -706,7 +714,12 @@ export default function App() {
                 return (
                   <button
                     key={item.id}
-                    onClick={() => setActivePage(item.id as ViewPage)}
+                    onClick={() => {
+                      setActivePage(item.id as ViewPage);
+                      if (item.id === 'program') {
+                        setProgramActiveTab('program');
+                      }
+                    }}
                     className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-lg transition-all text-left cursor-pointer ${
                       isActive 
                         ? 'bg-blue-850 text-white font-bold border-l-4 border-blue-400 shadow-inner' 

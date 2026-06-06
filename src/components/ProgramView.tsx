@@ -35,6 +35,8 @@ interface ProgramViewProps {
   rkaList: RKA[];
   currentUserRole: UserRole;
   currentUserEmail: string;
+  activeTab: 'program' | 'kegiatan' | 'sub_kegiatan';
+  onChangeTab: (tab: 'program' | 'kegiatan' | 'sub_kegiatan') => void;
 }
 
 type ActiveTabType = 'program' | 'kegiatan' | 'sub_kegiatan';
@@ -45,9 +47,11 @@ export default function ProgramView({
   subKegiatans,
   rkaList = [],
   currentUserRole,
-  currentUserEmail
+  currentUserEmail,
+  activeTab,
+  onChangeTab
 }: ProgramViewProps) {
-  const [activeTab, setActiveTab] = useState<ActiveTabType>('program');
+  const setActiveTab = onChangeTab;
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedProgramFilter, setSelectedProgramFilter] = useState('');
   const [selectedSubKegiatanRka, setSelectedSubKegiatanRka] = useState<SubKegiatan | null>(null);

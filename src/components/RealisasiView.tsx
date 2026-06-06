@@ -466,6 +466,7 @@ export default function RealisasiView({
                 <th className="p-3.5 pl-4 w-32">Tanggal / Bulan</th>
                 <th className="p-3.5 w-40">Sub Kegiatan</th>
                 <th className="p-3.5">Uraian / Keterangan</th>
+                <th className="p-3.5 text-right w-36">Pagu Anggaran</th>
                 <th className="p-3.5 text-right w-36">Nominal Realisasi</th>
                 <th className="p-3.5 text-center w-28">Persen Serapan</th>
                 <th className="p-3.5 text-center w-28">Lampiran / Bukti</th>
@@ -475,54 +476,60 @@ export default function RealisasiView({
             <tbody className="divide-y divide-slate-100 text-slate-700">
               {filteredRealisasis.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="p-8 text-center text-slate-500 font-semibold">Tabel realisasi kosong / Atur saringan filter.</td>
+                  <td colSpan={8} className="p-8 text-center text-slate-500 font-semibold">Tabel realisasi kosong / Atur saringan filter.</td>
                 </tr>
               ) : (
-                filteredRealisasis.map((r, i) => (
-                  <tr key={i} className="hover:bg-slate-50/50 transition antialiased">
-                    <td className="p-3.5 pl-4">
-                      <p className="font-bold text-slate-900 flex items-center gap-1 font-mono text-[11px]"><Calendar size={12} className="text-blue-800" />{r.tanggal}</p>
-                      <span className="text-[10px] text-slate-500 font-semibold uppercase">{r.bulan}</span>
-                    </td>
-                    <td className="p-3.5 font-mono text-[11px] font-bold text-slate-900" title={r.kode_sub_kegiatan}>{r.kode_sub_kegiatan}</td>
-                    <td className="p-3.5">
-                      <button 
-                        onClick={() => setSelectedUraianFilter(r.uraian_belanja)}
-                        className={`hover:underline text-left cursor-pointer transition font-bold block ${selectedUraianFilter === r.uraian_belanja ? 'text-orange-600 font-black decoration-orange-605' : 'text-slate-950 hover:text-blue-800'}`}
-                        title="Klik untuk menyaring khusus uraian/keterangan ini pada rekap kas bulanan"
-                      >
-                        {r.uraian_belanja}
-                      </button>
-                      <span className="text-[10px] text-slate-600 italic block mt-0.5" title={r.keterangan}>{r.keterangan || 'Tidak ada kuintor SPJ adendum.'}</span>
-                    </td>
-                    <td className="p-3.5 text-right font-black text-rose-950">{formatRupiah(r.nominal_realisasi)}</td>
-                    <td className="p-3.5 text-center">
-                      <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-900 font-black text-[10px]">{r.persentase_realisasi}%</span>
-                    </td>
-                    <td className="p-3.5 text-center">
-                      {r.bukti_transaksi ? (
-                        <a 
-                          href={r.bukti_transaksi} 
-                          download={`sp2d_${r.id}.png`}
-                          className="inline-flex items-center gap-1 text-[10px] font-black text-emerald-800 bg-emerald-50 px-2 py-1 rounded-md border border-emerald-200 hover:bg-emerald-100 transition whitespace-nowrap"
-                        >
-                          <Receipt size={11} />
-                          Unduh Bukti
-                        </a>
-                      ) : (
-                        <span className="text-[10px] text-slate-400 font-medium">Bebas SPJ</span>
-                      )}
-                    </td>
-                    {canEdit && (
-                      <td className="p-3.5 text-center">
-                        <div className="flex items-center justify-center gap-1.5">
-                          <button onClick={() => openEditModal(r)} className="p-1.5 hover:bg-amber-100 text-amber-700 rounded transition" title="Edit"><Edit2 size={13} /></button>
-                          <button onClick={() => handleDelete(r)} className="p-1.5 hover:bg-red-100 text-red-700 rounded transition" title="Hapus"><Trash2 size={13} /></button>
-                        </div>
+                filteredRealisasis.map((r, i) => {
+                  const subKeg = subKegiatans.find(s => s.kode_sub_kegiatan === r.kode_sub_kegiatan);
+                  const paguAmt = subKeg ? subKeg.pagu : 0;
+
+                  return (
+                    <tr key={i} className="hover:bg-slate-50/50 transition antialiased">
+                      <td className="p-3.5 pl-4">
+                        <p className="font-bold text-slate-900 flex items-center gap-1 font-mono text-[11px]"><Calendar size={12} className="text-blue-800" />{r.tanggal}</p>
+                        <span className="text-[10px] text-slate-500 font-semibold uppercase">{r.bulan}</span>
                       </td>
-                    )}
-                  </tr>
-                ))
+                      <td className="p-3.5 font-mono text-[11px] font-bold text-slate-900" title={r.kode_sub_kegiatan}>{r.kode_sub_kegiatan}</td>
+                      <td className="p-3.5">
+                        <button 
+                          onClick={() => setSelectedUraianFilter(r.uraian_belanja)}
+                          className={`hover:underline text-left cursor-pointer transition font-bold block ${selectedUraianFilter === r.uraian_belanja ? 'text-orange-600 font-black decoration-orange-605' : 'text-slate-950 hover:text-blue-800'}`}
+                          title="Klik untuk menyaring khusus uraian/keterangan ini pada rekap kas bulanan"
+                        >
+                          {r.uraian_belanja}
+                        </button>
+                        <span className="text-[10px] text-slate-600 italic block mt-0.5" title={r.keterangan}>{r.keterangan || 'Tidak ada kuintor SPJ adendum.'}</span>
+                      </td>
+                      <td className="p-3.5 text-right font-black text-slate-900">{formatRupiah(paguAmt)}</td>
+                      <td className="p-3.5 text-right font-black text-rose-950">{formatRupiah(r.nominal_realisasi)}</td>
+                      <td className="p-3.5 text-center">
+                        <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-900 font-black text-[10px]">{r.persentase_realisasi}%</span>
+                      </td>
+                      <td className="p-3.5 text-center">
+                        {r.bukti_transaksi ? (
+                          <a 
+                            href={r.bukti_transaksi} 
+                            download={`sp2d_${r.id}.png`}
+                            className="inline-flex items-center gap-1 text-[10px] font-black text-emerald-800 bg-emerald-50 px-2 py-1 rounded-md border border-emerald-200 hover:bg-emerald-100 transition whitespace-nowrap"
+                          >
+                            <Receipt size={11} />
+                            Unduh Bukti
+                          </a>
+                        ) : (
+                          <span className="text-[10px] text-slate-400 font-medium">Bebas SPJ</span>
+                        )}
+                      </td>
+                      {canEdit && (
+                        <td className="p-3.5 text-center">
+                          <div className="flex items-center justify-center gap-1.5">
+                            <button onClick={() => openEditModal(r)} className="p-1.5 hover:bg-amber-100 text-amber-700 rounded transition" title="Edit"><Edit2 size={13} /></button>
+                            <button onClick={() => handleDelete(r)} className="p-1.5 hover:bg-red-100 text-red-700 rounded transition" title="Hapus"><Trash2 size={13} /></button>
+                          </div>
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
