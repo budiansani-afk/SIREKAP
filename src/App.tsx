@@ -692,12 +692,12 @@ export default function App() {
               {isSidebarOpen ? (
                 <div className="flex flex-col justify-center animate-fade-in">
                   <span className="text-[9px] uppercase font-black tracking-widest text-slate-400/80">MODUL MENU AKTIF</span>
-                  <h2 className="text-xs sm:text-xs font-black text-orange-400 font-display tracking-wide uppercase leading-tight mt-1 truncate">
+                  <h2 className="text-xs sm:text-xs font-black text-orange-300 font-display tracking-wide uppercase leading-tight mt-1 truncate">
                     {menuItems.find(item => item.id === activePage)?.label || "Dashboard Utama"}
                   </h2>
                 </div>
               ) : (
-                <div className="flex items-center justify-center h-10 w-10 mx-auto rounded-lg bg-orange-500/10 text-orange-400 font-black text-[11px] border border-orange-500/30 animate-fade-in" title={menuItems.find(item => item.id === activePage)?.label}>
+                <div className="flex items-center justify-center h-10 w-10 mx-auto rounded-lg bg-orange-500/10 text-orange-300 font-black text-[11px] border border-orange-500/30 animate-fade-in" title={menuItems.find(item => item.id === activePage)?.label}>
                   {activePage.substring(0, 2).toUpperCase()}
                 </div>
               )}
@@ -727,8 +727,8 @@ export default function App() {
                     }}
                     className={`flex items-center rounded-lg transition-all text-left cursor-pointer ${
                       isSidebarOpen 
-                        ? 'w-full px-3.5 py-2.5 justify-between ' + (isActive ? 'bg-gradient-to-r from-blue-900 to-orange-600/90 border-l-4 border-orange-500 text-white font-extrabold shadow-md' : 'hover:bg-white/5 text-slate-300 hover:text-white font-medium')
-                        : 'w-10 h-10 mx-auto justify-center ' + (isActive ? 'bg-orange-600 text-white border border-orange-400 shadow-md' : 'hover:bg-white/5 text-slate-300')
+                        ? 'w-full px-3.5 py-2.5 justify-between ' + (isActive ? 'bg-gradient-to-r from-blue-900 to-orange-600/90 border-l-4 border-orange-500 text-white font-extrabold shadow-[0_0_15px_rgba(249,115,22,0.35)]' : 'hover:bg-white/5 text-slate-300 hover:text-white font-medium')
+                        : 'w-10 h-10 mx-auto justify-center ' + (isActive ? 'bg-orange-600 text-white border border-orange-400 shadow-[0_0_15px_rgba(249,115,22,0.4)]' : 'hover:bg-white/5 text-slate-300')
                     }`}
                     title={item.label}
                   >

@@ -279,7 +279,7 @@ export default function ProgramView({
             <Layers className="text-[#1e3a8a]" size={20} />
             Struktur Belanja Sektor Pertanahan
           </h2>
-          <p className="text-xs text-slate-500 mt-1">Kelola master program dinas, kode kegiatan DPA, dan sub kegiatan teknis pendukung.</p>
+          <p className="text-xs text-slate-500 mt-1">Kinerja master program dinas, kode kegiatan DPA, dan sub kegiatan teknis pendukung.</p>
         </div>
         <div className="flex gap-2 shrink-0">
           <button 

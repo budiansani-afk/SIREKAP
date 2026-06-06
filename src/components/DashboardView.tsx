@@ -130,25 +130,18 @@ export default function DashboardView({
       <div 
         onClick={() => setSelectedInfo({
           title: "SIREKAP TANAH - Informasi Lengkap Aplikasi",
-          content: "SIREKAP TANAH (Sistem Informasi Rekapitulasi, Evaluasi, dan Kelola Anggaran Pertanahan) merupakan aplikasi pengelolaan anggaran Bidang Pertanahan yang dirancang untuk mendukung perencanaan, pelaksanaan, monitoring, evaluasi, dan pelaporan kegiatan secara terintegrasi.\n\nSistem ini menyediakan informasi secara real-time mengenai pagu anggaran, realisasi keuangan, capaian fisik, serta berkas arsip dokumen pendukung kegiatan pertanahan.\n\nTujuan Utama:\n• Meningkatkan efektivitas pengelolaan anggaran pertanahan.\n• Mempermudah monitoring dan evaluasi kegiatan secara terstruktur.\n• Menyediakan data dan laporan yang akurat, dinamis, dan terintegrasi.\n• Mendukung transparansi serta akuntabilitas pelaksanaan program kerja.",
+          content: "SIREKAP TANAH (Sistem Informasi Rekapitulasi, Evaluasi, dan Kinerja Anggaran Pertanahan) merupakan aplikasi pengelolaan anggaran Bidang Pertanahan yang dirancang untuk mendukung perencanaan, pelaksanaan, monitoring, evaluasi, dan pelaporan kegiatan secara terintegrasi.\n\nSistem ini menyediakan kinerja secara real-time mengenai pagu anggaran, realisasi keuangan, capaian fisik, serta berkas arsip dokumen pendukung kegiatan pertanahan.\n\nTujuan Utama:\n• Meningkatkan efektivitas pengelolaan anggaran pertanahan.\n• Mempermudah monitoring dan evaluasi kegiatan secara terstruktur.\n• Menyediakan data dan laporan yang akurat, dinamis, dan terintegrasi.\n• Mendukung transparansi serta akuntabilitas pelaksanaan program kerja.",
           type: 'guide'
         })}
         className="bg-gradient-to-r from-blue-900 via-blue-800 to-orange-600 hover:from-blue-950 hover:to-orange-700 rounded-xl p-5 text-white shadow-md cursor-pointer group transition-all duration-300 relative overflow-hidden animate-fade-in flex flex-col sm:flex-row items-center justify-between gap-4 border border-blue-200/20" 
         id="welcome-pane"
-        title="Klik untuk melihat Tujuan dan Deskripsi SIREKAP TANAH"
+        title="Klik untuk melihat Informasi Lengkap SIREKAP TANAH"
       >
         <div className="absolute right-0 bottom-0 opacity-10 transform translate-x-12 translate-y-6 group-hover:scale-105 transition-transform duration-300">
           <Activity size={240} />
         </div>
-        <div className="relative z-10 flex flex-col gap-1.5 max-w-2xl">
-          <div className="flex items-center gap-2">
-            <span className="bg-orange-500 hover:bg-orange-600 font-extrabold text-[10px] px-2.5 py-1 rounded-md border border-orange-400/40 tracking-wider">SIREKAP TANAH</span>
-            <span className="bg-white/10 px-2 py-0.5 rounded text-[10px] border border-white/20 select-none font-mono">T.A. 2026</span>
-          </div>
-          <h2 className="text-lg sm:text-xl font-black font-display tracking-tight text-white mt-1">
-            Sistem Informasi Rekapitulasi, Evaluasi, dan Kelola Anggaran Pertanahan
-          </h2>
-          <p className="text-xs text-blue-100 font-semibold leading-relaxed line-clamp-2 max-w-xl group-hover:text-white transition-colors">
+        <div className="relative z-10 flex flex-col gap-1.5 max-w-2xl justify-center">
+          <p className="text-sm md:text-md text-white font-extrabold leading-relaxed group-hover:text-amber-100 transition-colors">
             "Terintegrasi untuk Perencanaan, Realisasi, dan Evaluasi Anggaran Pertanahan | Data Akurat, Evaluasi Cepat, Kinerja Tepat"
           </p>
         </div>
@@ -157,7 +150,7 @@ export default function DashboardView({
             type="button"
             className="px-4 py-2 bg-white hover:bg-slate-50 text-blue-950 font-black text-xs rounded-lg shadow-sm transition-all flex items-center gap-1.5 cursor-pointer transform group-hover:scale-105 active:scale-95"
           >
-            Tujuan & Detail
+            Info Aplikasi
           </button>
         </div>
       </div>

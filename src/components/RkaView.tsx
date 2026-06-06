@@ -11,7 +11,8 @@ import {
   Table,
   CheckCircle,
   XCircle,
-  AlertCircle
+  AlertCircle,
+  Copy
 } from 'lucide-react';
 import { RKA, Program, Kegiatan, SubKegiatan, UserRole } from '../types';
 import { formatRupiah, exportToCSV } from '../utils/helpers';
@@ -141,6 +142,22 @@ export default function RkaView({
 
   const openEditModal = (item: RKA) => {
     setEditItem(item);
+    setFormTahun(item.tahun);
+    setFormSubKegiatan(item.kode_sub_kegiatan);
+    setFormRekening(item.kode_rekening);
+    setFormUraian(item.uraian_belanja);
+    setFormVolume(item.volume);
+    setFormSatuan(item.satuan);
+    setFormHarga(item.harga_satuan);
+    setFormTw1(item.tw1 || 0);
+    setFormTw2(item.tw2 || 0);
+    setFormTw3(item.tw3 || 0);
+    setFormTw4(item.tw4 || 0);
+    setShowForm(true);
+  };
+
+  const handleCopyData = (item: RKA) => {
+    setEditItem(null);
     setFormTahun(item.tahun);
     setFormSubKegiatan(item.kode_sub_kegiatan);
     setFormRekening(item.kode_rekening);
@@ -548,7 +565,7 @@ export default function RkaView({
                 <th className="p-3 text-center w-16">Satuan</th>
                 <th className="p-3 text-right w-28">Harga Satuan</th>
                 <th className="p-3 text-right w-32">Jumlah Belanja</th>
-                {canEdit && <th className="p-3 text-center w-24">Aksi</th>}
+                {canEdit && <th className="p-3 text-center w-36">Aksi</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-slate-700">
@@ -571,9 +588,17 @@ export default function RkaView({
                     <td className="p-3 text-right font-black text-blue-900">{formatRupiah(r.jumlah)}</td>
                     {canEdit && (
                       <td className="p-3 text-center">
-                        <div className="flex items-center justify-center gap-1">
-                          <button onClick={() => openEditModal(r)} className="p-1.5 hover:bg-amber-100 text-amber-700 rounded" title="Edit"><Edit2 size={13} /></button>
-                          <button onClick={() => handleDelete(r)} className="p-1.5 hover:bg-red-100 text-red-700 rounded" title="Hapus"><Trash2 size={13} /></button>
+                        <div className="flex items-center justify-center gap-1.5">
+                          <button 
+                            onClick={() => handleCopyData(r)} 
+                            className="px-2 py-1 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded text-[10px] font-black flex items-center gap-1 transition"
+                            title="Salin Data"
+                          >
+                            <Copy size={11} />
+                            <span>Salin</span>
+                          </button>
+                          <button onClick={() => openEditModal(r)} className="p-1.5 hover:bg-amber-50 text-amber-700 rounded border border-transparent hover:border-amber-200" title="Edit"><Edit2 size={13} /></button>
+                          <button onClick={() => handleDelete(r)} className="p-1.5 hover:bg-red-50 text-red-750 rounded border border-transparent hover:border-red-200" title="Hapus"><Trash2 size={13} /></button>
                         </div>
                       </td>
                     )}

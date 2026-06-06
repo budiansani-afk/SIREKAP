@@ -15,9 +15,9 @@ export async function uploadToCloudinary(base64DataUrl: string, folder = "sibiru
     throw new Error("Data gambar kosong.");
   }
 
-  // Strictly enforce image-only check on the client side
-  if (!base64DataUrl.startsWith("data:image/")) {
-    throw new Error("Sistem hanya mengizinkan penyimpanan file berupa foto/gambar saja di Cloudinary.");
+  // Enforce valid data URL on the client side
+  if (!base64DataUrl.startsWith("data:")) {
+    throw new Error("Sistem hanya mengizinkan penyimpanan berkas dalam format Data URL.");
   }
 
   const response = await fetch("/api/cloudinary/upload", {

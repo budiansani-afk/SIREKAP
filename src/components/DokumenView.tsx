@@ -62,9 +62,9 @@ export default function DokumenView({
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Enforce that only image/photo files are allowed
-    if (!file.type.startsWith('image/')) {
-      alert("SIMPAN DITOLAK: Hanya file berupa foto/gambar saja (.png, .jpg, .jpeg, .gif, .webp) yang diizinkan!");
+    // Enforce that only image/photo or PDF files are allowed
+    if (!file.type.startsWith('image/') && file.type !== 'application/pdf') {
+      alert("SIMPAN DITOLAK: Hanya file berupa foto/gambar atau dokumen PDF (.pdf, .png, .jpg, .jpeg, .gif, .webp) yang diizinkan!");
       e.target.value = "";
       return;
     }

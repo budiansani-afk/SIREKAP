@@ -1,6 +1,6 @@
 {
   "name": "SIREKAP TANAH",
-  "description": "Sistem Informasi Rekapitulasi, Evaluasi, dan Kelola Anggaran Pertanahan",
+  "description": "Sistem Informasi Rekapitulasi, Evaluasi, dan Kinerja Anggaran Pertanahan",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
