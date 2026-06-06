@@ -11,11 +11,25 @@ const PORT = 3000;
 app.use(express.json({ limit: "30mb" }));
 app.use(express.urlencoded({ limit: "30mb", extended: true }));
 
+// Helper helper to sanitize environment variables that might be wrapped in quotes
+const getSanitizedEnv = (key: string, fallback: string): string => {
+  const value = process.env[key];
+  if (!value) return fallback;
+  return value.replace(/^["']|["']$/g, "").trim();
+};
+
+const cloudName = getSanitizedEnv("CLOUDINARY_CLOUD_NAME", "de4prnqa4");
+const apiKey = getSanitizedEnv("CLOUDINARY_API_KEY", "522531551358338");
+const apiSecret = getSanitizedEnv("CLOUDINARY_API_SECRET", "17j1h0HMoBTG8LUpX3k7gnjDuH0");
+const preset = getSanitizedEnv("CLOUDINARY_PRESET", "sirekap");
+
+console.log(`Cloudinary Configured: cloudName=${cloudName}, api_key_length=${apiKey.length}, preset=${preset}`);
+
 // Cloudinary configuration using your credentials of project sibirutanah
 cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME || "de4prnqa4",
-  api_key: process.env.CLOUDINARY_API_KEY || "522531551358338",
-  api_secret: process.env.CLOUDINARY_API_SECRET || "17j1h0HMoBTG8LUpX3k7gnjDuH0"
+  cloud_name: cloudName,
+  api_key: apiKey,
+  api_secret: apiSecret
 });
 
 // JSON API Route: Cloudinary Upload Proxy
@@ -32,16 +46,17 @@ app.post("/api/cloudinary/upload", async (req, res) => {
     }
 
     let uploadResponse;
-    const preset = process.env.CLOUDINARY_PRESET || "sirekap";
 
     try {
       // 1. Try traditional signed upload with the custom preset (if preset is signed in Cloudinary)
+      console.log(`Mencoba upload Cloudinary ke folder: ${folder || "sirekap"} dengan preset: ${preset}`);
       uploadResponse = await cloudinary.uploader.upload(image, {
         folder: folder || "sirekap",
         upload_preset: preset,
         resource_type: "auto"
       });
     } catch (presetError: any) {
+      console.warn("Upload dengan preset gagal, mencoba unsigned upload...", presetError.message || presetError);
       // 2. Try unsigned upload with the preset (if preset is configured as unsigned in Cloudinary)
       try {
         uploadResponse = await cloudinary.uploader.unsigned_upload(image, preset, {
@@ -49,8 +64,8 @@ app.post("/api/cloudinary/upload", async (req, res) => {
           resource_type: "auto"
         });
       } catch (unsignedError: any) {
+        console.warn("Unsigned upload gagal juga. Mencoba fallback upload langsung tanpa preset...", unsignedError.message || unsignedError);
         // 3. Robust fallback: traditional direct signed upload into the folder without any preset
-        console.log(`Info: Preset '${preset}' gagal digunakan (signed/unsigned). Melakukan fallback upload langsung...`);
         uploadResponse = await cloudinary.uploader.upload(image, {
           folder: folder || "sirekap",
           resource_type: "auto"
