@@ -26,9 +26,9 @@ app.post("/api/cloudinary/upload", async (req, res) => {
       return res.status(400).json({ error: "Required: 'image' (Base64 data URL) in request body" });
     }
 
-    // Direct check to enforce that only image files are allowed
-    if (!image.startsWith("data:image/")) {
-      return res.status(400).json({ error: "Sistem hanya mengizinkan pengunggahan file berupa foto saja." });
+    // Direct check to enforce valid base64 data URLs, supporting images and common PDF/document formats
+    if (!image.startsWith("data:")) {
+      return res.status(400).json({ error: "Sistem hanya mengizinkan pengunggahan file data URL (.png, .jpg, .pdf, dsb)." });
     }
 
     let uploadResponse;
@@ -38,19 +38,22 @@ app.post("/api/cloudinary/upload", async (req, res) => {
       // 1. Try traditional signed upload with the custom preset (if preset is signed in Cloudinary)
       uploadResponse = await cloudinary.uploader.upload(image, {
         folder: folder || "sibirutanah",
-        upload_preset: preset
+        upload_preset: preset,
+        resource_type: "auto"
       });
     } catch (presetError: any) {
       // 2. Try unsigned upload with the preset (if preset is configured as unsigned in Cloudinary)
       try {
         uploadResponse = await cloudinary.uploader.unsigned_upload(image, preset, {
-          folder: folder || "sibirutanah"
+          folder: folder || "sibirutanah",
+          resource_type: "auto"
         });
       } catch (unsignedError: any) {
         // 3. Robust fallback: traditional direct signed upload into the folder without any preset
         console.log(`Info: Preset '${preset}' gagal digunakan (signed/unsigned). Melakukan fallback upload langsung...`);
         uploadResponse = await cloudinary.uploader.upload(image, {
-          folder: folder || "sibirutanah"
+          folder: folder || "sibirutanah",
+          resource_type: "auto"
         });
       }
     }

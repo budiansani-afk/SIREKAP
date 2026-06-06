@@ -38,6 +38,7 @@ export default function RkaView({
   currentUserEmail
 }: RkaViewProps) {
   const [searchTerm, setSearchTerm] = useState('');
+  const [filterUraian, setFilterUraian] = useState('');
   const [filterTahun, setFilterTahun] = useState<string>('2026');
   const [filterProgram, setFilterProgram] = useState('');
   const [filterKegiatan, setFilterKegiatan] = useState('');
@@ -110,10 +111,16 @@ export default function RkaView({
       const matchProgram = filterProgram === '' || (r && r.kode_program === filterProgram);
       const matchKegiatan = filterKegiatan === '' || (r && r.kode_kegiatan === filterKegiatan);
       const matchSub = filterSubKegiatan === '' || (r && r.kode_sub_kegiatan === filterSubKegiatan);
+      const matchUraian = filterUraian === '' || (r && r.uraian_belanja ? String(r.uraian_belanja).toLowerCase().includes(filterUraian.toLowerCase()) : false);
 
-      return matchSearch && matchTahun && matchProgram && matchKegiatan && matchSub;
+      return matchSearch && matchTahun && matchProgram && matchKegiatan && matchSub && matchUraian;
     });
-  }, [rkaList, searchTerm, filterTahun, filterProgram, filterKegiatan, filterSubKegiatan]);
+  }, [rkaList, searchTerm, filterUraian, filterTahun, filterProgram, filterKegiatan, filterSubKegiatan]);
+
+  // Total anggaran hasil filter
+  const totalAnggaranFiltered = useMemo(() => {
+    return filteredRka.reduce((sum, item) => sum + (item.jumlah || 0), 0);
+  }, [filteredRka]);
 
   // Open Form modal
   const openAddModal = () => {
@@ -421,7 +428,7 @@ export default function RkaView({
       </div>
 
       {/* Grid Filter Box */}
-      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm grid grid-cols-1 md:grid-cols-4 lg:grid-cols-5 gap-3 text-xs" id="rka-filters-box">
+      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 text-xs" id="rka-filters-box">
         {/* Filter Tahun */}
         <div>
           <label className="block text-slate-500 font-bold mb-1">Tahun Anggaran</label>
@@ -480,7 +487,7 @@ export default function RkaView({
         </div>
 
         {/* Search */}
-        <div className="md:col-span-4 lg:col-span-1">
+        <div>
           <label className="block text-slate-500 font-bold mb-1">Cari Keterangan Belanja</label>
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
@@ -492,6 +499,39 @@ export default function RkaView({
               className="w-full p-2 pl-8 border border-slate-200 rounded-md"
             />
           </div>
+        </div>
+
+        {/* Filter Uraian Detail Belanja */}
+        <div>
+          <label className="block text-slate-500 font-bold mb-1">Filter Uraian Detail</label>
+          <div className="relative">
+            <Filter className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#7a4805]" size={14} />
+            <input 
+              type="text" 
+              placeholder="Saring rincian detail..." 
+              value={filterUraian} 
+              onChange={(e) => setFilterUraian(e.target.value)} 
+              className="w-full p-2 pl-8 border border-slate-200 rounded-md bg-orange-50/30 focus:bg-white text-slate-800 font-semibold"
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Filtered Total Summary Banner */}
+      <div className="bg-gradient-to-r from-blue-50 to-orange-50/70 border border-blue-200/60 rounded-xl px-5 py-3 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-3xs" id="rka-filter-summary">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center font-black text-xs shadow-3xs">
+            {filteredRka.length}
+          </div>
+          <div>
+            <p className="text-[11px] font-black text-blue-900 uppercase tracking-wider leading-none">Hasil Penyaringan Anggaran</p>
+            <p className="text-[10px] text-slate-500 mt-1">Ditemukan {filteredRka.length} item rincian kerja anggaran aktif.</p>
+          </div>
+        </div>
+        
+        <div className="bg-white border border-orange-200 shadow-3xs rounded-lg px-4 py-2 flex items-center gap-3 shrink-0">
+          <span className="text-[10px] text-orange-600 uppercase font-black tracking-wider border-r border-slate-100 pr-3">Total Anggaran Saringan</span>
+          <span className="text-sm font-black text-blue-950 font-mono tracking-tight">{formatRupiah(totalAnggaranFiltered)}</span>
         </div>
       </div>
 

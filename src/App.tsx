@@ -546,6 +546,7 @@ export default function App() {
         return (
           <RealisasiView 
             realisasis={realisasis} 
+            rkaList={rkaList} 
             programs={programs} 
             kegiatans={kegiatans} 
             subKegiatans={subKegiatans} 
@@ -611,31 +612,39 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-[#ebf4fc] flex flex-col font-sans text-slate-800" id="sibiru-container">
+    <div className="min-h-screen bg-gradient-to-br from-[#ebf4fc] via-[#f0f7ff] to-[#fff3e0] flex flex-col font-sans text-slate-800 animate-fade-in" id="sibiru-container">
       
+      {/* Top running gradient bar (Blue with Orange gradient banner decoration) */}
+      <div className="h-1.5 bg-gradient-to-r from-blue-700 via-blue-500 to-orange-500 w-full sticky top-0 z-50 print:hidden shadow-xs" />
+
       {/* Top Header navbar panel (Professional Polish: white bg, border, clear typography) */}
-      <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 sticky top-0 z-40 select-none print:hidden shadow-sm" id="main-topbar">
+      <header className="h-16 bg-white/95 backdrop-blur-md border-b border-blue-200/60 flex items-center justify-between px-6 sticky top-1.5 z-40 select-none print:hidden shadow-3xs" id="main-topbar">
         <div className="flex items-center gap-4">
           <button 
             onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-            className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-500 transition-colors cursor-pointer"
+            className="p-1.5 hover:bg-blue-50 hover:text-blue-600 rounded-lg text-slate-500 transition-colors cursor-pointer"
           >
             <Menu size={20} />
           </button>
           
-          <div className="flex items-center gap-3.5">
-            {/* Title SIBIRU in outstanding Blue with Orange gradient accent */}
-            <span className="text-xs sm:text-sm font-black text-blue-600 tracking-wider font-display border-r pr-3 border-slate-200">
-              SIBIRU
-            </span>
+          <div className="flex items-center gap-3">
+            {/* Swapped Brand from Sidebar into Topheader (SIREKAP TAHUN ANGGARAN 2026) */}
+            <div className="w-9 h-9 bg-white rounded-lg flex items-center justify-center shrink-0 border border-orange-500 overflow-hidden shadow-2xs select-none">
+              <img 
+                src="https://res.cloudinary.com/de4prnqa4/image/upload/v1780640818/logo_sibiru_y2jgaw.jpg" 
+                alt="Logo SIBIRU" 
+                className="w-full h-full object-cover"
+                referrerPolicy="no-referrer"
+              />
+            </div>
             
-            <div className="flex flex-col justify-center">
-              <h2 className="text-xs sm:text-xs md:text-sm font-black text-slate-800 font-display tracking-tight uppercase leading-none">
-                {menuItems.find(item => item.id === activePage)?.label || "Dashboard Utama"}
-              </h2>
-              <span className="text-[10px] md:text-[11px] text-slate-500 font-bold mt-1 font-sans leading-none block">
-                T.A. {appSettings?.tahun_anggaran_aktif || 2026}
-              </span>
+            <div className="flex flex-col justify-center border-l border-slate-200 pl-3">
+              <h1 className="text-xs sm:text-xs md:text-[13px] font-black tracking-wider text-orange-600 uppercase">
+                SIREKAP TAHUN ANGGARAN 2026 • Bidang Pertanahan
+              </h1>
+              <p className="text-sm md:text-[15px] font-extrabold font-display text-blue-950 tracking-tight leading-snug mt-0.5">
+                Sistem Informasi Rekapitulasi, Evaluasi, dan Kinerja Anggaran Pertanahan
+              </p>
             </div>
           </div>
         </div>
@@ -672,33 +681,36 @@ export default function App() {
       </header>
 
       {/* Main Structural Body holding Sidebar & Pages viewport */}
-      <div className="flex-1 flex overflow-hidden" id="main-layout-body">
+      <div className="flex-1 flex overflow-hidden lg:gap-0.5" id="main-layout-body">
         
-        {/* Dynamic Sidebar drawer matched exactly inside blue-900 / blue-950 context */}
-        <aside className={`${isSidebarOpen ? 'w-64' : 'w-0 overflow-hidden'} bg-[#1e3a8a] text-white transition-all duration-200 border-r border-blue-800/30 shadow-lg print:hidden shrink-0 flex flex-col justify-between select-none`} id="main-sidebar">
+        {/* Dynamic Sidebar drawer in Professional Deep Dark Blue palette (biru tua bergradasi) */}
+        <aside className={`${isSidebarOpen ? 'w-64' : 'w-20'} bg-[#0a1122] text-slate-100 transition-all duration-200 border-r border-blue-950/60 shadow-lg print:hidden shrink-0 flex flex-col justify-between select-none`} id="main-sidebar">
           <div className="flex flex-col flex-1 overflow-y-auto">
             
-            {/* Sidebar Branding Header */}
-            <div className="p-5 border-b border-blue-800/50 bg-[#172554]">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center shrink-0 border border-orange-500 overflow-hidden">
-                  <img 
-                    src="https://res.cloudinary.com/de4prnqa4/image/upload/v1780640818/logo_sibiru_y2jgaw.jpg" 
-                    alt="Logo SIBIRU" 
-                    className="w-full h-full object-cover"
-                    referrerPolicy="no-referrer"
-                  />
+            {/* Sidebar Branding Header (Swapped active page title info with High-contrast colors) */}
+            <div className={`p-4 border-b border-blue-950 bg-[#101a33] ${isSidebarOpen ? '' : 'text-center p-3'}`}>
+              {isSidebarOpen ? (
+                <div className="flex flex-col justify-center animate-fade-in">
+                  <span className="text-[9px] uppercase font-black tracking-widest text-slate-400/80">MODUL MENU AKTIF</span>
+                  <h2 className="text-xs sm:text-xs font-black text-orange-400 font-display tracking-wide uppercase leading-tight mt-1 truncate">
+                    {menuItems.find(item => item.id === activePage)?.label || "Dashboard Utama"}
+                  </h2>
+                  <div className="flex items-center gap-1.5 mt-1.5">
+                    <span className="relative flex h-1.5 w-1.5 shrink-0">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-orange-550"></span>
+                    </span>
+                    <span className="text-[10px] text-blue-300 font-mono tracking-wide font-black">T.A. {appSettings?.tahun_anggaran_aktif || 2026}</span>
+                  </div>
                 </div>
-                <div>
-                  <h1 className="text-base font-black tracking-tight font-display text-white">
-                    <span className="text-blue-500 text-blue-400">SIBIRU</span> <span className="text-orange-400">TANAH</span>
-                  </h1>
-                  <p className="text-[9px] uppercase tracking-wider text-blue-300 font-bold">Pertanahan Kab. Bima</p>
+              ) : (
+                <div className="flex items-center justify-center h-10 w-10 mx-auto rounded-lg bg-orange-500/10 text-orange-400 font-black text-[11px] border border-orange-500/30 animate-fade-in" title={menuItems.find(item => item.id === activePage)?.label}>
+                  {activePage.substring(0, 2).toUpperCase()}
                 </div>
-              </div>
+              )}
             </div>
 
-            <div className="px-5 pt-4 pb-1 text-[10px] uppercase font-bold text-blue-300 tracking-wider opacity-90">
+            <div className={`px-5 pt-4 pb-1 text-[9px] uppercase font-black text-slate-400 tracking-wider opacity-85 ${isSidebarOpen ? '' : 'hidden'}`}>
               Menu Utama
             </div>
             
@@ -720,19 +732,20 @@ export default function App() {
                         setProgramActiveTab('program');
                       }
                     }}
-                    className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-lg transition-all text-left cursor-pointer ${
-                      isActive 
-                        ? 'bg-blue-850 text-white font-bold border-l-4 border-blue-400 shadow-inner' 
-                        : 'hover:bg-blue-800/60 text-blue-100 font-medium'
+                    className={`flex items-center rounded-lg transition-all text-left cursor-pointer ${
+                      isSidebarOpen 
+                        ? 'w-full px-3.5 py-2.5 justify-between ' + (isActive ? 'bg-gradient-to-r from-blue-900 to-orange-600/90 border-l-4 border-orange-500 text-white font-extrabold shadow-md' : 'hover:bg-white/5 text-slate-300 hover:text-white font-medium')
+                        : 'w-10 h-10 mx-auto justify-center ' + (isActive ? 'bg-orange-600 text-white border border-orange-400 shadow-md' : 'hover:bg-white/5 text-slate-300')
                     }`}
+                    title={item.label}
                   >
-                    <div className="flex items-center gap-2.5">
-                      <span className={`${isActive ? 'text-blue-300' : 'opacity-70'}`}>
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <span className={`${isActive ? 'text-orange-400' : 'text-slate-400'} shrink-0`}>
                         {item.icon}
                       </span>
-                      <span>{item.label}</span>
+                      {isSidebarOpen && <span className="truncate">{item.label}</span>}
                     </div>
-                    {badgeCount > 0 && (
+                    {isSidebarOpen && badgeCount > 0 && (
                       <span className="bg-orange-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full animate-pulse shrink-0">
                         {badgeCount}
                       </span>
@@ -743,17 +756,25 @@ export default function App() {
             </nav>
           </div>
 
-          {/* Connected User Badge & Logo Context (Professional design matching aside bottom block) */}
-          <div className="p-4 border-t border-blue-800/70 bg-[#172554]/40">
-            <div className="flex items-center gap-3 bg-blue-950/40 p-2.5 rounded-xl">
-              <div className="w-8 h-8 rounded-full bg-blue-500 text-white flex items-center justify-center font-bold text-xs shrink-0 font-display">
-                {userRole === UserRole.ADMIN ? 'AD' : userRole === UserRole.OPERATOR ? 'OP' : 'PM'}
+          {/* Connected User Badge & Logo Context in Deep Navy design */}
+          <div className="p-4 border-t border-blue-950 bg-[#0d172e]">
+            {isSidebarOpen ? (
+              <div className="flex items-center gap-3 bg-[#13203f] p-2.5 rounded-xl border border-blue-900/40 animate-fade-in">
+                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-orange-500 to-orange-600 text-white flex items-center justify-center font-bold text-xs shrink-0 font-display shadow-2xs">
+                  {userRole === UserRole.ADMIN ? 'AD' : userRole === UserRole.OPERATOR ? 'OP' : 'PM'}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-bold truncate text-slate-100">{userDisplayName}</p>
+                  <p className="text-[9px] text-[#38bdf8] truncate font-mono uppercase tracking-wide font-black">{userRole} ACCESS</p>
+                </div>
               </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-bold truncate text-white">{userDisplayName}</p>
-                <p className="text-[9px] text-blue-300 truncate font-mono uppercase tracking-wide">{userRole} ACCESS</p>
+            ) : (
+              <div className="flex items-center justify-center animate-fade-in" title={`${userDisplayName} (${userRole})`}>
+                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-orange-500 to-orange-600 text-white flex items-center justify-center font-black text-xs font-display shadow-2xs">
+                  {userRole === UserRole.ADMIN ? 'AD' : userRole === UserRole.OPERATOR ? 'OP' : 'PM'}
+                </div>
               </div>
-            </div>
+            )}
           </div>
         </aside>
 

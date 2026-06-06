@@ -250,6 +250,7 @@ export default function AnalisisView({
                 <th className="p-3">NAMA SUB-KEGIATAN</th>
                 <th className="p-3 text-right">PAGU DPA</th>
                 <th className="p-3 text-right">REALISASI KAS</th>
+                <th className="p-3 text-right">SISA ANGGARAN</th>
                 <th className="p-3 text-center">RASIO PENYERAPAN</th>
               </tr>
             </thead>
@@ -265,6 +266,7 @@ export default function AnalisisView({
                   <td className="p-3 font-semibold text-slate-900 max-w-sm truncate" title={sk.nama_sub_kegiatan}>{sk.nama_sub_kegiatan}</td>
                   <td className="p-3 text-right font-medium">{formatRupiah(sk.pagu)}</td>
                   <td className="p-3 text-right text-emerald-900 font-bold">{formatRupiah(sk.realisasi)}</td>
+                  <td className="p-3 text-right text-rose-950 font-bold">{formatRupiah(sk.sisa ?? Math.max(0, sk.pagu - sk.realisasi))}</td>
                   <td className="p-3 text-center">
                     <div className="flex items-center justify-center gap-1.5">
                       <div className="w-16 bg-slate-100 rounded-full h-1.5 overflow-hidden">
