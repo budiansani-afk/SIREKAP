@@ -70,7 +70,13 @@ export default function DokumenView({
     }
 
     setFileName(file.name);
-    setFormNamaDokumen(file.name.split('.').slice(0, -1).join('.'));
+    const rawBase = file.name.split('.').slice(0, -1).join('.');
+    const cleanBase = rawBase
+      .replace(/[^a-zA-Z0-9_\-\s]/g, "")
+      .trim()
+      .replace(/\s+/g, "_")
+      .replace(/_+/g, "_");
+    setFormNamaDokumen(cleanBase);
     setFileType(file.type || 'application/octet-stream');
 
     // Convert file size to readable string
@@ -82,7 +88,13 @@ export default function DokumenView({
   // Submit Upload Form
   const handleUploadSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formNamaDokumen.trim() || !fileToUpload) {
+    const cleanName = formNamaDokumen.trim()
+      .replace(/[^a-zA-Z0-9_\-\s]/g, "")
+      .trim()
+      .replace(/\s+/g, "_")
+      .replace(/_+/g, "_");
+
+    if (!cleanName || !fileToUpload) {
       alert("Harap pilih berkas foto terlebih dahulu dan masukkan nama.");
       return;
     }
@@ -92,15 +104,15 @@ export default function DokumenView({
       // 1. Upload File to Cloudinary with custom name given by the user, preserving extension
       const originalExtension = fileName.split('.').pop() || '';
       const customFileName = originalExtension 
-        ? `${formNamaDokumen.trim()}.${originalExtension}`
-        : formNamaDokumen.trim();
+        ? `${cleanName}.${originalExtension}`
+        : cleanName;
 
       const cloudinaryRes = await uploadFile(fileToUpload, "sirekap", customFileName);
 
       const docId = `dok_${Date.now()}`;
       const payload: DokumenArsip = {
         id: docId,
-        nama_dokumen: formNamaDokumen.trim(),
+        nama_dokumen: cleanName,
         kategori: formKategori,
         tanggal_upload: new Date().toISOString().substring(0, 10),
         tipe_file: fileType,
@@ -337,9 +349,19 @@ export default function DokumenView({
                   type="text"
                   placeholder="Ketik deskripsi nama arsip..."
                   value={formNamaDokumen}
-                  onChange={(e) => setFormNamaDokumen(e.target.value)}
+                  onChange={(e) => {
+                    const val = e.target.value.replace(/[^a-zA-Z0-9_\-\s]/g, "");
+                    setFormNamaDokumen(val);
+                  }}
+                  onBlur={(e) => {
+                    const val = e.target.value
+                      .trim()
+                      .replace(/\s+/g, "_")
+                      .replace(/_+/g, "_");
+                    setFormNamaDokumen(val);
+                  }}
                   required
-                  className="w-full p-2.5 border border-slate-200 rounded-lg focus:outline-blue-600"
+                  className="w-full p-2.5 border border-slate-200 rounded-lg focus:outline-blue-600 font-mono"
                 />
               </div>
 
