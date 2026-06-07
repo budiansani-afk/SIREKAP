@@ -31,7 +31,7 @@ const getSanitizedEnv = (key: string, fallback: string): string => {
 
 const cloudName = getSanitizedEnv("CLOUDINARY_CLOUD_NAME", "de4prnqa4");
 const apiKey = getSanitizedEnv("CLOUDINARY_API_KEY", "522531551358338");
-const apiSecret = getSanitizedEnv("CLOUDINARY_API_SECRET", "7j1h0HMoBTG8LUpX3k7gnjDuH0");
+const apiSecret = getSanitizedEnv("CLOUDINARY_API_SECRET", "17j1h0HMoBTG8LUpX3k7gnjDuH0");
 const preset = getSanitizedEnv("CLOUDINARY_PRESET", "sirekap");
 
 // Generate masked representations of API credentials for debugging/diagnosing environment overrides safely
@@ -47,10 +47,10 @@ console.log(`- Cloud Name: ${cloudName}`);
 console.log(`- API Key:    ${maskCred(apiKey)}`);
 console.log(`- API Secret: ${maskCred(apiSecret)}`);
 console.log(`- Preset:     ${preset}`);
-if (apiSecret !== "7j1h0HMoBTG8LUpX3k7gnjDuH0") {
+if (apiSecret !== "17j1h0HMoBTG8LUpX3k7gnjDuH0") {
   console.log(`[PEMANDU] Perhatian: API Secret dimuat dari sistem environment variable, BUKAN dari hardcoded fallback ("phNUcFk3bY4zsNJwBH8ffrNIbWk")!`);
 } else {
-  console.log(`[PEMANDU] Info: API Secret menggunakan default fallback "7j1h0HMoBTG8LUpX3k7gnjDuH0".`);
+  console.log(`[PEMANDU] Info: API Secret menggunakan default fallback "17j1h0HMoBTG8LUpX3k7gnjDuH0".`);
 }
 console.log("==========================================");
 
