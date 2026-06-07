@@ -8,11 +8,25 @@ import { v2 as cloudinary } from "cloudinary";
  */
 export async function deleteCloudinaryAsset(req: Request, res: Response) {
   try {
+    // Ensure Cloudinary is configured with the correct credentials,
+    // specifically falling back to the specified API Secret: '17j1h0HMoBTG8LUpX3k7gnjDuH0'
+    const cloudName = process.env.CLOUDINARY_CLOUD_NAME?.replace(/^["']|["']$/g, "").trim() || "de4prnqa4";
+    const apiKey = process.env.CLOUDINARY_API_KEY?.replace(/^["']|["']$/g, "").trim() || "522531551358338";
+    const apiSecret = process.env.CLOUDINARY_API_SECRET?.replace(/^["']|["']$/g, "").trim() || "17j1h0HMoBTG8LUpX3k7gnjDuH0";
+
+    cloudinary.config({
+      cloud_name: cloudName,
+      api_key: apiKey,
+      api_secret: apiSecret
+    });
+
     const { public_id, url, resource_type } = req.body;
     
     if (!public_id && !url) {
+      console.warn("[src/api/cloudinary.ts] Error: Parameter pub_id dan url kosong.");
       return res.status(400).json({ 
         success: false, 
+        errorCode: "INVALID_PARAMETERS",
         error: "Harap sertakan 'public_id' atau 'url' di dalam body request." 
       });
     }
@@ -158,6 +172,7 @@ export async function deleteCloudinaryAsset(req: Request, res: Response) {
       console.warn(`[src/api/cloudinary.ts] Aset tidak ditemukan atau gagal dihapus dari Cloudinary.`);
       return res.json({
         success: false,
+        errorCode: "ASSET_NOT_FOUND",
         error: `Asset ${public_id || "unknown"} not found or could not be verified/deleted on Cloudinary servers (status: ${lastResult?.result || "not found"}).`,
         result: lastResult?.result || "not found",
         public_id
@@ -168,6 +183,7 @@ export async function deleteCloudinaryAsset(req: Request, res: Response) {
     console.error("[src/api/cloudinary.ts] Error fatal server-side:", error);
     return res.status(500).json({
       success: false,
+      errorCode: "INTERNAL_SERVER_ERROR",
       error: error.message || "Gagal menghapus file dari Cloudinary secara server-side"
     });
   }

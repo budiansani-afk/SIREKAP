@@ -265,14 +265,23 @@ export default function DokumenView({
 
           if (!response.ok) {
             const errInfo = await response.json().catch(() => ({}));
-            throw new Error(errInfo.error || `Server responded with status: ${response.status}`);
+            const errCodeStr = errInfo.errorCode ? ` [Error Code: ${errInfo.errorCode}]` : "";
+            console.error(`[DEBUG_HAPUS] Error terdeteksi dari endpoint server:${errCodeStr}`, errInfo);
+            throw new Error((errInfo.error || `Server responded with status: ${response.status}`) + errCodeStr);
           }
 
           const delResult = await response.json();
           console.log(`[DEBUG_HAPUS] Berhasil memproses permintaan hapus Cloudinary secara tuntas.`, delResult);
           
-          if (delResult && delResult.success === false && delResult.result !== "not found") {
-            throw new Error(delResult.error || "Gagal menghapus aset dari Cloudinary server");
+          if (delResult && delResult.success === false) {
+            const errCodeStr = delResult.errorCode ? ` [Error Code: ${delResult.errorCode}]` : "";
+            console.error(`[DEBUG_HAPUS] Gagal menghapus aset Cloudinary:${errCodeStr}`, delResult);
+            
+            if (delResult.errorCode === "ASSET_NOT_FOUND" || delResult.result === "not found") {
+              console.warn(`[DEBUG_HAPUS] Cloudinary melaporkan asset tidak ditemukan ("not found"). Melanjutkan ke penghapusan database.`);
+            } else {
+              throw new Error((delResult.error || "Gagal menghapus aset dari Cloudinary server") + errCodeStr);
+            }
           }
           
           if (delResult && delResult.result === "not found") {
@@ -283,7 +292,9 @@ export default function DokumenView({
           console.error("[DEBUG_HAPUS] Detail Error Object:", cloudinaryErr);
           
           const errMsg = cloudinaryErr?.message || String(cloudinaryErr);
-          const isNotFoundError = errMsg.toLowerCase().includes("not found") || errMsg.toLowerCase().includes("not_found");
+          const isNotFoundError = errMsg.toLowerCase().includes("not found") || 
+                                 errMsg.toLowerCase().includes("not_found") || 
+                                 errMsg.includes("ASSET_NOT_FOUND");
 
           if (isNotFoundError) {
             console.warn(`[DEBUG_HAPUS] Deteksi NOT_FOUND pada Cloudinary (${errMsg}). Melompati validasi blocker untuk mencegah record Firestore yatim (orphaned).`);
