@@ -11,6 +11,7 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import { v2 as cloudinary } from "cloudinary";
 import multer from "multer";
+import { deleteCloudinaryAsset } from "./src/api/cloudinary";
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -97,7 +98,7 @@ app.post("/api/cloudinary/upload", upload.single("file"), async (req, res) => {
         let isUnique = false;
         let suffixCounter = 0;
 
-        while (!isUnique && suffixCounter < 5) {
+        while (!isUnique && suffixCounter <= 100) {
           const fullCheckId = `${folderName}/${trialBase}`;
           console.log(`[Cloudinary Signature Loader] Checking if asset exists: "${fullCheckId}"`);
           try {
@@ -114,9 +115,8 @@ app.post("/api/cloudinary/upload", upload.single("file"), async (req, res) => {
 
             if (exists) {
               suffixCounter++;
-              const randomCode = Math.random().toString(36).substring(2, 6).toUpperCase();
-              trialBase = `${cleanedBase}_${randomCode}`;
-              console.log(`[Cloudinary Signature Loader] Collision detected! Appending unique code: "${trialBase}"`);
+              trialBase = `${cleanedBase}_${suffixCounter}`;
+              console.log(`[Cloudinary Signature Loader] Collision detected! Appending sequential code: "${trialBase}"`);
             } else {
               finalPublicId = trialBase;
               isUnique = true;
@@ -164,173 +164,8 @@ app.post("/api/cloudinary/upload", upload.single("file"), async (req, res) => {
   }
 });
 
-// JSON API Route: Cloudinary Delete Proxy
-app.post("/api/cloudinary/delete", async (req, res) => {
-  try {
-    const { public_id, resource_type, url } = req.body;
-    
-    if (!public_id && !url) {
-      return res.status(400).json({ error: "Required: 'public_id' or 'url' in request body" });
-    }
-
-    console.log(`[Server Cloudinary Delete] Request received. public_id: "${public_id}", url: "${url}", resource_type: "${resource_type || "auto"}"`);
-
-    // 1. Gather all raw potential source identifiers
-    const rawInputs = new Set<string>();
-    if (public_id) rawInputs.add(public_id);
-    if (url) rawInputs.add(url);
-
-    // 2. Decode and extract basic path elements
-    const extractedPaths = new Set<string>();
-    for (const raw of rawInputs) {
-      if (!raw) continue;
-      extractedPaths.add(raw);
-
-      let decoded = raw;
-      try {
-        decoded = decodeURIComponent(raw);
-        extractedPaths.add(decoded);
-      } catch (err) {
-        // Safe fallback
-      }
-
-      // If it looks like a Cloudinary delivery URL
-      if (decoded.startsWith("http://") || decoded.startsWith("https://")) {
-        const uploadSplit = decoded.split("/upload/");
-        if (uploadSplit.length > 1) {
-          let trailing = uploadSplit[1];
-          // Strip any version portion if present (e.g. "v1717686523/")
-          if (trailing.startsWith("v")) {
-            const slashIdx = trailing.indexOf("/");
-            if (slashIdx !== -1 && /^\d+$/.test(trailing.substring(1, slashIdx))) {
-              trailing = trailing.substring(slashIdx + 1);
-            }
-          }
-          extractedPaths.add(trailing);
-        }
-      }
-    }
-
-    // 3. Generate combinatorial candidate IDs (folders, extensions, spacers)
-    const candidateIds = new Set<string>();
-    for (const p of extractedPaths) {
-      if (!p) continue;
-      candidateIds.add(p);
-
-      // Extract filename without folders
-      const lastSlashIdx = p.lastIndexOf("/");
-      const filename = lastSlashIdx !== -1 ? p.substring(lastSlashIdx + 1) : p;
-      candidateIds.add(filename);
-      candidateIds.add(`sirekap/${filename}`);
-
-      // Strip extensions if present (Cloudinary strips extensions for image/video resource_type public_ids)
-      const lastDotIdx = p.lastIndexOf(".");
-      if (lastDotIdx > lastSlashIdx) {
-        const pNoExt = p.substring(0, lastDotIdx);
-        candidateIds.add(pNoExt);
-
-        const filenameNoExt = filename.substring(0, filename.lastIndexOf("."));
-        candidateIds.add(filenameNoExt);
-        candidateIds.add(`sirekap/${filenameNoExt}`);
-      }
-
-      // Handle space vs underscore sanitization
-      if (p.includes(" ")) {
-        const replaced = p.replace(/ /g, "_");
-        candidateIds.add(replaced);
-        const lastDotReplaced = replaced.lastIndexOf(".");
-        if (lastDotReplaced > lastSlashIdx) {
-          candidateIds.add(replaced.substring(0, lastDotReplaced));
-        }
-      }
-      if (p.includes("_")) {
-        const replaced = p.replace(/_/g, " ");
-        candidateIds.add(replaced);
-        const lastDotReplaced = replaced.lastIndexOf(".");
-        if (lastDotReplaced > lastSlashIdx) {
-          candidateIds.add(replaced.substring(0, lastDotReplaced));
-        }
-      }
-    }
-
-    // 4. Prioritize candidate attempts with all possible types (image, raw, video)
-    const types = ["image", "raw", "video"];
-    const attempts: { id: string; type: string }[] = [];
-    const preferredType = (resource_type && types.includes(resource_type)) ? resource_type : null;
-
-    for (const cid of candidateIds) {
-      if (!cid) continue;
-      if (preferredType) {
-        attempts.push({ id: cid, type: preferredType });
-      }
-      for (const t of types) {
-        if (t !== preferredType) {
-          attempts.push({ id: cid, type: t });
-        }
-      }
-    }
-
-    // Deduplicate attempts list
-    const uniqueAttempts: { id: string; type: string }[] = [];
-    const seen = new Set<string>();
-    for (const a of attempts) {
-      const key = `${a.id}:${a.type}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        uniqueAttempts.push(a);
-      }
-    }
-
-    console.log(`[Server Cloudinary Delete] Prepared candidate attempts total: ${uniqueAttempts.length}`);
-    console.log(`[Server Cloudinary Delete] Candidates to try:`, uniqueAttempts.map(x => `${x.id} (${x.type})`));
-
-    let lastResult: any = { result: "not found" };
-    let successDeleted = false;
-    let deletedDetails = null;
-
-    // 5. Try destroying to find and destroy the asset securely
-    for (const attempt of uniqueAttempts) {
-      try {
-        console.log(`[Server Cloudinary Delete] Action -> Destroy: ID="${attempt.id}", TYPE="${attempt.type}"`);
-        const result = await cloudinary.uploader.destroy(attempt.id, { resource_type: attempt.type });
-        console.log(`[Server Cloudinary Delete] Response from Cloudinary:`, result);
-
-        if (result && result.result === "ok") {
-          successDeleted = true;
-          deletedDetails = { id: attempt.id, type: attempt.type };
-          lastResult = result;
-          break; // Stop immediately upon matching destruction!
-        } else {
-          lastResult = result;
-        }
-      } catch (err: any) {
-        console.warn(`[Server Cloudinary Delete] Error in attempt ID="${attempt.id}" TYPE="${attempt.type}":`, err.message || err);
-      }
-    }
-
-    if (successDeleted) {
-      console.log(`[Server Cloudinary Delete] SUCCESS! Destroyed asset:`, deletedDetails);
-      return res.json({
-        success: true,
-        result: "ok",
-        public_id,
-        attempt: deletedDetails
-      });
-    } else {
-      console.warn(`[Server Cloudinary Delete] EXHAUSTED ALL PATHWAYS! No live file matching candidates was found (or was already deleted).`);
-      // Return 200 with success: false and an explicit descriptive error message as requested
-      return res.json({
-        success: false,
-        error: `Asset ${public_id || "unknown"} not found or could not be verified/deleted on Cloudinary servers (status: ${lastResult?.result || "not found"}).`,
-        result: lastResult?.result || "not found",
-        public_id
-      });
-    }
-  } catch (error: any) {
-    console.error("Cloudinary Delete Proxy Route Error:", error);
-    res.status(500).json({ error: error.message || "Gagal menghapus file dari Cloudinary secara server-side" });
-  }
-});
+// JSON API Route: Cloudinary Delete Proxy (delegated to src/api/cloudinary.ts handler)
+app.post("/api/cloudinary/delete", deleteCloudinaryAsset);
 
 // Vite Middleware & SPA serving
 async function startServer() {

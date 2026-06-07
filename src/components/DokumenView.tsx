@@ -251,9 +251,29 @@ export default function DokumenView({
         console.log(`[DEBUG_HAPUS] Memulai proses penghapusan asset Cloudinary.`);
         console.log(`[DEBUG_HAPUS] Parameter / URL yang akan dikirim: "${deleteTarget}"`);
         try {
-          // Pass the database primary public ID AND the full data URL as an alternative fallback
-          const delResult = await deleteFile(deleteTarget, item.data_url);
+          // Call the secure server-side deletion route directly passing public_id from Firestore document
+          const response = await fetch("/api/cloudinary/delete", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              public_id: item.cloudinary_public_id || deleteTarget,
+              url: item.data_url
+            })
+          });
+
+          if (!response.ok) {
+            const errInfo = await response.json().catch(() => ({}));
+            throw new Error(errInfo.error || `Server responded with status: ${response.status}`);
+          }
+
+          const delResult = await response.json();
           console.log(`[DEBUG_HAPUS] Berhasil memproses permintaan hapus Cloudinary secara tuntas.`, delResult);
+          
+          if (delResult && delResult.success === false && delResult.result !== "not found") {
+            throw new Error(delResult.error || "Gagal menghapus aset dari Cloudinary server");
+          }
           
           if (delResult && delResult.result === "not found") {
             console.warn(`[DEBUG_HAPUS] Cloudinary melaporkan asset tidak ditemukan ("not found"). Melanjutkan ke penghapusan database.`);
