@@ -41,6 +41,7 @@ export default function DokumenView({
   const [fileSizeStr, setFileSizeStr] = useState('');
   const [fileType, setFileType] = useState('');
   const [isUploading, setIsUploading] = useState(false);
+  const [previewItem, setPreviewItem] = useState<DokumenArsip | null>(null);
 
   const canEdit = currentUserRole === UserRole.ADMIN || currentUserRole === UserRole.OPERATOR;
 
@@ -109,10 +110,15 @@ export default function DokumenView({
 
       const cloudinaryRes = await uploadFile(fileToUpload, "sirekap", customFileName);
 
+      // Extract back the exact final public_id from Cloudinary response (without directory/folder prefix)
+      const fullPublicId = cloudinaryRes.public_id || '';
+      const lastSlashIdx = fullPublicId.lastIndexOf('/');
+      const finalMappedName = lastSlashIdx !== -1 ? fullPublicId.substring(lastSlashIdx + 1) : fullPublicId;
+
       const docId = `dok_${Date.now()}`;
       const payload: DokumenArsip = {
         id: docId,
-        nama_dokumen: cleanName,
+        nama_dokumen: finalMappedName, // Explicitly map to the exact finalized Cloudinary public_id name
         kategori: formKategori,
         tanggal_upload: new Date().toISOString().substring(0, 10),
         tipe_file: fileType,
@@ -262,9 +268,13 @@ export default function DokumenView({
           filteredDokumens.map((d, i) => {
             const isImage = d.tipe_file.startsWith('image/');
             return (
-              <div key={i} className="bg-white rounded-2xl border border-slate-100 shadow-xs hover:shadow-md hover:border-blue-500 transition-all duration-200 flex flex-col justify-between overflow-hidden" id={`doc-card-${i}`}>
-                {/* Micro preview block */}
-                <div className="h-32 bg-slate-50 border-b flex items-center justify-center relative group overflow-hidden">
+              <div key={i} className="bg-white rounded-2xl border border-slate-100 shadow-xs hover:shadow-md hover:border-blue-500 transition-all duration-200 flex flex-col justify-between overflow-hidden group/card" id={`doc-card-${i}`}>
+                {/* Micro preview block - Clickable to open preview */}
+                <div 
+                  className="h-32 bg-slate-50 border-b flex items-center justify-center relative group overflow-hidden cursor-pointer"
+                  onClick={() => setPreviewItem(d)}
+                  title="Klik untuk melihat pratinjau dokumen"
+                >
                   {isImage ? (
                     <img src={d.data_url} alt="doc-preview" className="w-[85%] h-[85%] object-contain" referrerPolicy="no-referrer" />
                   ) : (
@@ -274,15 +284,26 @@ export default function DokumenView({
                     </div>
                   )}
 
+                  {/* Hover Overlay indicator */}
+                  <div className="absolute inset-0 bg-slate-900/10 opacity-0 group-hover/card:opacity-100 transition duration-150 flex items-center justify-center">
+                    <span className="bg-blue-900 border border-blue-800 text-white rounded-lg text-[10px] font-bold px-2 py-1 shadow">
+                      Lihat Berkas
+                    </span>
+                  </div>
+
                   {/* Absolute Badge Category */}
                   <span className="absolute top-2.5 right-2.5 bg-blue-900 border border-blue-800 text-[9px] font-extrabold text-white px-2 py-0.5 rounded-full select-none shadow">
                     {d.kategori}
                   </span>
                 </div>
 
-                {/* Meta details */}
-                <div className="p-4 space-y-2">
-                  <h4 className="font-extrabold text-slate-900 truncate leading-tight text-xs" title={d.nama_dokumen}>{d.nama_dokumen}</h4>
+                {/* Meta details - Clickable to open preview */}
+                <div 
+                  className="p-4 space-y-2 cursor-pointer" 
+                  onClick={() => setPreviewItem(d)}
+                  title="Klik untuk melihat pratinjau dokumen"
+                >
+                  <h4 className="font-extrabold text-slate-900 truncate leading-tight text-xs hover:text-blue-700 transition" title={d.nama_dokumen}>{d.nama_dokumen}</h4>
                   <div className="flex justify-between items-center text-[10px] text-slate-500 font-medium">
                     <span className="flex items-center gap-0.5 font-bold"><Calendar size={11} /> {d.tanggal_upload}</span>
                     <span className="bg-slate-100 text-slate-700 font-mono font-bold px-1 rounded">{d.ukuran_file}</span>
@@ -291,6 +312,13 @@ export default function DokumenView({
 
                 {/* Action panel */}
                 <div className="bg-slate-50 p-2 border-t flex gap-1.5 items-center justify-end">
+                  <button 
+                    onClick={() => setPreviewItem(d)}
+                    className="p-1.5 bg-white border hover:bg-blue-50 text-blue-800 rounded-lg hover:border-blue-300 transition"
+                    title="Lihat Detail / Preview"
+                  >
+                    <Eye size={13} />
+                  </button>
                   <a 
                     href={d.data_url} 
                     download={d.nama_dokumen}
@@ -421,6 +449,116 @@ export default function DokumenView({
               </div>
 
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Preview Modal */}
+      {previewItem && (
+        <div 
+          className="fixed inset-0 bg-slate-950/65 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in"
+          id="preview-overlay-bg"
+          onClick={() => setPreviewItem(null)}
+        >
+          <div 
+            className="bg-white rounded-2xl shadow-2xl border border-slate-150 max-w-4xl w-full overflow-hidden flex flex-col max-h-[90vh]"
+            id="preview-card"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="p-4 bg-gradient-to-r from-blue-900 to-indigo-950 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <FileText size={18} className="text-blue-300" />
+                <div>
+                  <h3 className="font-bold text-sm md:text-base line-clamp-1" title={previewItem.nama_dokumen}>{previewItem.nama_dokumen}</h3>
+                  <p className="text-[10px] text-slate-300 flex items-center gap-1.5 mt-0.5">
+                    Kategori: 
+                    <span className="font-extrabold text-white bg-blue-800 px-2 py-0.5 rounded-full text-[9px]">
+                      {previewItem.kategori}
+                    </span>
+                  </p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setPreviewItem(null)} 
+                className="text-white hover:text-white/80 font-bold text-2xl px-2 focus:outline-none cursor-pointer"
+                aria-label="Tutup"
+              >
+                &times;
+              </button>
+            </div>
+
+            {/* Content Body */}
+            <div className="p-6 bg-slate-50 flex-1 overflow-auto flex flex-col items-center justify-center min-h-[350px]">
+              {previewItem.tipe_file.startsWith('image/') ? (
+                <div className="relative max-h-[55vh] w-full flex items-center justify-center bg-slate-100 rounded-xl border overflow-hidden p-2">
+                  <img 
+                    src={previewItem.data_url} 
+                    alt={previewItem.nama_dokumen} 
+                    className="max-h-[50vh] max-w-full object-contain rounded-md"
+                    referrerPolicy="no-referrer"
+                  />
+                </div>
+              ) : previewItem.tipe_file === 'application/pdf' ? (
+                <div className="w-full h-full flex flex-col gap-2">
+                  <iframe 
+                    src={previewItem.data_url} 
+                    className="w-full h-[55vh] rounded-lg border border-slate-200 bg-white" 
+                    title={previewItem.nama_dokumen}
+                  />
+                  <div className="text-[11px] text-slate-500 text-center font-medium">
+                    Jika file PDF tidak tampil secara otomatis, Anda dapat mengunduh berkas menggunakan tombol di bawah ini.
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-12 space-y-3">
+                  <FileText size={64} className="mx-auto text-blue-900/40" />
+                  <div className="font-bold text-slate-700 text-sm">Format berkas tidak dapat ditinjau langsung</div>
+                  <div className="text-xs text-slate-500">Tipe Berkas: {previewItem.tipe_file}</div>
+                </div>
+              )}
+            </div>
+
+            {/* Footer with Details & Download */}
+            <div className="p-4 bg-white border-t flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+              <div className="grid grid-cols-2 sm:flex sm:items-center gap-4 text-slate-600">
+                <div>
+                  <span className="block text-[9px] uppercase tracking-wider text-slate-400 font-bold">Tanggal Unggah</span>
+                  <span className="font-semibold text-slate-800">{previewItem.tanggal_upload}</span>
+                </div>
+                <div>
+                  <span className="block text-[9px] uppercase tracking-wider text-slate-400 font-bold">Ukuran File</span>
+                  <span className="font-semibold text-slate-800">{previewItem.ukuran_file}</span>
+                </div>
+                {previewItem.cloudinary_public_id && (
+                  <div className="col-span-2 sm:col-span-1">
+                    <span className="block text-[9px] uppercase tracking-wider text-slate-400 font-bold">Cloudinary Public ID</span>
+                    <span className="font-mono text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded truncate block max-w-[200px]" title={previewItem.cloudinary_public_id}>
+                      {previewItem.cloudinary_public_id}
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2 justify-end">
+                <a 
+                  href={previewItem.data_url} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="px-3.5 py-2 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg transition-all flex items-center gap-1.5"
+                >
+                  Buka di Tab Baru
+                </a>
+                <a 
+                  href={previewItem.data_url} 
+                  download={previewItem.nama_dokumen}
+                  className="px-4 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 hover:scale-[1.02] active:scale-[0.98] rounded-lg shadow-sm transition-all flex items-center gap-1.5"
+                >
+                  <Download size={14} />
+                  Unduh Berkas
+                </a>
+              </div>
+            </div>
           </div>
         </div>
       )}
