@@ -186,11 +186,46 @@ export default function DokumenView({
 
     setIsUploading(true);
     try {
-      // 1. Upload File to Cloudinary with custom name given by the user, preserving extension
+      // 1. Check for file name collision in Firestore dokumens list.
+      // If a match is found, append sequential numbers (_1, _2, etc.) to ensure uniqueness.
       const originalExtension = fileName.split('.').pop() || '';
+      let isNameUnique = false;
+      let suffixCounter = 0;
+      let checkBase = cleanName;
+      
+      while (!isNameUnique) {
+        const candidateNameWithExt = originalExtension 
+          ? `${checkBase}.${originalExtension}`
+          : checkBase;
+          
+        const candidateNameWithoutExt = checkBase;
+        
+        const hasCollision = dokumens.some(d => {
+          const existingName = d.nama_dokumen.toLowerCase();
+          const targetWithExt = candidateNameWithExt.toLowerCase();
+          const targetWithoutExt = candidateNameWithoutExt.toLowerCase();
+          
+          return existingName === targetWithExt || 
+                 existingName === targetWithoutExt ||
+                 d.cloudinary_public_id === `sirekap/${candidateNameWithoutExt}` ||
+                 d.cloudinary_public_id?.endsWith(`/${candidateNameWithoutExt}`) ||
+                 d.data_url?.toLowerCase().includes(`/${targetWithExt}`) ||
+                 d.data_url?.toLowerCase().includes(`/${targetWithoutExt}`);
+        });
+        
+        if (hasCollision) {
+          suffixCounter++;
+          checkBase = `${cleanName}_${suffixCounter}`;
+          console.log(`[COLLISION DETECTION] Name taken! Retrying sequence: "${checkBase}"`);
+        } else {
+          isNameUnique = true;
+        }
+      }
+
+      const finalCleanName = checkBase;
       const customFileName = originalExtension 
-        ? `${cleanName}.${originalExtension}`
-        : cleanName;
+        ? `${finalCleanName}.${originalExtension}`
+        : finalCleanName;
 
       const cloudinaryRes = await uploadFile(fileToUpload, "sirekap", customFileName);
 

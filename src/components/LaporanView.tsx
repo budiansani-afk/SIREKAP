@@ -232,7 +232,7 @@ export default function LaporanView({
             {settings?.logo_instansi ? (
               <img src={settings.logo_instansi} alt="Logo Dinas" className="w-16 h-16 object-contain" referrerPolicy="no-referrer" />
             ) : (
-              <img src="https://res.cloudinary.com/de4prnqa4/image/upload/v1780640818/logo_sibiru_y2jgaw.jpg" alt="Logo SIBIRU" className="w-15 h-15 object-contain" referrerPolicy="no-referrer" />
+              <img src="https://res.cloudinary.com/de4prnqa4/image/upload/v1780640818/logo_sibiru_y2jgaw.jpg" alt="Logo SIREKAP TANAH" className="w-15 h-15 object-contain" referrerPolicy="no-referrer" />
             )}
             <div className="text-left">
               <h1 className="text-base font-black tracking-widest text-slate-900 uppercase">PEMERINTAH KABUPATEN BIMA</h1>
@@ -247,7 +247,7 @@ export default function LaporanView({
           <h3 className="text-center font-black text-slate-900 tracking-wide text-xs uppercase underline">
             {reportTitle}
           </h3>
-          <p className="text-[10px] text-slate-500 font-mono font-bold">Kode Dokumen Rekap: SIBIRU/PERTANAHAN/{new Date().getFullYear()}/REP-0{selectedLaporan.length}</p>
+          <p className="text-[10px] text-slate-500 font-mono font-bold">Kode Dokumen Rekap: SIREKAP/PERTANAHAN/{new Date().getFullYear()}/REP-0{selectedLaporan.length}</p>
         </div>
 
         {/* Tabular details */}

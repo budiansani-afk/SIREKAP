@@ -712,24 +712,27 @@ export async function seedInitialDataIfEmpty() {
       const sampleUsers: Pengguna[] = [
         {
           id: "admin@sirekap.com",
-          nama: "Administrator SIBIRU Bima",
+          nama: "Administrator SIREKAP Bima",
           email: "admin@sirekap.com",
           role: UserRole.ADMIN,
-          aktif: true
+          aktif: true,
+          password: "bima2026"
         },
         {
           id: "operator@sirekap.com",
           nama: "Operator Teknis Pertanahan",
           email: "operator@sirekap.com",
           role: UserRole.OPERATOR,
-          aktif: true
+          aktif: true,
+          password: "bima2026"
         },
         {
           id: "pimpinan@sirekap.com",
           nama: "Kepala Bidang Pertanahan",
           email: "pimpinan@sirekap.com",
           role: UserRole.PIMPINAN,
-          aktif: true
+          aktif: true,
+          password: "bima2026"
         }
       ];
 

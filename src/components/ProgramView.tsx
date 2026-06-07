@@ -260,13 +260,13 @@ export default function ProgramView({
   const handleExport = () => {
     if (activeTab === 'program') {
       const exportHeaders = ['kode_program', 'nama_program', 'pagu', 'realisasi', 'sisa', 'persentase'];
-      exportToCSV(filteredPrograms, exportHeaders, `Daftar_Program_SIBIRU`);
+      exportToCSV(filteredPrograms, exportHeaders, `Daftar_Program_SIREKAP`);
     } else if (activeTab === 'kegiatan') {
       const exportHeaders = ['kode_kegiatan', 'nama_kegiatan', 'kode_program', 'pagu', 'realisasi', 'sisa', 'persentase'];
-      exportToCSV(filteredKegiatans, exportHeaders, `Daftar_Kegiatan_SIBIRU`);
+      exportToCSV(filteredKegiatans, exportHeaders, `Daftar_Kegiatan_SIREKAP`);
     } else {
       const exportHeaders = ['kode_sub_kegiatan', 'nama_sub_kegiatan', 'kode_program', 'kode_kegiatan', 'pagu', 'realisasi', 'sisa', 'persentase'];
-      exportToCSV(filteredSubKegiatans, exportHeaders, `Daftar_Sub_Kegiatan_SIBIRU`);
+      exportToCSV(filteredSubKegiatans, exportHeaders, `Daftar_Sub_Kegiatan_SIREKAP`);
     }
   };
 

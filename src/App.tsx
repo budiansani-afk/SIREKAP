@@ -28,6 +28,7 @@ import {
   Menu, 
   X, 
   User, 
+  Mail,
   Lock, 
   Layers,
   Building,
@@ -59,7 +60,8 @@ import {
   DokumenArsip, 
   ActivityLog, 
   AppSettings, 
-  UserRole 
+  UserRole,
+  Pengguna
 } from './types';
 
 // Importing Views
@@ -109,6 +111,9 @@ export default function App() {
   const [user, setUser] = useState<any>(null);
   const [userRole, setUserRole] = useState<UserRole>(UserRole.PIMPINAN); // Fallback standard role
   const [userDisplayName, setUserDisplayName] = useState<string>('');
+  const [penggunas, setPenggunas] = useState<Pengguna[]>([]);
+  const [namaPenggunaInput, setNamaPenggunaInput] = useState('');
+  const [namaPenggunaAktif, setNamaPenggunaAktif] = useState<string>(() => localStorage.getItem('nama_pengguna_aktif') || '');
   const [isAuthChecking, setIsAuthChecking] = useState(true);
 
   // Login process states
@@ -137,30 +142,42 @@ export default function App() {
       onAuthStateChanged(auth, async (currentUser) => {
         if (currentUser) {
           setUser(currentUser);
-          setUserDisplayName(currentUser.displayName || currentUser.email?.split('@')[0] || 'Aparatur Pertanahan');
           
-          // Determine Role based on Email
+          // Determine Role based on User Document in Firestore if it exists
           const email = currentUser.email?.toLowerCase() || '';
-          let role = UserRole.PIMPINAN;
-          if (email.includes('admin') || email === 'budiansani@gmail.com') {
-            role = UserRole.ADMIN;
-          } else if (email.includes('operator')) {
-            role = UserRole.OPERATOR;
-          }
-          setUserRole(role);
-
-          // Save/Sync user doc to firestore under sibiru_pengguna
+          let role = UserRole.PIMPINAN; // Fallback standard role
+          let dbNama = email.split('@')[0];
+          
           try {
-            await setDoc(doc(db, "sibiru_pengguna", email), {
-              id: email,
-              email: email,
-              nama: currentUser.displayName || currentUser.email?.split('@')[0] || 'Aparatur Pertanahan',
-              role: role,
-              aktif: true
-            }, { merge: true });
+            const userDoc = await getDoc(doc(db, "sibiru_pengguna", email));
+            if (userDoc.exists()) {
+              const data = userDoc.data();
+              role = data.role || UserRole.PIMPINAN;
+              dbNama = data.nama || dbNama;
+            } else {
+              // Standard fallback rules
+              if (email.includes('admin') || email === 'budiansani@gmail.com') {
+                role = UserRole.ADMIN;
+              } else if (email.includes('operator')) {
+                role = UserRole.OPERATOR;
+              }
+              // Save standard seeding account to Database so they can be modified
+              await setDoc(doc(db, "sibiru_pengguna", email), {
+                id: email,
+                email: email,
+                nama: email.includes('admin') ? "Administrator SIREKAP Bima" : email.includes('operator') ? "Operator Teknis Pertanahan" : "Kepala Bidang Pertanahan",
+                role: role,
+                aktif: true,
+                password: "bima2026"
+              }, { merge: true });
+            }
           } catch (e) {
-            console.warn("Could not sync user profile to database:", e);
+            console.warn("Could not retrieve user document from firestore:", e);
           }
+
+          setUserRole(role);
+          const activeNama = localStorage.getItem('nama_pengguna_aktif');
+          setUserDisplayName(activeNama || dbNama || 'Aparatur Pertanahan');
         } else {
           setUser(null);
         }
@@ -202,6 +219,10 @@ export default function App() {
 
     const unsubDoc = onSnapshot(collection(db, COLL_DOKUMEN), (snap) => {
       setDokumens(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as DokumenArsip)));
+    });
+
+    const unsubPengguna = onSnapshot(collection(db, "sibiru_pengguna"), (snap) => {
+      setPenggunas(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Pengguna)));
     });
 
     const unsubLogs = onSnapshot(collection(db, COLL_LOG_AKTIVITAS), (snap) => {
@@ -263,6 +284,7 @@ export default function App() {
       unsubReal();
       unsubMon();
       unsubDoc();
+      unsubPengguna();
       unsubLogs();
       unsubSet();
     };
@@ -280,6 +302,10 @@ export default function App() {
   // Handle Authentication attempts
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!namaPenggunaInput.trim()) {
+      setLoginError("Nama Pengguna wajib diisi!");
+      return;
+    }
     if (!emailInput || !passwordInput) {
       setLoginError("Harap masukkan email dan kata sandi Anda!");
       return;
@@ -288,33 +314,72 @@ export default function App() {
     setIsLoggingIn(true);
     setLoginError('');
 
+    const emailClean = emailInput.trim().toLowerCase();
+
     try {
-      // Try regular firebase sign in. If user not found (first run), auto-create standard users
-      await signInWithEmailAndPassword(auth, emailInput, passwordInput)
-        .catch(async (err: any) => {
-          if (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential') {
-            // Auto register helper check for prefilled emails
-            if (
-              emailInput === 'admin@sirekap.com' || 
-              emailInput === 'operator@sirekap.com' || 
-              emailInput === 'pimpinan@sirekap.com'
-            ) {
-              await createUserWithEmailAndPassword(auth, emailInput, passwordInput);
-            } else {
-              throw err;
-            }
+      // 1. Fetch from Firestore sibiru_pengguna
+      const userDocRef = doc(db, "sibiru_pengguna", emailClean);
+      const userDocSnap = await getDoc(userDocRef);
+      
+      if (!userDocSnap.exists()) {
+        // If it's a seed email and doesn't exist yet, allow standard onboarding
+        if (
+          emailClean === 'admin@sirekap.com' ||
+          emailClean === 'operator@sirekap.com' ||
+          emailClean === 'pimpinan@sirekap.com'
+        ) {
+          // Allow through to trigger creation below
+        } else {
+          throw new Error("Nama akun tidak terdaftar di database Firestore! Daftarkan akun di Administrasi.");
+        }
+      } else {
+        const userData = userDocSnap.data();
+        if (userData.aktif === false) {
+          throw new Error("Akun Anda telah dinonaktifkan oleh administrator!");
+        }
+        
+        // Verify Password match
+        if (userData.password && userData.password !== passwordInput) {
+          throw new Error("Kata sandi yang Anda masukkan salah!");
+        }
+      }
+
+      // 2. Clear out any previous session-cached display names and save the new active one
+      localStorage.setItem('nama_pengguna_aktif', namaPenggunaInput.trim());
+      setNamaPenggunaAktif(namaPenggunaInput.trim());
+      setUserDisplayName(namaPenggunaInput.trim());
+
+      // 3. Authenticate with Firebase Auth
+      try {
+        await signInWithEmailAndPassword(auth, emailClean, passwordInput);
+      } catch (authErr: any) {
+        if (authErr.code === 'auth/user-not-found' || authErr.code === 'auth/invalid-credential') {
+          // If first run, create user in Auth
+          if (
+            emailClean === 'admin@sirekap.com' || 
+            emailClean === 'operator@sirekap.com' || 
+            emailClean === 'pimpinan@sirekap.com' ||
+            userDocSnap.exists()
+          ) {
+            await createUserWithEmailAndPassword(auth, emailClean, passwordInput);
           } else {
-            throw err;
+            throw authErr;
           }
-        });
+        } else {
+          throw authErr;
+        }
+      }
     } catch (err: any) {
-      setLoginError(`Kombinasi salah atau gagal login: ${err.message}`);
+      setLoginError(err.message || `Nama akun atau kata sandi tidak cocok.`);
     } finally {
       setIsLoggingIn(false);
     }
   };
 
   const handleSignOut = () => {
+    localStorage.removeItem('nama_pengguna_aktif');
+    setNamaPenggunaInput('');
+    setNamaPenggunaAktif('');
     signOut(auth);
   };
 
@@ -322,6 +387,13 @@ export default function App() {
   const handleQuickLogin = (email: string) => {
     setEmailInput(email);
     setPasswordInput("bima2026");
+    if (email.includes('admin')) {
+      setNamaPenggunaInput("Administrator SIREKAP Bima");
+    } else if (email.includes('operator')) {
+      setNamaPenggunaInput("Operator Teknis Pertanahan");
+    } else {
+      setNamaPenggunaInput("Kepala Bidang Pertanahan");
+    }
   };
 
   // Update brand settings helper
@@ -346,13 +418,29 @@ export default function App() {
     { id: "analisis", label: "Analisis Kinerja", icon: <Sparkles size={16} /> },
     { id: "logs", label: "Audit Logs", icon: <ShieldAlert size={16} /> },
     { id: "pengaturan", label: "Administrasi Sistem", icon: <Settings size={16} /> },
-  ];
+  ].filter(item => {
+    // Hide Audit Logs and Administrasi Sistem menus for OPERATOR and PIMPINAN
+    if (userRole !== UserRole.ADMIN) {
+      return item.id !== 'logs' && item.id !== 'pengaturan';
+    }
+    return true;
+  });
+
+  // Enforce access control on route/page state changes
+  useEffect(() => {
+    if (userRole !== UserRole.ADMIN) {
+      if (activePage === 'logs' || activePage === 'pengaturan') {
+        setActivePage('dashboard');
+      }
+    }
+  }, [userRole, activePage]);
+
 
   if (isAuthChecking) {
     return (
       <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center text-white space-y-3 font-sans">
         <Building className="text-blue-500 animate-bounce" size={48} />
-        <h1 className="text-xl font-extrabold tracking-wide">SIBIRU KABUPATEN BIMA</h1>
+        <h1 className="text-xl font-extrabold tracking-wide">SIREKAP TANAH KABUPATEN BIMA</h1>
         <p className="text-xs text-slate-400 font-semibold uppercase tracking-widest animate-pulse">Memuat Sesi Keamanan Firebase...</p>
       </div>
     );
@@ -372,20 +460,20 @@ export default function App() {
             <div className="w-24 h-24 bg-white rounded-full flex items-center justify-center p-0.5 shadow-2xl border-2 border-orange-500 overflow-hidden">
               <img 
                 src="https://res.cloudinary.com/de4prnqa4/image/upload/v1780640818/logo_sibiru_y2jgaw.jpg" 
-                alt="Logo SIBIRU" 
+                alt="Logo SIREKAP TANAH" 
                 className="w-full h-full object-cover rounded-full"
                 referrerPolicy="no-referrer"
               />
             </div>
           </div>
           <h2 className="mt-2 text-center text-3xl font-black tracking-tight">
-            <span className="text-blue-600">SIBIRU</span> <span className="text-orange-500">TANAH</span>
+            <span className="text-blue-600">SIREKAP</span> <span className="text-orange-500">TANAH</span>
           </h2>
-          <p className="mt-2 text-center text-xs font-semibold text-slate-400 tracking-wide uppercase">
-            Sistem Informasi Belanja & Realisasi Keuangan 2026
+          <p className="mt-2 text-center text-xs font-semibold text-slate-400 tracking-wide uppercase px-4">
+            Sistem Informasi Rekapitulasi, Evaluasi, dan Kinerja Anggaran Pertanahan 2026
           </p>
-          <div className="mt-0.5 text-center font-mono text-[10px] text-blue-400 font-black uppercase tracking-wider">
-            Sektor Pertanahan Kabupaten Bima • Nusa Tenggara Barat
+          <div className="mt-1.5 text-center font-mono text-[10px] text-blue-400 font-black uppercase tracking-wider">
+            Bidang Pertanahan Dinas Perumahan dan Kawasan Permukiman Kabupaten Bima
           </div>
         </div>
 
@@ -401,9 +489,24 @@ export default function App() {
 
             <form className="space-y-4 text-xs font-medium" onSubmit={handleLogin}>
               <div>
-                <label className="block text-slate-700 font-bold mb-1 uppercase tracking-wider">Alamat Surel / Email</label>
+                <label className="block text-slate-700 font-bold mb-1 uppercase tracking-wider">Nama Pengguna (Wajib & Bebas)</label>
                 <div className="relative">
                   <User className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
+                  <input
+                    type="text"
+                    required
+                    placeholder="Contoh: Budi Santoso atau Keuangan"
+                    value={namaPenggunaInput}
+                    onChange={(e) => setNamaPenggunaInput(e.target.value)}
+                    className="w-full p-2.5 pl-9 border border-slate-200 bg-slate-50 focus:bg-white rounded-lg outline-blue-600 focus:border-blue-600 text-slate-900 font-semibold"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-bold mb-1 uppercase tracking-wider">Nama Akun / Alamat Surel</label>
+                <div className="relative">
+                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
                   <input
                     type="email"
                     required
@@ -593,16 +696,39 @@ export default function App() {
           />
         );
       case "logs":
+        if (userRole !== UserRole.ADMIN) {
+          return (
+            <div className="bg-white rounded-2xl border border-red-100 p-12 text-center max-w-lg mx-auto my-12 shadow-sm space-y-4">
+              <ShieldAlert className="text-red-500 mx-auto animate-bounce animate-duration-1000" size={48} />
+              <h3 className="text-base font-black text-slate-800 uppercase tracking-widest">Akses Ditolak</h3>
+              <p className="text-xs text-slate-500 font-bold leading-relaxed">
+                Halaman Log Aktivitas Sistem ini bersifat rahasia dan hanya dapat diakses oleh Administrator Sektor Bidang Pertanahan.
+              </p>
+            </div>
+          );
+        }
         return (
           <LogView logs={logs} />
         );
       case "pengaturan":
+        if (userRole !== UserRole.ADMIN) {
+          return (
+            <div className="bg-white rounded-2xl border border-red-100 p-12 text-center max-w-lg mx-auto my-12 shadow-sm space-y-4">
+              <ShieldAlert className="text-red-500 mx-auto animate-bounce animate-duration-1000" size={48} />
+              <h3 className="text-base font-black text-slate-800 uppercase tracking-widest">Akses Ditolak</h3>
+              <p className="text-xs text-slate-500 font-bold leading-relaxed">
+                Halaman Administrasi Sistem dan Konfigurasi Organisasi ini hanya diizinkan untuk akun Administrator Sektor.
+              </p>
+            </div>
+          );
+        }
         return (
           <PengaturanView 
             settings={appSettings} 
             currentUserRole={userRole} 
-            currentUserEmail={user.email}
+            currentUserEmail={user?.email || ''}
             onUpdateSettings={handleUpdateSettings} 
+            penggunas={penggunas}
           />
         );
       default:
@@ -611,7 +737,7 @@ export default function App() {
   };
 
   return (
-    <div className="h-screen overflow-hidden bg-gradient-to-br from-[#ebf4fc] via-[#f0f7ff] to-[#fff3e0] flex flex-col font-sans text-slate-800 animate-fade-in" id="sibiru-container">
+    <div className="h-screen overflow-hidden bg-gradient-to-br from-[#ebf4fc] via-[#f0f7ff] to-[#fff3e0] flex flex-col font-sans text-slate-800 animate-fade-in" id="sirekap-container">
       
       {/* Top running gradient bar (Blue with Orange gradient banner decoration) */}
       <div className="h-1.5 bg-gradient-to-r from-blue-700 via-blue-500 to-orange-500 w-full sticky top-0 z-50 print:hidden shadow-xs" />
@@ -631,7 +757,7 @@ export default function App() {
             <div className="w-9 h-9 bg-white rounded-lg flex items-center justify-center shrink-0 border border-orange-500 overflow-hidden shadow-2xs select-none">
               <img 
                 src="https://res.cloudinary.com/de4prnqa4/image/upload/v1780640818/logo_sibiru_y2jgaw.jpg" 
-                alt="Logo SIBIRU" 
+                alt="Logo SIREKAP" 
                 className="w-full h-full object-cover"
                 referrerPolicy="no-referrer"
               />

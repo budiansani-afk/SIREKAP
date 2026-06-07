@@ -103,6 +103,7 @@ export interface Pengguna {
   email: string;
   role: UserRole;
   aktif: boolean;
+  password?: string;
 }
 
 export interface LogAktivitas {
