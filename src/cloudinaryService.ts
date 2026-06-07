@@ -59,7 +59,26 @@ export async function uploadFile(
     
     // Parse error response if available from JSON or text
     const errorBody = await response.json().catch(() => null);
-    lastServerError = errorBody?.error || errorBody?.message || await response.text() || `Status: ${response.status}`;
+let lastServerError = "";
+
+try {
+  const text = await response.text();
+
+  try {
+    const json = JSON.parse(text);
+
+    lastServerError =
+      json.error ||
+      json.message ||
+      text;
+  } catch {
+    lastServerError = text;
+  }
+
+} catch {
+  lastServerError =
+    `Status: ${response.status}`;
+}
     console.warn("[CloudinaryService] Server-signed upload returned non-ok status:", response.status, lastServerError);
   } catch (proxyError: any) {
     lastServerError = proxyError?.message || String(proxyError);
@@ -79,8 +98,6 @@ export async function uploadFile(
     formData.append("folder", folder);
     if (filename) {
       formData.append("filename_override", filename);
-      formData.append("use_filename", "true");
-      formData.append("unique_filename", "true");
     }
 
     const response = await fetch(url, {
