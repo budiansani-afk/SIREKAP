@@ -11,6 +11,98 @@ import {
 } from 'lucide-react';
 import { ActivityLog } from '../types';
 
+function formatValue(key: string, val: any): string {
+  if (val === null || val === undefined) return "Kosong";
+  if (typeof val === 'boolean') return val ? 'Ya' : 'Tidak';
+  if (typeof val === 'number') {
+    const k = key.toLowerCase();
+    if (k.includes('pagu') || k.includes('realisasi') || k.includes('nominal') || k.includes('jumlah') || k.includes('sisa') || k.includes('anggaran') || k.includes('nominal_')) {
+      return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(val);
+    }
+    return String(val);
+  }
+  if (typeof val === 'string') {
+    if (val.startsWith('data:image/') || val.startsWith('data:application/')) {
+      return "[File Gambar / Base64 Data]";
+    }
+    if (val.startsWith('http://') || val.startsWith('https://')) {
+      try {
+        const urlObj = new URL(val);
+        const pathname = urlObj.pathname;
+        const parts = pathname.split('/');
+        let filename = parts[parts.length - 1];
+        filename = decodeURIComponent(filename);
+        return filename || "File Foto / Tautan CDN";
+      } catch (e) {
+        const parts = val.split('/');
+        return parts[parts.length - 1] || "File Foto";
+      }
+    }
+    return val;
+  }
+  return typeof val === 'object' ? JSON.stringify(val) : String(val);
+}
+
+function renderLogDetails(log: ActivityLog) {
+  if (log.oldData && log.newData) {
+    try {
+      const changes: string[] = [];
+      const oldObj = log.oldData;
+      const newObj = log.newData;
+      const allKeys = Array.from(new Set([...Object.keys(oldObj), ...Object.keys(newObj)]));
+      
+      const ignoredKeys = ['id', 'timestamp', 'waktu', 'data_rows_hash', 'ip_address', 'browser', 'nama_pengguna', 'role', 'password'];
+      
+      allKeys.forEach(k => {
+        if (ignoredKeys.includes(k)) return;
+        const oldVal = oldObj[k];
+        const newVal = newObj[k];
+        if (JSON.stringify(oldVal) !== JSON.stringify(newVal)) {
+          const label = k.replace(/_/g, ' ').toUpperCase();
+          changes.push(`${label}: ${formatValue(k, oldVal)} ➜ ${formatValue(k, newVal)}`);
+        }
+      });
+      
+      if (changes.length > 0) {
+        return (
+          <ul className="list-disc pl-4 space-y-0.5 mt-1 text-[10px] text-slate-500 font-mono leading-relaxed">
+            {changes.map((c, i) => <li key={i}>{c}</li>)}
+          </ul>
+        );
+      }
+    } catch (e) {
+      console.warn("Error diffing audit log", e);
+    }
+  }
+
+  const mainData = log.newData || log.oldData || log.details;
+  if (mainData && typeof mainData === 'object') {
+    try {
+      const items: string[] = [];
+      const ignoredKeys = ['id', 'timestamp', 'waktu', 'data_rows_hash', 'ip_address', 'browser', 'nama_pengguna', 'role', 'password'];
+      
+      Object.entries(mainData).forEach(([k, val]) => {
+        if (ignoredKeys.includes(k)) return;
+        if (val === null || val === undefined || val === '') return;
+        const label = k.replace(/_/g, ' ').toUpperCase();
+        items.push(`${label}: ${formatValue(k, val)}`);
+      });
+
+      if (items.length > 0) {
+        return (
+          <ul className="list-disc pl-4 space-y-0.5 mt-1 text-[10px] text-slate-500 font-mono leading-relaxed">
+            {items.map((it, i) => <li key={i}>{it}</li>)}
+          </ul>
+        );
+      }
+    } catch (e) {
+      // fallback
+    }
+  }
+
+  return null;
+}
+
 interface LogViewProps {
   logs: ActivityLog[];
 }
@@ -86,49 +178,47 @@ export default function LogView({ logs }: LogViewProps) {
           <table className="w-full text-left border-collapse text-xs">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-100 font-semibold text-slate-600">
-                <th className="p-3.5 pl-4 w-44">Waktu Kejadian (UTC)</th>
-                <th className="p-3.5 w-48">Pengguna / Role</th>
-                <th className="p-3.5">Dokumentasi Aksi / Kegiatan</th>
-                <th className="p-3.5 w-32">Modul</th>
-                <th className="p-3.5 text-center w-24">Inspeksi Data</th>
+                <th className="p-3.5 pl-4 w-44 align-top text-left">Waktu Kejadian (UTC)</th>
+                <th className="p-3.5 w-48 align-top text-left">Pengguna / Role</th>
+                <th className="p-3.5 align-top text-left">Dokumentasi Aksi / Kegiatan</th>
+                <th className="p-3.5 w-32 align-top text-left">Modul</th>
+                <th className="p-3.5 text-center w-24 align-top">Inspeksi Data</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-slate-700 font-medium">
               {filteredLogs.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="p-8 text-center text-slate-500 font-semibold">Tidak ditemukan aktivitas dalam sistem log audit.</td>
+                  <td colSpan={5} className="p-8 text-center text-slate-500 font-semibold align-top text-left">Tidak ditemukan aktivitas dalam sistem log audit.</td>
                 </tr>
               ) : (
                 filteredLogs.map((log, idx) => {
                   const dateStr = new Date(log.timestamp).toLocaleString('id-ID');
                   return (
                     <tr key={idx} className="hover:bg-slate-50/50 transition">
-                      <td className="p-3.5 pl-4 font-mono text-[10px] text-slate-500 flex items-center gap-1.5">
-                        <Calendar size={12} className="text-blue-850" />
-                        {dateStr}
+                      <td className="p-3.5 pl-4 font-mono text-[10px] text-slate-500 align-top text-left">
+                        <div className="flex items-start gap-1.5 pt-0.5">
+                          <Calendar size={12} className="text-blue-850 shrink-0 mt-0.5" />
+                          <span>{dateStr}</span>
+                        </div>
                       </td>
-                      <td className="p-3.5">
-                        <div className="flex items-center gap-1">
-                          <UserCheck size={12} className="text-blue-600" />
+                      <td className="p-3.5 align-top text-left">
+                        <div className="flex items-start gap-1">
+                          <UserCheck size={12} className="text-blue-600 shrink-0 mt-0.5" />
                           <p className="font-bold text-slate-900 truncate max-w-[150px]" title={log.userEmail}>{log.userEmail}</p>
                         </div>
-                        <span className="text-[10px] bg-slate-100 px-1.5 py-0.5 rounded text-slate-700 uppercase tracking-widest font-extrabold">{log.userRole}</span>
+                        <span className="text-[10px] bg-slate-100 px-1.5 py-0.5 rounded text-slate-700 uppercase tracking-widest font-extrabold mt-1 block w-fit">{log.userRole}</span>
                       </td>
-                      <td className="p-3.5">
-                        <p className="font-bold text-slate-950 uppercase text-[11px] font-black tracking-wide">{log.action}</p>
-                        {log.details && (
-                          <span className="text-[10px] text-slate-500 truncate block mt-0.5 max-w-sm" title={JSON.stringify(log.details)}>
-                            Detail: {JSON.stringify(log.details)}
-                          </span>
-                        )}
+                      <td className="p-3.5 max-w-sm break-words whitespace-normal leading-relaxed align-top text-left">
+                        <p className="font-bold text-slate-950 uppercase text-[11px] font-black tracking-wide break-words whitespace-normal">{log.action}</p>
+                        {renderLogDetails(log)}
                       </td>
-                      <td className="p-3.5">
+                      <td className="p-3.5 align-top text-left">
                         <span className="inline-flex items-center gap-0.5 px-2 py-0.5 bg-blue-50 text-blue-900 rounded font-bold border border-blue-100 text-[10px]">
                           <Layers size={10} />
                           {log.module || 'SYSTEM'}
                         </span>
                       </td>
-                      <td className="p-3.5 text-center">
+                      <td className="p-3.5 text-center align-top">
                         <button 
                           onClick={() => setSelectedLog(log)}
                           className="px-2 py-1 bg-white hover:bg-slate-100 border text-slate-700 rounded-lg transition"

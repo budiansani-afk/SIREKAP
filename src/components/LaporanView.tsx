@@ -11,8 +11,9 @@ import {
   Activity,
   Award
 } from 'lucide-react';
-import { Program, Kegiatan, SubKegiatan, Realisasi, MonitoringFisik, AppSettings } from '../types';
+import { Program, Kegiatan, SubKegiatan, Realisasi, MonitoringFisik, AppSettings, UserRole, ActivityLog } from '../types';
 import { formatRupiah, formatPercent } from '../utils/helpers';
+import { createAuditLog } from '../dbService';
 
 interface LaporanViewProps {
   programs: Program[];
@@ -21,6 +22,9 @@ interface LaporanViewProps {
   realisasis: Realisasi[];
   monitorings: MonitoringFisik[];
   settings?: AppSettings | null;
+  currentUserEmail: string;
+  currentUserRole: UserRole;
+  logs: ActivityLog[];
 }
 
 type LaporanType = 
@@ -39,15 +43,41 @@ export default function LaporanView({
   subKegiatans,
   realisasis,
   monitorings,
-  settings
+  settings,
+  currentUserEmail,
+  currentUserRole,
+  logs
 }: LaporanViewProps) {
   const [selectedLaporan, setSelectedLaporan] = useState<LaporanType>("rekap_anggaran");
   const [selectedMonth, setSelectedMonth] = useState<string>("Semua");
+  const [showPdfModal, setShowPdfModal] = useState(false);
 
   const monthsList = [
     "Januari", "Februari", "Maret", "April", "Mei", "Juni", 
     "Juli", "Agustus", "September", "Oktober", "November", "Desember"
   ];
+
+  const urutanJenis = useMemo(() => {
+    switch (selectedLaporan) {
+      case "rekap_anggaran": return "01";
+      case "rekap_realisasi": return "02";
+      case "rekap_program": return "03";
+      case "rekap_kegiatan": return "04";
+      case "rekap_sub_kegiatan": return "05";
+      case "bulanan": return "06";
+      case "tahunan": return "07";
+      case "monitoring_fisik": return "08";
+      default: return "09";
+    }
+  }, [selectedLaporan]);
+
+  const currentMonthCode = useMemo(() => {
+    return String(new Date().getMonth() + 1).padStart(2, '0');
+  }, []);
+
+  const currentYearCode = useMemo(() => {
+    return String(new Date().getFullYear());
+  }, []);
 
   // Official signature details derived from settings
   const namaPejabat = settings?.nama_pejabat_ttd || "Drs. H. BUDIAN SANI, M.Si";
@@ -74,11 +104,6 @@ export default function LaporanView({
       default: return "LAPORAN KEUANGAN";
     }
   }, [selectedLaporan, selectedMonth]);
-
-  // Handle direct print trigger
-  const handlePrint = () => {
-    window.print();
-  };
 
   // Build rows depending on selected options
   const reportRows = useMemo(() => {
@@ -145,6 +170,133 @@ export default function LaporanView({
     }
   }, [selectedLaporan, programs, kegiatans, subKegiatans, realisasis, monitorings, selectedMonth]);
 
+  // Content signature of current report content
+  const currentReportContentSignature = useMemo(() => {
+    const dataToSign = reportRows.map(r => ({
+      kode: r.kode,
+      nama: r.nama,
+      pagu: r.pagu,
+      realisasi: r.realisasi,
+      sisa: r.sisa,
+      persen: r.persen
+    }));
+    return JSON.stringify(dataToSign);
+  }, [reportRows]);
+
+  // List of previous prints and exports of this same report type
+  const previousPrintsOfSameTypeColor = useMemo(() => {
+    if (!logs) return [];
+    return logs
+      .filter(log => {
+        const matchAction = log.aksi === "CELAK_LAPORAN" || log.aksi === "CETAK_LAPORAN" || log.aksi === "EKSPOR_PDF";
+        if (!matchAction) return false;
+        try {
+          const parsed = log.data_baru ? JSON.parse(log.data_baru) : null;
+          return parsed && parsed.jenis_laporan === selectedLaporan;
+        } catch (e) {
+          return log.data_baru?.includes(`"jenis_laporan":"${selectedLaporan}"`);
+        }
+      })
+      .map(log => {
+        try {
+          const parsed = log.data_baru ? JSON.parse(log.data_baru) : null;
+          return {
+            waktu: log.waktu,
+            kode_dokumen: parsed?.kode_dokumen || "",
+            data_rows_hash: parsed?.data_rows_hash || "",
+            seq: parsed?.seq || 0
+          };
+        } catch (e) {
+          return null;
+        }
+      })
+      .filter((item): item is NonNullable<typeof item> => !!item)
+      .sort((a, b) => new Date(a.waktu).getTime() - new Date(b.waktu).getTime());
+  }, [logs, selectedLaporan]);
+
+  // Core requirement: Same data content = Same sequence number
+  const { currentSeq, isDataSameAsPrevious } = useMemo(() => {
+    if (previousPrintsOfSameTypeColor.length === 0) {
+      return { currentSeq: 1, isDataSameAsPrevious: false };
+    }
+    const lastPrint = previousPrintsOfSameTypeColor[previousPrintsOfSameTypeColor.length - 1];
+    const isSame = lastPrint.data_rows_hash === currentReportContentSignature;
+    
+    let lastSeqVal = typeof lastPrint.seq === 'number' ? lastPrint.seq : 0;
+    if (!lastSeqVal && lastPrint.kode_dokumen) {
+      const parts = lastPrint.kode_dokumen.split('/');
+      if (parts.length >= 4) {
+        const parsedSeq = parseInt(parts[3], 10);
+        if (!isNaN(parsedSeq)) {
+          lastSeqVal = parsedSeq;
+        }
+      }
+    }
+    
+    if (lastSeqVal === 0) {
+      lastSeqVal = previousPrintsOfSameTypeColor.length;
+    }
+
+    if (isSame) {
+      return { currentSeq: lastSeqVal, isDataSameAsPrevious: true };
+    } else {
+      return { currentSeq: lastSeqVal + 1, isDataSameAsPrevious: false };
+    }
+  }, [previousPrintsOfSameTypeColor, currentReportContentSignature]);
+
+  const currentDocCode = useMemo(() => {
+    const seqStr = String(currentSeq).padStart(3, '0');
+    return `SIREKAP/PERTANAHAN/${urutanJenis}/${seqStr}/${currentMonthCode}/${currentYearCode}`;
+  }, [currentSeq, urutanJenis, currentMonthCode, currentYearCode]);
+
+  // Handle direct print trigger
+  const handlePrint = async () => {
+    try {
+      await createAuditLog(
+        currentUserEmail || "Guest User",
+        currentUserRole || "Pimpinan",
+        "CETAK_LAPORAN",
+        "LAPORAN",
+        null,
+        {
+          jenis_laporan: selectedLaporan,
+          kode_dokumen: currentDocCode,
+          judul_laporan: reportTitle,
+          waktu_cetak: new Date().toISOString(),
+          data_rows_hash: currentReportContentSignature,
+          seq: currentSeq
+        }
+      );
+    } catch (err) {
+      console.warn("Failed recording print history:", err);
+    }
+    window.print();
+  };
+
+  const handleExportPdf = async () => {
+    try {
+      await createAuditLog(
+        currentUserEmail || "Guest User",
+        currentUserRole || "Pimpinan",
+        "EKSPOR_PDF",
+        "LAPORAN",
+        null,
+        {
+          jenis_laporan: selectedLaporan,
+          kode_dokumen: currentDocCode,
+          judul_laporan: reportTitle,
+          waktu_cetak: new Date().toISOString(),
+          data_rows_hash: currentReportContentSignature,
+          seq: currentSeq
+        }
+      );
+    } catch (err) {
+      console.warn("Failed recording export history:", err);
+    }
+    window.print();
+    setShowPdfModal(false);
+  };
+
   // Aggregate totals
   const totalPaguSum = useMemo(() => reportRows.reduce((s, r) => s + r.pagu, 0), [reportRows]);
   const totalRealisasiSum = useMemo(() => reportRows.reduce((s, r) => s + r.realisasi, 0), [reportRows]);
@@ -161,7 +313,7 @@ export default function LaporanView({
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `SIBIRU_Laporan_${selectedLaporan}_2026.csv`);
+    link.setAttribute("download", `SIREKAP_Laporan_${selectedLaporan}_2026.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -171,7 +323,7 @@ export default function LaporanView({
     <div className="space-y-6" id="laporan-module-root">
       
       {/* Selector Dashboard control */}
-      <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 text-xs select-none" id="laporan-selectors">
+      <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 text-xs select-none print:hidden shadow-3xs" id="laporan-selectors">
         <div className="flex flex-col gap-1.5 flex-1 max-w-sm">
           <label className="font-extrabold text-slate-700 uppercase tracking-wider block">Pilih Atribut Jenis Laporan</label>
           <select 
@@ -204,13 +356,21 @@ export default function LaporanView({
         </div>
 
         {/* Exporter triggers */}
-        <div className="flex gap-2.5 shrink-0 self-end md:self-auto">
+        <div className="flex gap-2.5 flex-wrap shrink-0 self-end md:self-auto">
           <button 
             onClick={handleExportExcelSim}
             className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-[#15803d] bg-emerald-50 hover:bg-emerald-100 rounded-lg border border-emerald-200 transition cursor-pointer"
           >
             <FileSpreadsheet size={14} />
             Simulasi Excel
+          </button>
+
+          <button 
+            onClick={() => setShowPdfModal(true)}
+            className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-red-700 bg-red-50 hover:bg-red-100 rounded-lg border border-red-200 transition cursor-pointer shadow-3xs"
+          >
+            <FileText size={14} />
+            Ekspor PDF
           </button>
           
           <button 
@@ -247,7 +407,7 @@ export default function LaporanView({
           <h3 className="text-center font-black text-slate-900 tracking-wide text-xs uppercase underline">
             {reportTitle}
           </h3>
-          <p className="text-[10px] text-slate-500 font-mono font-bold">Kode Dokumen Rekap: SIREKAP/PERTANAHAN/{new Date().getFullYear()}/REP-0{selectedLaporan.length}</p>
+          <p className="text-[10px] text-slate-500 font-mono font-bold">Kode Dokumen Rekap: {currentDocCode}</p>
         </div>
 
         {/* Tabular details */}
@@ -333,6 +493,85 @@ export default function LaporanView({
         </div>
 
       </div>
+
+      {/* PDF Export confirmation modal */}
+      {showPdfModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-2xs flex items-center justify-center p-4 z-50 animate-fade-in print:hidden" id="pdf-export-modal">
+          <div className="bg-white rounded-2xl max-w-md w-full border border-slate-100 shadow-2xl overflow-hidden p-6 space-y-4">
+            <div className="flex items-center justify-between border-b pb-3 border-dashed">
+              <div className="flex items-center gap-2">
+                <FileText className="text-red-700 font-bold" size={18} />
+                <h4 className="text-sm font-black text-slate-800 uppercase tracking-wider">Konfirmasi Ekspor PDF</h4>
+              </div>
+              <button 
+                onClick={() => setShowPdfModal(false)}
+                className="text-slate-400 hover:text-slate-600 transition cursor-pointer font-bold text-sm"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="text-[11px] text-slate-600 space-y-3.5 leading-relaxed">
+              <p className="font-semibold">
+                Sistem mendeteksi format data laporan saat ini untuk verifikasi kode dokumen legal:
+              </p>
+
+              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-100 space-y-2">
+                <div className="flex justify-between items-center text-slate-700">
+                  <span className="font-bold text-slate-500 uppercase tracking-wider text-[9px]">Jenis Laporan:</span>
+                  <span className="font-black text-slate-800 uppercase text-right truncate max-w-[180px]">{selectedLaporan.replace(/_/g, ' ')}</span>
+                </div>
+                <div className="flex justify-between items-center text-slate-700">
+                  <span className="font-bold text-slate-500 uppercase tracking-wider text-[9px]">Validasi Data:</span>
+                  {isDataSameAsPrevious ? (
+                    <span className="inline-flex items-center gap-1 font-extrabold text-emerald-800 bg-emerald-100/80 px-2 py-0.5 rounded-full text-[9px]">
+                      <CheckCircle size={9} />
+                      IDENTIK (Sama)
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 font-extrabold text-blue-800 bg-blue-100/80 px-2 py-0.5 rounded-full text-[9px]">
+                      DATA BARU / BERBEDA
+                    </span>
+                  )}
+                </div>
+                <div className="border-t border-dashed my-2 pt-2">
+                  <p className="font-bold text-slate-400 uppercase tracking-widest text-[9px]">Ditetapkan Kode Dokumen Rekap:</p>
+                  <p className="font-mono font-black text-blue-700 text-[11px] tracking-wide mt-1 select-all break-all">{currentDocCode}</p>
+                </div>
+              </div>
+
+              {isDataSameAsPrevious ? (
+                <div className="p-3 bg-emerald-50 text-emerald-900 rounded-lg border border-emerald-150 font-bold text-[10px]">
+                  💡 Isi data sama persis dengan cetakan sebelumnya! Sesuai aturan, nomor urutan tetap dipertahankan yaitu <b className="font-black text-emerald-950">{String(currentSeq).padStart(3, '0')}</b>.
+                </div>
+              ) : (
+                <div className="p-3 bg-indigo-50 text-indigo-900 rounded-lg border border-indigo-150 font-bold text-[10px]">
+                  ✨ Perubahan data atau data baru terdeteksi! Urutan dokumen naik otomatis menjadi nomor urutan baru <b className="font-black text-indigo-950">{String(currentSeq).padStart(3, '0')}</b>.
+                </div>
+              )}
+
+              <p className="font-bold text-slate-500 text-[10px]">
+                💡 Tip: Pilih printer <b className="text-slate-800 font-extrabold">"Save as PDF" / "Simpan sebagai PDF"</b> di jendela dialog print browser untuk menyimpan file.
+              </p>
+            </div>
+
+            <div className="flex gap-2.5 pt-2">
+              <button
+                onClick={handleExportPdf}
+                className="flex-1 py-2.5 bg-red-700 hover:bg-red-800 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-xs transition cursor-pointer text-center"
+              >
+                Unduh / Simpan PDF
+              </button>
+              <button
+                onClick={() => setShowPdfModal(false)}
+                className="py-2.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-xs rounded-xl transition cursor-pointer"
+              >
+                Batal
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

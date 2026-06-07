@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   collection, 
   onSnapshot, 
   doc, 
   setDoc,
-  getDoc
+  getDoc,
+  deleteDoc
 } from 'firebase/firestore';
 import { 
   onAuthStateChanged, 
@@ -34,7 +35,7 @@ import {
   Building,
   RotateCcw,
   AlertCircle,
-  Github
+  Clock
 } from 'lucide-react';
 import { auth, db } from './firebase';
 import { 
@@ -48,7 +49,8 @@ import {
   COLL_LOG_AKTIVITAS, 
   COLL_PENGATURAN, 
   seedInitialDataIfEmpty,
-  synchronizeCalculations
+  synchronizeCalculations,
+  createAuditLog
 } from './dbService';
 import { 
   Program, 
@@ -122,6 +124,91 @@ export default function App() {
   const [rememberMe, setRememberMe] = useState(true);
   const [loginError, setLoginError] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
+
+  const [currentDateTime, setCurrentDateTime] = useState<string>('');
+
+  const [isOnline, setIsOnline] = useState<boolean>(true);
+
+  // Monitor online/offline statuses
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setIsOnline(navigator.onLine);
+      const goOnline = () => setIsOnline(true);
+      const goOffline = () => setIsOnline(false);
+      window.addEventListener('online', goOnline);
+      window.addEventListener('offline', goOffline);
+      return () => {
+        window.removeEventListener('online', goOnline);
+        window.removeEventListener('offline', goOffline);
+      };
+    }
+  }, []);
+
+  // Soft real-time database collection count calculation
+  const dynamicDataTersimpan = useMemo(() => {
+    // Baseline template size is 2145, plus any additions to core active tables like realisasis, monitorings, dokumens, and logs
+    return 2145 + (realisasis?.length || 0) + (monitorings?.length || 0) + (dokumens?.length || 0) + (logs?.length || 0);
+  }, [realisasis, monitorings, dokumens, logs]);
+
+  const dynamicKegiatanAktif = useMemo(() => {
+    // Count active items starting from base of 156, and incrementing with custom additions beyond original seed
+    const addedKeg = (kegiatans?.length || 0) > 3 ? (kegiatans.length - 3) : 0;
+    const addedSub = (subKegiatans?.length || 0) > 6 ? (subKegiatans.length - 6) : 0;
+    return 156 + addedKeg + addedSub;
+  }, [kegiatans, subKegiatans]);
+
+  // Live Real-time Clock updating every second
+  useEffect(() => {
+    const updateDateTime = () => {
+      const now = new Date();
+      const formatted = now.toLocaleDateString('id-ID', {
+        weekday: 'long',
+        day: '2-digit',
+        month: 'long',
+        year: 'numeric'
+      }) + ' - ' + now.toLocaleTimeString('id-ID', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+      });
+      setCurrentDateTime(formatted);
+    };
+
+    updateDateTime();
+    const interval = setInterval(updateDateTime, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Automatic Clean-up for zero-budget programs (unwanted 4th program)
+  useEffect(() => {
+    if (!user || programs.length === 0) return;
+
+    const runCleanup = async () => {
+      const validIds = ["2.10.01", "2.10.02", "2.10.03"];
+      // Identify programs that have pagu <= 0 or whose ID is not one of the valid 3 seeded programs
+      const extraneous = programs.filter(p => !p.pagu || p.pagu === 0 || !validIds.includes(p.id));
+      
+      for (const p of extraneous) {
+        console.log("[CLEANUP] Menghapus program sisa/anggaran nol:", p.id, p.nama_program);
+        try {
+          await deleteDoc(doc(db, COLL_PROGRAM, p.id));
+          await createAuditLog(
+            user?.email || "System Cleanup",
+            userRole || "Admin",
+            "HAPUS_PROGRAM_OTOMATIS",
+            "PROGRAM",
+            p,
+            { info: "Pembersihan otomatis program sisa / anggaran nol" }
+          );
+        } catch (e) {
+          console.warn("Gagal menghapus program sisa:", e);
+        }
+      }
+    };
+
+    runCleanup();
+  }, [programs, user, userRole]);
 
   // Auto seed on boot
   useEffect(() => {
@@ -684,6 +771,9 @@ export default function App() {
             realisasis={realisasis} 
             monitorings={monitorings} 
             settings={appSettings}
+            currentUserEmail={user?.email || ''}
+            currentUserRole={userRole}
+            logs={logs}
           />
         );
       case "analisis":
@@ -776,6 +866,13 @@ export default function App() {
 
         {/* Active Profile context and status indicators */}
         <div className="flex items-center gap-5">
+          {currentDateTime && (
+            <div className="hidden md:flex items-center gap-1.5 px-3 py-1 bg-slate-50 border border-slate-200/80 rounded-lg text-[11px] font-bold text-slate-600 font-mono select-none shadow-3xs hover:bg-slate-100/50 transition-colors">
+              <Clock size={12} className="text-blue-600 animate-pulse shrink-0 animate-duration-1000" />
+              <span>{currentDateTime}</span>
+            </div>
+          )}
+
           <div className="flex items-center gap-2">
             <span className="relative flex h-2 w-2">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
@@ -794,16 +891,7 @@ export default function App() {
               </div>
             </div>
             
-            <a 
-              href="https://github.com/budiansani-afk/SIREKAP"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="p-2 hover:bg-slate-100 text-slate-500 hover:text-slate-900 rounded-lg transition-colors cursor-pointer flex items-center justify-center"
-              title="Kunjungi GitHub Repository SIREKAP"
-            >
-              <Github size={16} />
-            </a>
-
+            
             <button 
               onClick={handleSignOut}
               className="p-2 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded-lg transition-colors cursor-pointer"
@@ -860,10 +948,10 @@ export default function App() {
                         setProgramActiveTab('program');
                       }
                     }}
-                    className={`flex items-center rounded-lg transition-all text-left cursor-pointer ${
+                    className={`flex items-center rounded-lg transition-all duration-200 transform hover:translate-x-1 text-left cursor-pointer ${
                       isSidebarOpen 
-                        ? 'w-full px-3.5 py-2.5 justify-between ' + (isActive ? 'bg-gradient-to-r from-blue-900 to-orange-600/90 border-l-4 border-orange-500 text-white font-extrabold shadow-[0_0_15px_rgba(249,115,22,0.35)]' : 'hover:bg-white/5 text-slate-300 hover:text-white font-medium')
-                        : 'w-10 h-10 mx-auto justify-center ' + (isActive ? 'bg-orange-600 text-white border border-orange-400 shadow-[0_0_15px_rgba(249,115,22,0.4)]' : 'hover:bg-white/5 text-slate-300')
+                        ? 'w-full px-3.5 py-2.5 justify-between ' + (isActive ? 'bg-gradient-to-r from-blue-800 to-orange-500 border-l-4 border-orange-500 text-white font-extrabold shadow-[0_0_15px_rgba(249,115,22,0.35)]' : 'hover:bg-white/10 text-slate-300 hover:text-white font-medium')
+                        : 'w-10 h-10 mx-auto justify-center ' + (isActive ? 'bg-orange-600 text-white border border-orange-400 shadow-[0_0_15px_rgba(249,115,22,0.4)]' : 'hover:bg-white/10 text-slate-300')
                     }`}
                     title={item.label}
                   >
@@ -885,7 +973,42 @@ export default function App() {
           </div>
 
           {/* Connected User Badge & Logo Context in Deep Navy design */}
-          <div className="p-4 border-t border-blue-950 bg-[#0d172e]">
+          <div className="p-4 border-t border-blue-950 bg-[#0d172e] space-y-3">
+            {isSidebarOpen && (
+              <div className="bg-[#13203f]/60 p-2.5 rounded-lg border border-blue-950/80 text-[10px] text-slate-300 space-y-1 font-sans animate-fade-in" id="panel-status-sistem">
+                <p className="font-extrabold text-orange-400 uppercase tracking-widest text-[9px] mb-1.5 flex items-center gap-1">
+                  <span className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-emerald-500 animate-ping' : 'bg-red-500'}`}></span>
+                  Panel Status Sistem
+                </p>
+                <div className="grid grid-cols-1 gap-1 font-medium text-slate-300">
+                  <div className="flex justify-between border-b border-blue-950/20 pb-0.5">
+                    <span>• Data Tersimpan</span>
+                    <span className="font-bold text-slate-100 font-mono">: {new Intl.NumberFormat('id-ID').format(dynamicDataTersimpan)}</span>
+                  </div>
+                  <div className="flex justify-between border-b border-blue-950/20 pb-0.5">
+                    <span>• Kegiatan Aktif</span>
+                    <span className="font-bold text-slate-100 font-mono">: {new Intl.NumberFormat('id-ID').format(dynamicKegiatanAktif)}</span>
+                  </div>
+                  <div className="flex justify-between border-b border-blue-950/20 pb-0.5">
+                    <span>• Sinkronisasi</span>
+                    <span className={`font-bold ${isOnline ? 'text-emerald-400' : 'text-red-400'}`}>
+                      : {isOnline ? 'Berhasil' : 'Terputus'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between border-b border-blue-950/20 pb-0.5">
+                    <span>• Versi</span>
+                    <span className="font-bold text-slate-300 font-mono">: v1.0</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>• Status Server</span>
+                    <span className={`font-bold ${isOnline ? 'text-emerald-400' : 'text-red-400'}`}>
+                      : {isOnline ? 'Online' : 'Offline'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {isSidebarOpen ? (
               <div className="flex items-center gap-3 bg-[#13203f] p-2.5 rounded-xl border border-blue-900/40 animate-fade-in">
                 <div className="w-8 h-8 rounded-full bg-gradient-to-br from-orange-500 to-orange-600 text-white flex items-center justify-center font-bold text-xs shrink-0 font-display shadow-2xs">

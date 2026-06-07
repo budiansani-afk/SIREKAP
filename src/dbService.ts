@@ -185,7 +185,7 @@ export async function synchronizeCalculations() {
         }).catch(err => handleFirestoreError(err, OperationType.UPDATE, `${COLL_PROGRAM}/${prog.id}`));
       }
     }
-    console.log("SIBIRU Bottom-up real-time calculations sync completed");
+    console.log("SIREKAP Bottom-up real-time calculations sync completed");
   } catch (error) {
     console.error("Error synchronizing calculations:", error);
   }
@@ -279,7 +279,7 @@ export async function seedInitialDataIfEmpty() {
   try {
     const qProg = await getDocs(collection(db, COLL_PROGRAM)).catch(err => handleFirestoreError(err, OperationType.LIST, COLL_PROGRAM)) as any;
     if (qProg.empty) {
-      console.log("Seeding initial data for SIBIRU Bidang Pertanahan 2026...");
+      console.log("Seeding initial data for SIREKAP Bidang Pertanahan 2026...");
       
       // Program Seed
       const samplePrograms: Program[] = [
