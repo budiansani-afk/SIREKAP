@@ -403,7 +403,7 @@ export default function LaporanView({
         </div>
 
         {/* Laporan Title */}
-        <div className="text-center space-y-1 select-none" id="report-centered-header flex flex-col">
+        <div className="text-center space-y-1 select-none flex flex-col" id="report-centered-header">
           <h3 className="text-center font-black text-slate-900 tracking-wide text-xs uppercase underline">
             {reportTitle}
           </h3>
@@ -470,7 +470,7 @@ export default function LaporanView({
         </div>
 
         {/* Offsite legal signing "Tanda Tangan Pengesahan" */}
-        <div className="grid grid-cols-2 gap-4 pt-12 text-center text-xs select-none" id="signing-block font-medium">
+        <div className="grid grid-cols-2 gap-4 pt-12 text-center text-xs select-none font-medium" id="signing-block">
           <div>
             <p className="text-slate-500 font-semibold uppercase">Mengetahui & Menyetujui,</p>
             <p className="text-slate-800 font-extrabold mt-0.5">{jabatanPejabat}</p>

@@ -147,6 +147,28 @@
       },
       "required": ["waktu", "nama_pengguna", "aksi", "modul"]
     },
+    "Visit": {
+      "title": "Visit",
+      "description": "Log kunjungan user untuk tracking total visits",
+      "type": "object",
+      "properties": {
+        "waktu": { "type": "string" },
+        "disambut": { "type": "boolean" },
+        "email": { "type": "string" }
+      },
+      "required": ["waktu", "email"]
+    },
+    "Presence": {
+      "title": "Presence",
+      "description": "Data sesi aktif user untuk real-time status online",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string" },
+        "lastActive": { "type": "number" },
+        "status": { "type": "string" }
+      },
+      "required": ["email", "lastActive"]
+    },
     "Pengaturan": {
       "title": "Pengaturan",
       "description": "Pengaturan master Sistem",
@@ -195,6 +217,14 @@
     "sibiru_log_aktivitas": {
       "schema": { "$ref": "#/entities/LogAktivitas" },
       "description": "Koleksi log aktivitas audit"
+    },
+    "sibiru_visits": {
+      "schema": { "$ref": "#/entities/Visit" },
+      "description": "Koleksi log kunjungan sitem"
+    },
+    "sibiru_presence": {
+      "schema": { "$ref": "#/entities/Presence" },
+      "description": "Koleksi data user session presensi aktif"
     },
     "sibiru_pengaturan": {
       "schema": { "$ref": "#/entities/Pengaturan" },

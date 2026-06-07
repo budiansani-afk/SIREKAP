@@ -28,3 +28,104 @@
 ::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
 }
+
+/* Flawless Multi-page PDF Export & Native Printing Styles overrides */
+@media print {
+  html, body {
+    height: auto !important;
+    min-height: auto !important;
+    overflow: visible !important;
+    background-color: #ffffff !important;
+    color: #000000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  #sirekap-container {
+    height: auto !important;
+    min-height: auto !important;
+    overflow: visible !important;
+    display: block !important;
+    background: none !important;
+    position: static !important;
+  }
+
+  #main-layout-body {
+    display: block !important;
+    height: auto !important;
+    overflow: visible !important;
+    position: static !important;
+  }
+
+  #main-viewport-content {
+    display: block !important;
+    overflow: visible !important;
+    height: auto !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: transparent !important;
+    position: static !important;
+  }
+
+  /* Completely hide sidebar and header on print sheets */
+  .print\:hidden, 
+  aside, 
+  header, 
+  #laporan-selectors, 
+  [id="main-topbar"], 
+  [id="main-sidebar"] {
+    display: none !important;
+  }
+
+  /* Make sure the form sheet expands smoothly to 100% width with clear print-ready style */
+  #formal-print-sheet {
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    background: transparent !important;
+    display: block !important;
+    overflow: visible !important;
+    position: static !important;
+  }
+
+  /* Avoid splitting critical print-sheet components across page borders */
+  #kop-surat {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    margin-bottom: 2rem !important;
+  }
+
+  #report-centered-header {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    margin-bottom: 1.5rem !important;
+  }
+
+  /* Table styles optimization for multi-page print flow */
+  table {
+    page-break-inside: auto !important;
+    width: 100% !important;
+    border-collapse: collapse !important;
+  }
+
+  tr {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  thead {
+    display: table-header-group !important; /* Repeats the table headers on subsequent pages of the PDF! */
+  }
+
+  /* Signature widget section */
+  #signing-block {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    margin-top: 3rem !important;
+  }
+}

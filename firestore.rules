@@ -150,6 +150,20 @@ service cloud.firestore {
       allow update, delete: if false; // Audit logs are immutable
     }
 
+    // Rules for sibiru_visits
+    match /sibiru_visits/{id} {
+      allow read: if isVerified();
+      allow create: if isVerified() && isValidId(id);
+      allow update, delete: if false;
+    }
+
+    // Rules for sibiru_presence
+    match /sibiru_presence/{id} {
+      allow read: if isVerified();
+      allow create, update: if isVerified() && isValidId(id);
+      allow delete: if isVerified() && isValidId(id);
+    }
+
     // Rules for sibiru_pengaturan
     match /sibiru_pengaturan/{id} {
       allow read: if isVerified();
