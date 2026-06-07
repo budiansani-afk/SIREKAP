@@ -203,6 +203,11 @@ export async function deleteFile(
     if (response.ok) {
       const data = await response.json();
       console.log(`[CloudinaryService] Deletion result from server proxy:`, data);
+      
+      // If the deletion failed with a real Cloudinary error, but ignoring 'not found' which indicates the file is already gone.
+      if (data && data.success === false && data.result !== "not found") {
+        throw new Error(`Cloudinary Error: ${data.result || "Gagal menghapus berkas dari Cloudinary"}`);
+      }
       return data;
     } else {
       const errorText = await response.text().catch(() => "");
