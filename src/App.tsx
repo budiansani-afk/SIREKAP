@@ -618,8 +618,9 @@ export default function App() {
           <p className="mt-2 text-center text-xs font-semibold text-slate-400 tracking-wide uppercase px-4">
             Sistem Informasi Rekapitulasi, Evaluasi, dan Kinerja Anggaran Pertanahan 2026
           </p>
-          <div className="mt-1.5 text-center font-mono text-[10px] text-blue-400 font-black uppercase tracking-wider">
-            Bidang Pertanahan Dinas Perumahan dan Kawasan Permukiman Kabupaten Bima
+          <div className="mt-2 text-center font-mono uppercase tracking-wider flex flex-col gap-0.5">
+            <span className="text-[12px] text-orange-500 font-extrabold pb-0.5">Bidang Pertanahan</span>
+            <span className="text-[9px] text-blue-400 font-bold leading-relaxed px-2">Dinas Perumahan dan Kawasan Permukiman Kabupaten Bima</span>
           </div>
         </div>
 
@@ -701,44 +702,7 @@ export default function App() {
               </button>
             </form>
  
-            {/* Quick credentials helper layout representing user role shortcuts */}
-            <div className="pt-4 border-t border-slate-100 space-y-2 select-none" id="quick-logins">
-              <p className="text-[10px] uppercase font-bold tracking-wider text-slate-500 text-center">Simulasi Satu-Klik Akun Terdaftar (Demo Users)</p>
-              <div className="grid grid-cols-1 gap-1.5">
-                <button 
-                  onClick={() => handleQuickLogin('admin@sirekap.com')}
-                  className="flex items-center justify-between p-2 rounded-xl bg-blue-50/50 hover:bg-blue-100/60 border border-blue-200 text-blue-900 transition text-left"
-                >
-                  <div>
-                    <span className="font-extrabold text-[10px]">1. KABID ADMINISTRATOR (DPA Full Edit)</span>
-                    <p className="text-[9px] text-slate-500">admin@sirekap.com</p>
-                  </div>
-                  <span className="text-[9px] bg-blue-200 px-1 rounded font-bold font-mono">ADMIN</span>
-                </button>
- 
-                <button 
-                  onClick={() => handleQuickLogin('operator@sirekap.com')}
-                  className="flex items-center justify-between p-2 rounded-xl bg-emerald-50/50 hover:bg-emerald-100/60 border border-emerald-200 text-emerald-900 transition text-left"
-                >
-                  <div>
-                    <span className="font-extrabold text-[10px]">2. OPERATOR SEKTOR (Sp2d Input & Docs)</span>
-                    <p className="text-[9px] text-slate-500">operator@sirekap.com</p>
-                  </div>
-                  <span className="text-[9px] bg-emerald-200 px-1 rounded font-bold font-mono">OPERATOR</span>
-                </button>
- 
-                <button 
-                  onClick={() => handleQuickLogin('pimpinan@sirekap.com')}
-                  className="flex items-center justify-between p-2 rounded-xl bg-purple-50/50 hover:bg-purple-100/60 border border-purple-200 text-purple-905 transition text-left"
-                >
-                  <div>
-                    <span className="font-extrabold text-[10px]">3. KEPALA DINAS (Cetak & Laporan)</span>
-                    <p className="text-[9px] text-slate-500">pimpinan@sirekap.com</p>
-                  </div>
-                  <span className="text-[9px] bg-purple-200 px-1 rounded font-bold font-mono">PIMPINAN</span>
-                </button>
-              </div>
-            </div>
+            {/* Quick credentials helper layout representing user role shortcuts removed */}
 
           </div>
         </div>
