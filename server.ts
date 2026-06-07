@@ -84,7 +84,7 @@ app.post("/api/cloudinary/upload", upload.single("file"), async (req, res) => {
       try {
         const lastDot = fileToUseName.lastIndexOf(".");
         const base = lastDot !== -1 ? fileToUseName.substring(0, lastDot) : fileToUseName;
-        const cleanedBase = base.replace(/[^a-zA-Z0-9_\-]/g, "_").replace(/_+/g, "_");
+        const cleanedBase = base.replace(/[^a-zA-Z0-9_\-\s]/g, "").trim().replace(/\s+/g, " ");
         
         const folderName = folder || "sirekap";
         let trialBase = cleanedBase;
