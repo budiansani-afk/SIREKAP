@@ -89,8 +89,13 @@ export default function DokumenView({
 
     setIsUploading(true);
     try {
-      // 1. Upload File to Cloudinary
-      const cloudinaryRes = await uploadFile(fileToUpload, "sirekap", fileName);
+      // 1. Upload File to Cloudinary with custom name given by the user, preserving extension
+      const originalExtension = fileName.split('.').pop() || '';
+      const customFileName = originalExtension 
+        ? `${formNamaDokumen.trim()}.${originalExtension}`
+        : formNamaDokumen.trim();
+
+      const cloudinaryRes = await uploadFile(fileToUpload, "sirekap", customFileName);
 
       const docId = `dok_${Date.now()}`;
       const payload: DokumenArsip = {

@@ -149,8 +149,10 @@ export default function MonitoringView({
           }
         }
 
-        // Upload the new image to Cloudinary
-        const uploadRes = await uploadFile(formFotoFile, "sirekap", formFotoFileName);
+        // Upload the new image to Cloudinary with custom name based on sub-activity code
+        const originalExtension = formFotoFile.name.split('.').pop() || 'png';
+        const customFileName = `Foto_Kegiatan_${formSubKeg}.${originalExtension}`;
+        const uploadRes = await uploadFile(formFotoFile, "sirekap", customFileName);
         cloudinaryUrl = uploadRes.secure_url;
         cloudinaryPublicId = uploadRes.public_id;
       } else if (!existingFotoUrl && editItem?.foto_kegiatan_public_id) {

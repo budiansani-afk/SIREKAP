@@ -102,8 +102,10 @@ export default function PengaturanView({
           }
         }
 
-        // Upload the new logo to Cloudinary
-        const uploadRes = await uploadFile(logoFile, "sirekap");
+        // Upload the new logo to Cloudinary with dynamic name based on instansi logo setting
+        const originalExtension = logoFile.name.split('.').pop() || 'png';
+        const customFileName = `logo_instansi.${originalExtension}`;
+        const uploadRes = await uploadFile(logoFile, "sirekap", customFileName);
         cloudinaryUrl = uploadRes.secure_url;
         cloudinaryPublicId = uploadRes.public_id;
       }
