@@ -42,6 +42,7 @@ export default function DokumenView({
   const [fileType, setFileType] = useState('');
   const [isUploading, setIsUploading] = useState(false);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   // Derive activeDoc from selectedFile URL
   const activeDoc = useMemo(() => {
@@ -76,34 +77,46 @@ export default function DokumenView({
   const handleDownloadFile = async (url: string, filename: string) => {
     if (!url) return;
     
-    // 1. If it's a Cloudinary URL, inject "fl_attachment" Delivery Flag to force the CDN 
-    // to return proper attachment headers. This is the most secure, performant, and reliable way in all browsers.
+    // Extract the exact filename stored in the Cloudinary storage (the last segment of the path)
+    let storageFilename = url.split('/').pop()?.split('?')[0] || filename || 'dokumen';
+    try {
+      storageFilename = decodeURIComponent(storageFilename);
+    } catch (e) {}
+
+    console.log(`[DOWNLOAD] Initiating download for filename in storage: "${storageFilename}"`);
+
+    // 1. If it's a Cloudinary URL, use fl_attachment with the specific filename to force browser download in the CDN layer
     if (url.includes("res.cloudinary.com/")) {
       try {
         let downloadUrl = url;
+        const lastDot = storageFilename.lastIndexOf('.');
+        const baseName = lastDot !== -1 ? storageFilename.substring(0, lastDot) : storageFilename;
+        const cleanBaseName = encodeURIComponent(baseName);
+
         if (url.includes("/upload/")) {
-          downloadUrl = url.replace("/upload/", "/upload/fl_attachment/");
+          // Replace /upload/ with /upload/fl_attachment:cleanBaseName/ to preserve storage filename
+          downloadUrl = url.replace("/upload/", `/upload/fl_attachment:${cleanBaseName}/`);
         } else {
-          downloadUrl = url + "?fl_attachment=true";
+          downloadUrl = url + `?fl_attachment=${cleanBaseName}`;
         }
         
         console.log(`[DOWNLOAD] Triggering native Cloudinary download with fl_attachment: ${downloadUrl}`);
         const link = document.createElement("a");
         link.href = downloadUrl;
         link.target = "_blank";
-        link.setAttribute("download", filename || "dokumen");
+        link.setAttribute("download", storageFilename);
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
         return;
       } catch (err) {
-        console.warn("[DOWNLOAD] Gagal mengolah URL Cloudinary, fallback ke download blob:", err);
+        console.warn("[DOWNLOAD] Failed Cloudinary delivery flag optimization, falling back to Blob download:", err);
       }
     }
 
-    // 2. Fetch Blob fallback for any other source types
+    // 2. Fetch Blob fallback - this guarantees custom name attribute is respected by the browser
     try {
-      console.log(`[DOWNLOAD] Fetching blob for URL: ${url}`);
+      console.log(`[DOWNLOAD] Fetching data blob for URL: ${url}`);
       const response = await fetch(url);
       if (!response.ok) throw new Error("Gagal mengambil file");
       const blob = await response.blob();
@@ -111,7 +124,7 @@ export default function DokumenView({
       
       const link = document.createElement("a");
       link.href = blobUrl;
-      link.download = filename || "dokumen";
+      link.download = storageFilename;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -122,7 +135,7 @@ export default function DokumenView({
       const link = document.createElement("a");
       link.href = url;
       link.target = "_blank";
-      link.setAttribute("download", filename || "dokumen");
+      link.setAttribute("download", storageFilename);
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -229,6 +242,7 @@ export default function DokumenView({
     const isConfirmed = window.confirm(`Hapus dokumen arsip "${item.nama_dokumen}" dari sistem dan Cloudinary secara permanen?`);
     if (!isConfirmed) return;
 
+    setDeletingId(item.id);
     try {
       // Determine deletion target: prefer raw public ID, fallback to Cloudinary URL parsing if present
       const deleteTarget = item.cloudinary_public_id || (item.data_url?.includes("res.cloudinary.com") ? item.data_url : null);
@@ -238,21 +252,31 @@ export default function DokumenView({
         console.log(`[DEBUG_HAPUS] Parameter / URL yang akan dikirim: "${deleteTarget}"`);
         try {
           // Pass the database primary public ID AND the full data URL as an alternative fallback
-          await deleteFile(deleteTarget, item.data_url);
-          console.log(`[DEBUG_HAPUS] Berhasil memproses permintaan hapus Cloudinary secara tuntas.`);
-        } catch (cloudinaryErr: any) {
-          console.error("[DEBUG_HAPUS] Terjadi kesalahan fatal saat memanggil fungsi hapus Cloudinary!");
-          console.error("[DEBUG_HAPUS] Detail Error Object:", cloudinaryErr);
-          console.error("[DEBUG_HAPUS] Pesan Error:", cloudinaryErr?.message || String(cloudinaryErr));
+          const delResult = await deleteFile(deleteTarget, item.data_url);
+          console.log(`[DEBUG_HAPUS] Berhasil memproses permintaan hapus Cloudinary secara tuntas.`, delResult);
           
-          const forceConfirm = window.confirm(
-            `KONEKSI CLOUDINARY GAGAL UNTUK TARGET: "${deleteTarget}"\n\n` +
-            `Detail Error:\n${cloudinaryErr.message || cloudinaryErr}\n\n` +
-            `Apakah Anda ingin tetap memaksa menghapus record dokumen ini secara permanen dari database Firestore?`
-          );
-          if (!forceConfirm) {
-            console.log("[DEBUG_HAPUS] Proses penghapusan dibatalkan oleh pengguna karena kegagalan Cloudinary.");
-            return; // Abort deletion
+          if (delResult && delResult.result === "not found") {
+            console.warn(`[DEBUG_HAPUS] Cloudinary melaporkan asset tidak ditemukan ("not found"). Melanjutkan ke penghapusan database.`);
+          }
+        } catch (cloudinaryErr: any) {
+          console.error("[DEBUG_HAPUS] Terjadi kesalahan saat memanggil fungsi hapus Cloudinary!");
+          console.error("[DEBUG_HAPUS] Detail Error Object:", cloudinaryErr);
+          
+          const errMsg = cloudinaryErr?.message || String(cloudinaryErr);
+          const isNotFoundError = errMsg.toLowerCase().includes("not found") || errMsg.toLowerCase().includes("not_found");
+
+          if (isNotFoundError) {
+            console.warn(`[DEBUG_HAPUS] Deteksi NOT_FOUND pada Cloudinary (${errMsg}). Melompati validasi blocker untuk mencegah record Firestore yatim (orphaned).`);
+          } else {
+            const forceConfirm = window.confirm(
+              `KONEKSI CLOUDINARY GAGAL UNTUK TARGET: "${deleteTarget}"\n\n` +
+              `Detail Error:\n${errMsg}\n\n` +
+              `Apakah Anda ingin tetap memaksa menghapus record dokumen ini secara permanen dari database Firestore?`
+            );
+            if (!forceConfirm) {
+              console.log("[DEBUG_HAPUS] Proses penghapusan dibatalkan oleh pengguna karena kegagalan Cloudinary.");
+              return; // Abort deletion
+            }
           }
         }
       } else {
@@ -273,6 +297,8 @@ export default function DokumenView({
       alert(`[NOTIFIKASI DATA BERUBAH]\nBerhasil menghapus data arsip "${item.nama_dokumen}" secara permanen dari database & Cloudinary.`);
     } catch (err) {
       alert("Gagal menghapus: " + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -402,10 +428,19 @@ export default function DokumenView({
                   {canEdit && (
                     <button 
                       onClick={() => handleDelete(d)}
-                      className="p-1.5 bg-white border hover:bg-red-50 text-red-700 rounded-lg hover:border-red-300 transition"
-                      title="Hapus"
+                      disabled={deletingId !== null}
+                      className={`p-1.5 border rounded-lg transition ${
+                        deletingId === d.id 
+                          ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed animate-pulse" 
+                          : "bg-white hover:bg-red-50 text-red-700 hover:border-red-300 cursor-pointer"
+                      }`}
+                      title={deletingId === d.id ? "Sedang Menghapus..." : "Hapus"}
                     >
-                      <Trash2 size={13} />
+                      {deletingId === d.id ? (
+                        <span className="w-3 h-3 border-2 border-red-700 border-t-transparent rounded-full animate-spin inline-block" />
+                      ) : (
+                        <Trash2 size={13} />
+                      )}
                     </button>
                   )}
                 </div>
