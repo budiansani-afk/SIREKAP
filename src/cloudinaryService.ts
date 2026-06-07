@@ -170,9 +170,11 @@ export function extractCloudinaryInfo(input: string): { publicId: string; resour
  * Supports both full Cloudinary URLs and raw public_ids automatically.
  * 
  * @param urlOrPublicId Either the full Cloudinary URL or the public_id of the asset to delete
+ * @param alternativeUrl Optional full Cloudinary delivery URL for fallback parsing
  */
 export async function deleteFile(
-  urlOrPublicId: string
+  urlOrPublicId: string,
+  alternativeUrl?: string
 ): Promise<{ result: string; public_id: string; success?: boolean }> {
   if (!urlOrPublicId) {
     throw new Error("No URL or public_id provided for deletion.");
@@ -181,13 +183,13 @@ export async function deleteFile(
   // Parse to extract correct public ID & resource type from full URL if needed
   const { publicId, resourceType } = extractCloudinaryInfo(urlOrPublicId);
 
-  console.log(`[CloudinaryService] Requesting file deletion for publicId: "${publicId}" (Extracted from: ${urlOrPublicId})`);
+  console.log(`[CloudinaryService] Requesting file deletion for publicId: "${publicId}", alternativeUrl: "${alternativeUrl || ""}"`);
 
   const url = "/api/cloudinary/delete";
 
   try {
     console.log(`[CloudinaryService] Sending delete request to local proxy: "${url}"`);
-    console.log(`[CloudinaryService] Payload: public_id="${publicId}", resource_type="${resourceType || "auto"}"`);
+    console.log(`[CloudinaryService] Payload: public_id="${publicId}", resource_type="${resourceType || "auto"}", url="${alternativeUrl || ""}"`);
     
     const response = await fetch(url, {
       method: "POST",
@@ -197,6 +199,7 @@ export async function deleteFile(
       body: JSON.stringify({
         public_id: publicId,
         resource_type: resourceType,
+        url: alternativeUrl || (urlOrPublicId.startsWith("http") ? urlOrPublicId : undefined),
       }),
     });
 

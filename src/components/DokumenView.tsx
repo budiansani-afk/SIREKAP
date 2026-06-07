@@ -41,7 +41,21 @@ export default function DokumenView({
   const [fileSizeStr, setFileSizeStr] = useState('');
   const [fileType, setFileType] = useState('');
   const [isUploading, setIsUploading] = useState(false);
-  const [previewItem, setPreviewItem] = useState<DokumenArsip | null>(null);
+  const [selectedFile, setSelectedFile] = useState<string | null>(null);
+
+  // Derive activeDoc from selectedFile URL
+  const activeDoc = useMemo(() => {
+    if (!selectedFile) return null;
+    return dokumens.find(d => d.data_url === selectedFile) || {
+      id: 'temp',
+      nama_dokumen: selectedFile.split('/').pop()?.split('?')[0] || 'Dokumen',
+      kategori: 'Undocumented',
+      tanggal_upload: '-',
+      tipe_file: selectedFile.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'image/png',
+      ukuran_file: '-',
+      data_url: selectedFile
+    } as DokumenArsip;
+  }, [dokumens, selectedFile]);
 
   const canEdit = currentUserRole === UserRole.ADMIN || currentUserRole === UserRole.OPERATOR;
 
@@ -166,8 +180,9 @@ export default function DokumenView({
         console.log(`[DEBUG_HAPUS] Memulai proses penghapusan asset Cloudinary.`);
         console.log(`[DEBUG_HAPUS] Parameter / URL yang akan dikirim: "${deleteTarget}"`);
         try {
-          await deleteFile(deleteTarget);
-          console.log(`[DEBUG_HAPUS] Berhasil memproses permintaan hapus Cloudinary untuk target: ${deleteTarget}`);
+          // Pass the database primary public ID AND the full data URL as an alternative fallback
+          await deleteFile(deleteTarget, item.data_url);
+          console.log(`[DEBUG_HAPUS] Berhasil memproses permintaan hapus Cloudinary secara tuntas.`);
         } catch (cloudinaryErr: any) {
           console.error("[DEBUG_HAPUS] Terjadi kesalahan fatal saat memanggil fungsi hapus Cloudinary!");
           console.error("[DEBUG_HAPUS] Detail Error Object:", cloudinaryErr);
@@ -272,7 +287,7 @@ export default function DokumenView({
                 {/* Micro preview block - Clickable to open preview */}
                 <div 
                   className="h-32 bg-slate-50 border-b flex items-center justify-center relative group overflow-hidden cursor-pointer"
-                  onClick={() => setPreviewItem(d)}
+                  onClick={() => setSelectedFile(d.data_url)}
                   title="Klik untuk melihat pratinjau dokumen"
                 >
                   {isImage ? (
@@ -300,7 +315,7 @@ export default function DokumenView({
                 {/* Meta details - Clickable to open preview */}
                 <div 
                   className="p-4 space-y-2 cursor-pointer" 
-                  onClick={() => setPreviewItem(d)}
+                  onClick={() => setSelectedFile(d.data_url)}
                   title="Klik untuk melihat pratinjau dokumen"
                 >
                   <h4 className="font-extrabold text-slate-900 truncate leading-tight text-xs hover:text-blue-700 transition" title={d.nama_dokumen}>{d.nama_dokumen}</h4>
@@ -313,7 +328,7 @@ export default function DokumenView({
                 {/* Action panel */}
                 <div className="bg-slate-50 p-2 border-t flex gap-1.5 items-center justify-end">
                   <button 
-                    onClick={() => setPreviewItem(d)}
+                    onClick={() => setSelectedFile(d.data_url)}
                     className="p-1.5 bg-white border hover:bg-blue-50 text-blue-800 rounded-lg hover:border-blue-300 transition"
                     title="Lihat Detail / Preview"
                   >
@@ -454,11 +469,11 @@ export default function DokumenView({
       )}
 
       {/* Preview Modal */}
-      {previewItem && (
+      {selectedFile && activeDoc && (
         <div 
           className="fixed inset-0 bg-slate-950/65 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in"
           id="preview-overlay-bg"
-          onClick={() => setPreviewItem(null)}
+          onClick={() => setSelectedFile(null)}
         >
           <div 
             className="bg-white rounded-2xl shadow-2xl border border-slate-150 max-w-4xl w-full overflow-hidden flex flex-col max-h-[90vh]"
@@ -470,17 +485,17 @@ export default function DokumenView({
               <div className="flex items-center gap-2">
                 <FileText size={18} className="text-blue-300" />
                 <div>
-                  <h3 className="font-bold text-sm md:text-base line-clamp-1" title={previewItem.nama_dokumen}>{previewItem.nama_dokumen}</h3>
+                  <h3 className="font-bold text-sm md:text-base line-clamp-1" title={activeDoc.nama_dokumen}>{activeDoc.nama_dokumen}</h3>
                   <p className="text-[10px] text-slate-300 flex items-center gap-1.5 mt-0.5">
                     Kategori: 
                     <span className="font-extrabold text-white bg-blue-800 px-2 py-0.5 rounded-full text-[9px]">
-                      {previewItem.kategori}
+                      {activeDoc.kategori}
                     </span>
                   </p>
                 </div>
               </div>
               <button 
-                onClick={() => setPreviewItem(null)} 
+                onClick={() => setSelectedFile(null)} 
                 className="text-white hover:text-white/80 font-bold text-2xl px-2 focus:outline-none cursor-pointer"
                 aria-label="Tutup"
               >
@@ -490,21 +505,21 @@ export default function DokumenView({
 
             {/* Content Body */}
             <div className="p-6 bg-slate-50 flex-1 overflow-auto flex flex-col items-center justify-center min-h-[350px]">
-              {previewItem.tipe_file.startsWith('image/') ? (
+              {activeDoc.tipe_file.startsWith('image/') ? (
                 <div className="relative max-h-[55vh] w-full flex items-center justify-center bg-slate-100 rounded-xl border overflow-hidden p-2">
                   <img 
-                    src={previewItem.data_url} 
-                    alt={previewItem.nama_dokumen} 
+                    src={selectedFile} 
+                    alt={activeDoc.nama_dokumen} 
                     className="max-h-[50vh] max-w-full object-contain rounded-md"
                     referrerPolicy="no-referrer"
                   />
                 </div>
-              ) : previewItem.tipe_file === 'application/pdf' ? (
+              ) : activeDoc.tipe_file === 'application/pdf' ? (
                 <div className="w-full h-full flex flex-col gap-2">
                   <iframe 
-                    src={previewItem.data_url} 
+                    src={selectedFile} 
                     className="w-full h-[55vh] rounded-lg border border-slate-200 bg-white" 
-                    title={previewItem.nama_dokumen}
+                    title={activeDoc.nama_dokumen}
                   />
                   <div className="text-[11px] text-slate-500 text-center font-medium">
                     Jika file PDF tidak tampil secara otomatis, Anda dapat mengunduh berkas menggunakan tombol di bawah ini.
@@ -514,7 +529,7 @@ export default function DokumenView({
                 <div className="text-center py-12 space-y-3">
                   <FileText size={64} className="mx-auto text-blue-900/40" />
                   <div className="font-bold text-slate-700 text-sm">Format berkas tidak dapat ditinjau langsung</div>
-                  <div className="text-xs text-slate-500">Tipe Berkas: {previewItem.tipe_file}</div>
+                  <div className="text-xs text-slate-500">Tipe Berkas: {activeDoc.tipe_file}</div>
                 </div>
               )}
             </div>
@@ -524,17 +539,17 @@ export default function DokumenView({
               <div className="grid grid-cols-2 sm:flex sm:items-center gap-4 text-slate-600">
                 <div>
                   <span className="block text-[9px] uppercase tracking-wider text-slate-400 font-bold">Tanggal Unggah</span>
-                  <span className="font-semibold text-slate-800">{previewItem.tanggal_upload}</span>
+                  <span className="font-semibold text-slate-800">{activeDoc.tanggal_upload}</span>
                 </div>
                 <div>
                   <span className="block text-[9px] uppercase tracking-wider text-slate-400 font-bold">Ukuran File</span>
-                  <span className="font-semibold text-slate-800">{previewItem.ukuran_file}</span>
+                  <span className="font-semibold text-slate-800">{activeDoc.ukuran_file}</span>
                 </div>
-                {previewItem.cloudinary_public_id && (
+                {activeDoc.cloudinary_public_id && (
                   <div className="col-span-2 sm:col-span-1">
                     <span className="block text-[9px] uppercase tracking-wider text-slate-400 font-bold">Cloudinary Public ID</span>
-                    <span className="font-mono text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded truncate block max-w-[200px]" title={previewItem.cloudinary_public_id}>
-                      {previewItem.cloudinary_public_id}
+                    <span className="font-mono text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded truncate block max-w-[200px]" title={activeDoc.cloudinary_public_id}>
+                      {activeDoc.cloudinary_public_id}
                     </span>
                   </div>
                 )}
@@ -542,7 +557,7 @@ export default function DokumenView({
 
               <div className="flex items-center gap-2 justify-end">
                 <a 
-                  href={previewItem.data_url} 
+                  href={selectedFile} 
                   target="_blank" 
                   rel="noopener noreferrer"
                   className="px-3.5 py-2 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg transition-all flex items-center gap-1.5"
@@ -550,8 +565,8 @@ export default function DokumenView({
                   Buka di Tab Baru
                 </a>
                 <a 
-                  href={previewItem.data_url} 
-                  download={previewItem.nama_dokumen}
+                  href={selectedFile} 
+                  download={activeDoc.nama_dokumen}
                   className="px-4 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 hover:scale-[1.02] active:scale-[0.98] rounded-lg shadow-sm transition-all flex items-center gap-1.5"
                 >
                   <Download size={14} />
