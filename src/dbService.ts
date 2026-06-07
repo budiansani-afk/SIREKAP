@@ -711,23 +711,23 @@ export async function seedInitialDataIfEmpty() {
       // Seed Users
       const sampleUsers: Pengguna[] = [
         {
-          id: "admin@sibiru.go.id",
+          id: "admin@sirekap.com",
           nama: "Administrator SIBIRU Bima",
-          email: "admin@sibiru.go.id",
+          email: "admin@sirekap.com",
           role: UserRole.ADMIN,
           aktif: true
         },
         {
-          id: "operator@sibiru.go.id",
+          id: "operator@sirekap.com",
           nama: "Operator Teknis Pertanahan",
-          email: "operator@sibiru.go.id",
+          email: "operator@sirekap.com",
           role: UserRole.OPERATOR,
           aktif: true
         },
         {
-          id: "pimpinan@sibiru.go.id",
+          id: "pimpinan@sirekap.com",
           nama: "Kepala Bidang Pertanahan",
-          email: "pimpinan@sibiru.go.id",
+          email: "pimpinan@sirekap.com",
           role: UserRole.PIMPINAN,
           aktif: true
         }

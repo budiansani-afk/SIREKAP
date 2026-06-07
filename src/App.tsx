@@ -295,9 +295,9 @@ export default function App() {
           if (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential') {
             // Auto register helper check for prefilled emails
             if (
-              emailInput === 'admin@sibiru.go.id' || 
-              emailInput === 'operator@sibiru.go.id' || 
-              emailInput === 'pimpinan@sibiru.go.id'
+              emailInput === 'admin@sirekap.com' || 
+              emailInput === 'operator@sirekap.com' || 
+              emailInput === 'pimpinan@sirekap.com'
             ) {
               await createUserWithEmailAndPassword(auth, emailInput, passwordInput);
             } else {
@@ -407,7 +407,7 @@ export default function App() {
                   <input
                     type="email"
                     required
-                    placeholder="nama@sibiru.go.id"
+                    placeholder="nama@sirekap.com"
                     value={emailInput}
                     onChange={(e) => setEmailInput(e.target.value)}
                     className="w-full p-2.5 pl-9 border border-slate-200 bg-slate-50 focus:bg-white rounded-lg outline-blue-600 focus:border-blue-600 text-slate-900 font-semibold"
@@ -451,45 +451,43 @@ export default function App() {
                 {isLoggingIn ? "Mengautentikasi..." : "Masuk Sistem Keuangan"}
               </button>
             </form>
-
+ 
             {/* Quick credentials helper layout representing user role shortcuts */}
             <div className="pt-4 border-t border-slate-100 space-y-2 select-none" id="quick-logins">
               <p className="text-[10px] uppercase font-bold tracking-wider text-slate-500 text-center">Simulasi Satu-Klik Akun Terdaftar (Demo Users)</p>
               <div className="grid grid-cols-1 gap-1.5">
-                
                 <button 
-                  onClick={() => handleQuickLogin('admin@sibiru.go.id')}
+                  onClick={() => handleQuickLogin('admin@sirekap.com')}
                   className="flex items-center justify-between p-2 rounded-xl bg-blue-50/50 hover:bg-blue-100/60 border border-blue-200 text-blue-900 transition text-left"
                 >
                   <div>
                     <span className="font-extrabold text-[10px]">1. KABID ADMINISTRATOR (DPA Full Edit)</span>
-                    <p className="text-[9px] text-slate-500">admin@sibiru.go.id</p>
+                    <p className="text-[9px] text-slate-500">admin@sirekap.com</p>
                   </div>
                   <span className="text-[9px] bg-blue-200 px-1 rounded font-bold font-mono">ADMIN</span>
                 </button>
-
+ 
                 <button 
-                  onClick={() => handleQuickLogin('operator@sibiru.go.id')}
+                  onClick={() => handleQuickLogin('operator@sirekap.com')}
                   className="flex items-center justify-between p-2 rounded-xl bg-emerald-50/50 hover:bg-emerald-100/60 border border-emerald-200 text-emerald-900 transition text-left"
                 >
                   <div>
                     <span className="font-extrabold text-[10px]">2. OPERATOR SEKTOR (Sp2d Input & Docs)</span>
-                    <p className="text-[9px] text-slate-500">operator@sibiru.go.id</p>
+                    <p className="text-[9px] text-slate-500">operator@sirekap.com</p>
                   </div>
                   <span className="text-[9px] bg-emerald-200 px-1 rounded font-bold font-mono">OPERATOR</span>
                 </button>
-
+ 
                 <button 
-                  onClick={() => handleQuickLogin('pimpinan@sibiru.go.id')}
+                  onClick={() => handleQuickLogin('pimpinan@sirekap.com')}
                   className="flex items-center justify-between p-2 rounded-xl bg-purple-50/50 hover:bg-purple-100/60 border border-purple-200 text-purple-905 transition text-left"
                 >
                   <div>
                     <span className="font-extrabold text-[10px]">3. KEPALA DINAS (Cetak & Laporan)</span>
-                    <p className="text-[9px] text-slate-500">pimpinan@sibiru.go.id</p>
+                    <p className="text-[9px] text-slate-500">pimpinan@sirekap.com</p>
                   </div>
                   <span className="text-[9px] bg-purple-200 px-1 rounded font-bold font-mono">PIMPINAN</span>
                 </button>
-
               </div>
             </div>
 

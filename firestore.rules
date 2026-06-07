@@ -36,7 +36,7 @@ service cloud.firestore {
 
     function isAdmin() {
       return isVerified() && (
-        request.auth.token.email == 'admin@sibiru.go.id' || 
+        request.auth.token.email == 'admin@sirekap.com' || 
         request.auth.token.email == 'budiansani@gmail.com' || 
         (exists(/databases/$(database)/documents/sibiru_pengguna/$(request.auth.token.email)) && 
          getUserData().role == 'Administrator')
@@ -45,7 +45,7 @@ service cloud.firestore {
 
     function isOperator() {
       return isVerified() && (
-        request.auth.token.email == 'operator@sibiru.go.id' || 
+        request.auth.token.email == 'operator@sirekap.com' || 
         request.auth.token.email == 'budiansani@gmail.com' || 
         (exists(/databases/$(database)/documents/sibiru_pengguna/$(request.auth.token.email)) && 
          (getUserData().role == 'Operator' || getUserData().role == 'Administrator'))
