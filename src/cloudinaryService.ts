@@ -120,10 +120,18 @@ export async function uploadFile(
 export function extractCloudinaryInfo(input: string): { publicId: string; resourceType?: string } {
   if (!input) return { publicId: "" };
   
-  if (input.startsWith("http://") || input.startsWith("https://")) {
+  // Clean possible URL encoding (e.g., %20 to space)
+  let decodedInput = input;
+  try {
+    decodedInput = decodeURIComponent(input);
+  } catch (e) {
+    console.warn("[CloudinaryService] Failed to decode URI component of input path:", e);
+  }
+
+  if (decodedInput.startsWith("http://") || decodedInput.startsWith("https://")) {
     try {
       // Format: https://res.cloudinary.com/<cloud_name>/<resource_type>/upload/v<version>/<public_id_and_extension>
-      const parts = input.split("/res.cloudinary.com/");
+      const parts = decodedInput.split("/res.cloudinary.com/");
       if (parts.length > 1) {
         const pathParts = parts[1].split("/");
         // pathParts examples: ["de4prnqa4", "image", "upload", "v1717686523", "sirekap", "xyz.png"]
@@ -154,18 +162,18 @@ export function extractCloudinaryInfo(input: string): { publicId: string; resour
     }
   }
   
-  return { publicId: input };
+  return { publicId: decodedInput };
 }
 
 /**
- * Deletes a file from Cloudinary securely via server-side API proxy or Firebase Cloud Function.
+ * Deletes a file from Cloudinary securely via server-side API proxy.
  * Supports both full Cloudinary URLs and raw public_ids automatically.
  * 
  * @param urlOrPublicId Either the full Cloudinary URL or the public_id of the asset to delete
  */
 export async function deleteFile(
   urlOrPublicId: string
-): Promise<{ result: string; public_id: string }> {
+): Promise<{ result: string; public_id: string; success?: boolean }> {
   if (!urlOrPublicId) {
     throw new Error("No URL or public_id provided for deletion.");
   }
@@ -175,48 +183,43 @@ export async function deleteFile(
 
   console.log(`[CloudinaryService] Requesting file deletion for publicId: "${publicId}" (Extracted from: ${urlOrPublicId})`);
 
-  // We attempt both paths to ensure resilience across AI Studio preview & Firebase deployed environment
-  const endpoints = [
-    "/api/cloudinary/delete",
-    "https://us-central1-aplikasi-huntap.cloudfunctions.net/deleteFromCloudinary"
-  ];
+  const url = "/api/cloudinary/delete";
 
-  let lastError: any = null;
+  try {
+    console.log(`[CloudinaryService] Sending delete request to local proxy: "${url}"`);
+    console.log(`[CloudinaryService] Payload: public_id="${publicId}", resource_type="${resourceType || "auto"}"`);
+    
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        public_id: publicId,
+        resource_type: resourceType,
+      }),
+    });
 
-  for (const url of endpoints) {
-    try {
-      console.log(`[CloudinaryService] [FETCH_PRE-CHECK] Preparing fetch request to endpoint: "${url}"`);
-      console.log(`[CloudinaryService] [FETCH_PRE-CHECK] Sending payload with public_id: "${publicId}", resource_type: "${resourceType || "auto"}"`);
-      
-      const response = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          public_id: publicId,
-          resource_type: resourceType,
-        }),
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        console.log(`[CloudinaryService] Deletion result from ${url}:`, data);
-        
-        // If the server-side deletion succeeded or completed its run, return the result
-        return data;
-      } else {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || errorData.message || `Status: ${response.status}`);
+    if (response.ok) {
+      const data = await response.json();
+      console.log(`[CloudinaryService] Deletion result from server proxy:`, data);
+      return data;
+    } else {
+      const errorText = await response.text().catch(() => "");
+      let parsedError = errorText;
+      try {
+        const json = JSON.parse(errorText);
+        parsedError = json.error || json.message || errorText;
+      } catch {
+        // use raw text
       }
-    } catch (err: any) {
-      console.warn(`[CloudinaryService] Delete failed via ${url}:`, err);
-      lastError = err;
+      throw new Error(parsedError || `Server returned status: ${response.status}`);
     }
+  } catch (err: any) {
+    console.error(`[CloudinaryService] Delete request failed:`, err);
+    throw new Error(
+      `Gagal menghapus file dari Cloudinary melalui server proxy.\n` +
+      `- Detail Error: ${err?.message || String(err)}`
+    );
   }
-
-  throw new Error(
-    `Gagal menghapus file dari Cloudinary.\n` +
-    `- Error terakhir: ${lastError?.message || String(lastError)}`
-  );
 }
