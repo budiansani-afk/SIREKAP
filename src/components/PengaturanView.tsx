@@ -30,7 +30,8 @@ export default function PengaturanView({
   onUpdateSettings
 }: PengaturanViewProps) {
   const [instNama, setInstNama] = useState('');
-  const [instLogo, setInstLogo] = useState('');
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [existingLogoUrl, setExistingLogoUrl] = useState('');
   const [fiscalYear, setFiscalYear] = useState<number>(2026);
   const [logoFileName, setLogoFileName] = useState('');
   const [namaPejabatTtd, setNamaPejabatTtd] = useState('');
@@ -44,7 +45,8 @@ export default function PengaturanView({
   useEffect(() => {
     if (settings) {
       setInstNama(settings.nama_instansi || 'Dinas Perumahan dan Kawasan Permukiman Kabupaten Bima');
-      setInstLogo(settings.logo_instansi || '');
+      setExistingLogoUrl(settings.logo_instansi || '');
+      setLogoFile(null);
       setFiscalYear(settings.tahun_anggaran_aktif || 2026);
       setNamaPejabatTtd(settings.nama_pejabat_ttd || '');
       setJabatanPejabatTtd(settings.jabatan_pejabat_ttd || '');
@@ -61,7 +63,7 @@ export default function PengaturanView({
 
   const canEdit = currentUserRole === UserRole.ADMIN;
 
-  // Handle Logo Upload base64
+  // Handle Logo Upload
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -73,11 +75,7 @@ export default function PengaturanView({
     }
 
     setLogoFileName(file.name);
-    const reader = new FileReader();
-    reader.onload = () => {
-      setInstLogo(reader.result as string);
-    };
-    reader.readAsDataURL(file);
+    setLogoFile(file);
   };
 
   // Submit main parameters
@@ -90,11 +88,11 @@ export default function PengaturanView({
 
     setIsSaving(true);
     try {
-      let cloudinaryUrl = instLogo;
+      let cloudinaryUrl = existingLogoUrl;
       let cloudinaryPublicId = settings?.logo_instansi_public_id || '';
 
-      // If a new base64 logo file was uploaded locally
-      if (instLogo && instLogo.startsWith('data:')) {
+      // If a new physical logo is uploaded
+      if (logoFile) {
         // If there is an old photo on Cloudinary, delete it first
         if (settings?.logo_instansi_public_id) {
           try {
@@ -105,7 +103,7 @@ export default function PengaturanView({
         }
 
         // Upload the new logo to Cloudinary
-        const uploadRes = await uploadFile(instLogo, "sirekap");
+        const uploadRes = await uploadFile(logoFile, "sirekap");
         cloudinaryUrl = uploadRes.secure_url;
         cloudinaryPublicId = uploadRes.public_id;
       }
@@ -132,7 +130,7 @@ export default function PengaturanView({
         settings,
         {
           nama_instansi: instNama,
-          logo_instansi: cloudinaryUrl ? 'TERLAMPIR_BASE64' : 'KOSONG',
+          logo_instansi: cloudinaryUrl ? 'TERLAMPIR_CDN' : 'KOSONG',
           logo_instansi_public_id: cloudinaryPublicId,
           tahun_anggaran_aktif: fiscalYear,
           nama_pejabat_ttd: namaPejabatTtd,
@@ -368,12 +366,12 @@ export default function PengaturanView({
             </div>
 
             {/* Logo Preview box */}
-            {instLogo && (
+            {(logoFile || existingLogoUrl) && (
               <div className="p-3 bg-slate-50 rounded-lg border border-slate-100 flex items-center gap-3">
-                <img src={instLogo} alt="Preview_Logo" className="w-12 h-12 object-contain bg-white p-1 rounded" referrerPolicy="no-referrer" />
+                <img src={logoFile ? URL.createObjectURL(logoFile) : existingLogoUrl} alt="Preview_Logo" className="w-12 h-12 object-contain bg-white p-1 rounded" referrerPolicy="no-referrer" />
                 <div>
                   <p className="font-bold text-slate-850">Preview Logo Terlampir</p>
-                  <p className="text-[10px] text-slate-400 font-semibold font-mono">Penyimpanan: Cloudinary Secure CDN / Base64</p>
+                  <p className="text-[10px] text-slate-400 font-semibold font-mono">Penyimpanan: Cloudinary Secure CDN</p>
                 </div>
               </div>
             )}

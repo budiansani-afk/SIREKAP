@@ -52,7 +52,8 @@ export default function MonitoringView({
   const [formRealisasiFisik, setFormRealisasiFisik] = useState<number>(0);
   const [formKendala, setFormKendala] = useState<string>('');
   const [formTindakLanjut, setFormTindakLanjut] = useState<string>('');
-  const [formFotoBase64, setFormFotoBase64] = useState<string>('');
+  const [formFotoFile, setFormFotoFile] = useState<File | null>(null);
+  const [existingFotoUrl, setExistingFotoUrl] = useState<string>('');
   const [formFotoFileName, setFormFotoFileName] = useState<string>('');
   const [isSaving, setIsSaving] = useState(false);
 
@@ -80,11 +81,7 @@ export default function MonitoringView({
     }
 
     setFormFotoFileName(file.name);
-    const reader = new FileReader();
-    reader.onload = () => {
-      setFormFotoBase64(reader.result as string);
-    };
-    reader.readAsDataURL(file);
+    setFormFotoFile(file);
   };
 
   // Compute calculated performance ratio % e.g. (realisasiFisik / targetFisik) * 100
@@ -102,7 +99,8 @@ export default function MonitoringView({
     setFormRealisasiFisik(0);
     setFormKendala('');
     setFormTindakLanjut('');
-    setFormFotoBase64('');
+    setFormFotoFile(null);
+    setExistingFotoUrl('');
     setFormFotoFileName('');
     setShowForm(true);
   };
@@ -115,7 +113,8 @@ export default function MonitoringView({
     setFormRealisasiFisik(item.realisasi_fisik);
     setFormKendala(item.kendala || '');
     setFormTindakLanjut(item.tindak_lanjut || '');
-    setFormFotoBase64(item.foto_kegiatan || '');
+    setFormFotoFile(null);
+    setExistingFotoUrl(item.foto_kegiatan || '');
     setFormFotoFileName(item.foto_kegiatan ? 'Dokumentasi_Foto_Sektor.png' : '');
     setShowForm(true);
   };
@@ -136,11 +135,11 @@ export default function MonitoringView({
 
     setIsSaving(true);
     try {
-      let cloudinaryUrl = formFotoBase64;
+      let cloudinaryUrl = existingFotoUrl;
       let cloudinaryPublicId = editItem?.foto_kegiatan_public_id || '';
 
-      // If a new base64 file is uploaded
-      if (formFotoBase64 && formFotoBase64.startsWith('data:')) {
+      // If a new physical file is selected
+      if (formFotoFile) {
         // If there is an old photo on Cloudinary, delete it first
         if (editItem?.foto_kegiatan_public_id) {
           try {
@@ -151,17 +150,15 @@ export default function MonitoringView({
         }
 
         // Upload the new image to Cloudinary
-        const uploadRes = await uploadFile(formFotoBase64, "sirekap", formFotoFileName);
+        const uploadRes = await uploadFile(formFotoFile, "sirekap", formFotoFileName);
         cloudinaryUrl = uploadRes.secure_url;
         cloudinaryPublicId = uploadRes.public_id;
-      } else if (!formFotoBase64) {
+      } else if (!existingFotoUrl && editItem?.foto_kegiatan_public_id) {
         // If the user removed the image completely
-        if (editItem?.foto_kegiatan_public_id) {
-          try {
-            await deleteFile(editItem.foto_kegiatan_public_id);
-          } catch (cloudinaryErr) {
-            console.warn("Gagal menghapus asset Cloudinary lama:", cloudinaryErr);
-          }
+        try {
+          await deleteFile(editItem.foto_kegiatan_public_id);
+        } catch (cloudinaryErr) {
+          console.warn("Gagal menghapus asset Cloudinary lama:", cloudinaryErr);
         }
         cloudinaryUrl = '';
         cloudinaryPublicId = '';
@@ -498,7 +495,8 @@ export default function MonitoringView({
                       type="button"
                       disabled={isSaving}
                       onClick={() => {
-                        setFormFotoBase64('');
+                        setFormFotoFile(null);
+                        setExistingFotoUrl('');
                         setFormFotoFileName('');
                       }}
                       className="px-2.5 py-1 text-red-700 bg-red-50 hover:bg-red-100 hover:text-red-800 rounded text-[10px] font-bold border border-red-200 transition cursor-pointer disabled:opacity-55"

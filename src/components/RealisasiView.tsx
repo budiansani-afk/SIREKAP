@@ -55,7 +55,8 @@ export default function RealisasiView({
   const [formUraian, setFormUraian] = useState<string>('');
   const [formNominal, setFormNominal] = useState<number>(0);
   const [formKeterangan, setFormKeterangan] = useState<string>('');
-  const [formBuktiBase64, setFormBuktiBase64] = useState<string>('');
+  const [formBuktiFile, setFormBuktiFile] = useState<File | null>(null);
+  const [existingBuktiUrl, setExistingBuktiUrl] = useState<string>('');
   const [formBuktiFileName, setFormBuktiFileName] = useState<string>('');
   const [isSaving, setIsSaving] = useState(false);
   const [formUraianIsManual, setFormUraianIsManual] = useState(false);
@@ -80,7 +81,7 @@ export default function RealisasiView({
     } catch (e){}
   };
 
-  // Upload proof of transaction via Base64 FileReader
+  // Upload proof of transaction
   const handleProofUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -92,11 +93,7 @@ export default function RealisasiView({
     }
 
     setFormBuktiFileName(file.name);
-    const reader = new FileReader();
-    reader.onload = () => {
-      setFormBuktiBase64(reader.result as string);
-    };
-    reader.readAsDataURL(file);
+    setFormBuktiFile(file);
   };
 
   // Filter calculations list
@@ -206,7 +203,8 @@ export default function RealisasiView({
     setManualUraianVal('');
     setFormNominal(0);
     setFormKeterangan('');
-    setFormBuktiBase64('');
+    setFormBuktiFile(null);
+    setExistingBuktiUrl('');
     setFormBuktiFileName('');
     setShowForm(true);
   };
@@ -222,7 +220,8 @@ export default function RealisasiView({
     setManualUraianVal(!belongsToRka ? item.uraian_belanja : '');
     setFormNominal(item.nominal_realisasi);
     setFormKeterangan(item.keterangan || '');
-    setFormBuktiBase64(item.bukti_transaksi || '');
+    setFormBuktiFile(null);
+    setExistingBuktiUrl(item.bukti_transaksi || '');
     setFormBuktiFileName(item.bukti_transaksi ? 'Unduh_Bukti_Fisik_SPD.png' : '');
     setShowForm(true);
   };
@@ -257,11 +256,11 @@ export default function RealisasiView({
 
     setIsSaving(true);
     try {
-      let cloudinaryUrl = formBuktiBase64;
+      let cloudinaryUrl = existingBuktiUrl;
       let cloudinaryPublicId = editItem?.bukti_transaksi_public_id || '';
 
-      // If a new base64 file is uploaded
-      if (formBuktiBase64 && formBuktiBase64.startsWith('data:')) {
+      // If a new physical file is selected
+      if (formBuktiFile) {
         // If there is an old photo on Cloudinary, delete it first
         if (editItem?.bukti_transaksi_public_id) {
           try {
@@ -272,17 +271,15 @@ export default function RealisasiView({
         }
 
         // Upload the new image to Cloudinary
-        const uploadRes = await uploadFile(formBuktiBase64, "sirekap", formBuktiFileName);
+        const uploadRes = await uploadFile(formBuktiFile, "sirekap", formBuktiFileName);
         cloudinaryUrl = uploadRes.secure_url;
         cloudinaryPublicId = uploadRes.public_id;
-      } else if (!formBuktiBase64) {
+      } else if (!existingBuktiUrl && editItem?.bukti_transaksi_public_id) {
         // If the user removed the image completely
-        if (editItem?.bukti_transaksi_public_id) {
-          try {
-            await deleteFile(editItem.bukti_transaksi_public_id);
-          } catch (cloudinaryErr) {
-            console.warn("Gagal menghapus asset Cloudinary lama:", cloudinaryErr);
-          }
+        try {
+          await deleteFile(editItem.bukti_transaksi_public_id);
+        } catch (cloudinaryErr) {
+          console.warn("Gagal menghapus asset Cloudinary lama:", cloudinaryErr);
         }
         cloudinaryUrl = '';
         cloudinaryPublicId = '';
@@ -818,7 +815,8 @@ export default function RealisasiView({
                       type="button"
                       disabled={isSaving}
                       onClick={() => {
-                        setFormBuktiBase64('');
+                        setFormBuktiFile(null);
+                        setExistingBuktiUrl('');
                         setFormBuktiFileName('');
                       }}
                       className="px-2.5 py-1 text-red-700 bg-red-50 hover:bg-red-100 hover:text-red-800 rounded text-[10px] font-bold border border-red-200 transition cursor-pointer disabled:opacity-55"

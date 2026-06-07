@@ -36,7 +36,7 @@ export default function DokumenView({
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [formNamaDokumen, setFormNamaDokumen] = useState('');
   const [formKategori, setFormKategori] = useState('DPA');
-  const [fileBase64, setFileBase64] = useState('');
+  const [fileToUpload, setFileToUpload] = useState<File | null>(null);
   const [fileName, setFileName] = useState('');
   const [fileSizeStr, setFileSizeStr] = useState('');
   const [fileType, setFileType] = useState('');
@@ -76,26 +76,21 @@ export default function DokumenView({
     // Convert file size to readable string
     const sizeInKb = (file.size / 1024).toFixed(1);
     setFileSizeStr(`${sizeInKb} KB`);
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      setFileBase64(reader.result as string);
-    };
-    reader.readAsDataURL(file);
+    setFileToUpload(file);
   };
 
   // Submit Upload Form
   const handleUploadSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formNamaDokumen.trim() || !fileBase64) {
+    if (!formNamaDokumen.trim() || !fileToUpload) {
       alert("Harap pilih berkas foto terlebih dahulu dan masukkan nama.");
       return;
     }
 
     setIsUploading(true);
     try {
-      // 1. Upload Base64 to Cloudinary
-      const cloudinaryRes = await uploadFile(fileBase64, "sirekap", fileName);
+      // 1. Upload File to Cloudinary
+      const cloudinaryRes = await uploadFile(fileToUpload, "sirekap", fileName);
 
       const docId = `dok_${Date.now()}`;
       const payload: DokumenArsip = {
@@ -126,7 +121,7 @@ export default function DokumenView({
 
       setShowUploadModal(false);
       setFormNamaDokumen('');
-      setFileBase64('');
+      setFileToUpload(null);
       setFileName('');
     } catch (err) {
       alert("Gagal mengunggah dokumen ke Cloudinary: " + (err instanceof Error ? err.message : String(err)));
@@ -203,7 +198,7 @@ export default function DokumenView({
             onClick={() => {
               setFileName('');
               setFormNamaDokumen('');
-              setFileBase64('');
+              setFileToUpload(null);
               setShowUploadModal(true);
             }}
             className="flex items-center gap-1.5 px-4 py-1.5 text-xs font-bold text-white bg-blue-700 hover:bg-blue-800 rounded-lg shadow transition"
@@ -368,7 +363,7 @@ export default function DokumenView({
                       disabled={isUploading}
                       onClick={() => {
                         setFileName('');
-                        setFileBase64('');
+                        setFileToUpload(null);
                         setFileType('');
                         setFileSizeStr('');
                       }}

@@ -9,47 +9,44 @@ export interface CloudinaryServiceResponse {
 }
 
 /**
- * Robustly uploads a file (Base64 data URL) to Cloudinary.
+ * Robustly uploads a physical File object to Cloudinary.
  * First uses our secure server-side proxy (which handles the signature process correctly).
  * If that fails, it falls back to direct client-side unsigned upload using the 'sirekap' upload_preset.
  *
- * @param base64DataUrl The base64-encoded file data URL (e.g. "data:image/png;base64,...")
+ * @param file The File object returned by browser file picker input
  * @param folder The folder to store the asset inside Cloudinary
  */
 export async function uploadFile(
-  base64DataUrl: string,
+  file: File,
   folder = "sirekap",
   filename?: string
 ): Promise<CloudinaryServiceResponse> {
-  if (!base64DataUrl) {
+  if (!file) {
     throw new Error("No file content provided for upload.");
   }
 
-  // Ensure it's a valid data URL
-  if (!base64DataUrl.startsWith("data:")) {
-    throw new Error("Only Base64 Data URLs are supported for secure uploading.");
-  }
-
-  // Method 1: Upload via Server-side Proxy (Handles the signature securely via Cloudinary's API key/secret)
+  // Method 1: Upload via Server-side Proxy (Handles the signature securely via Cloudinary's API key/secret with standard multipart/form-data)
   let lastServerError = "";
   try {
-    console.log(`[CloudinaryService] Attempting server-signed proxy upload to folder: ${folder}, filename: ${filename || "none"}`);
+    const finalFilename = filename || file.name;
+    console.log(`[CloudinaryService] Attempting server proxy upload for file: ${file.name} to folder: ${folder}, filename override: ${finalFilename}`);
+    
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("folder", folder);
+    if (finalFilename) {
+      formData.append("filename", finalFilename);
+    }
+
     const response = await fetch("/api/cloudinary/upload", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        image: base64DataUrl,
-        folder,
-        filename,
-      }),
+      body: formData,
     });
 
     if (response.ok) {
       const data = await response.json();
       if (data && data.secure_url && data.public_id) {
-        console.log("[CloudinaryService] Server-signed upload succeeded:", data.public_id);
+        console.log("[CloudinaryService] Server-side signed upload succeeded:", data.public_id);
         return {
           secure_url: data.secure_url,
           public_id: data.public_id,
@@ -58,27 +55,13 @@ export async function uploadFile(
     }
     
     // Parse error response if available from JSON or text
-    const errorBody = await response.json().catch(() => null);
-let lastServerError = "";
-
-try {
-  const text = await response.text();
-
-  try {
-    const json = JSON.parse(text);
-
-    lastServerError =
-      json.error ||
-      json.message ||
-      text;
-  } catch {
-    lastServerError = text;
-  }
-
-} catch {
-  lastServerError =
-    `Status: ${response.status}`;
-}
+    const text = await response.text().catch(() => "");
+    try {
+      const json = JSON.parse(text);
+      lastServerError = json.error || json.message || text;
+    } catch {
+      lastServerError = text || `Status: ${response.status}`;
+    }
     console.warn("[CloudinaryService] Server-signed upload returned non-ok status:", response.status, lastServerError);
   } catch (proxyError: any) {
     lastServerError = proxyError?.message || String(proxyError);
@@ -93,11 +76,11 @@ try {
     const url = `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`;
     
     const formData = new FormData();
-    formData.append("file", base64DataUrl);
+    formData.append("file", file);
     formData.append("upload_preset", uploadPreset);
     formData.append("folder", folder);
     if (filename) {
-      formData.append("filename_override", filename);
+      formData.append("public_id", filename.split('.').slice(0, -1).join('.'));
     }
 
     const response = await fetch(url, {

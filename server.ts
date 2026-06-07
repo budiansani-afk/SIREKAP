@@ -10,6 +10,12 @@ import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
 import { v2 as cloudinary } from "cloudinary";
+import multer from "multer";
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 30 * 1024 * 1024 } // 30 MB limit
+});
 
 const app = express();
 const PORT = 3000;
@@ -61,25 +67,23 @@ cloudinary.config({
   api_secret: apiSecret
 });
 
-// JSON API Route: Cloudinary Upload Proxy
-app.post("/api/cloudinary/upload", async (req, res) => {
+// JSON API Route: Cloudinary Upload Proxy using Multer physical file streaming
+app.post("/api/cloudinary/upload", upload.single("file"), async (req, res) => {
   try {
-    const { image, folder, filename } = req.body;
-    if (!image) {
-      return res.status(400).json({ error: "Required: 'image' (Base64 data URL) in request body" });
+    const file = req.file;
+    const { folder, filename } = req.body;
+
+    if (!file) {
+      return res.status(400).json({ error: "Required: 'file' (multipart/form-data) in request body" });
     }
 
-    // Direct check to enforce valid base64 data URLs, supporting images and common PDF/document formats
-    if (!image.startsWith("data:")) {
-      return res.status(400).json({ error: "Sistem hanya mengizinkan pengunggahan file data URL (.png, .jpg, .pdf, dsb)." });
-    }
-
+    const fileToUseName = filename || file.originalname;
     let finalPublicId: string | undefined = undefined;
 
-    if (filename) {
+    if (fileToUseName) {
       try {
-        const lastDot = filename.lastIndexOf(".");
-        const base = lastDot !== -1 ? filename.substring(0, lastDot) : filename;
+        const lastDot = fileToUseName.lastIndexOf(".");
+        const base = lastDot !== -1 ? fileToUseName.substring(0, lastDot) : fileToUseName;
         const cleanedBase = base.replace(/[^a-zA-Z0-9_\-]/g, "_").replace(/_+/g, "_");
         
         const folderName = folder || "sirekap";
@@ -126,40 +130,21 @@ app.post("/api/cloudinary/upload", async (req, res) => {
       }
     }
 
-    let uploadResponse;
+    const uploadOptions: any = {
+      folder: folder || "sirekap",
+      public_id: finalPublicId,
+      resource_type: "auto"
+    };
 
-    try {
-      // 1. Direct signed upload (No preset required because we sign with our API secret!). This is the most robust method in production.
-      console.log(`Mencoba upload Cloudinary langsung ke folder: ${folder || "sirekap"}, public_id: ${finalPublicId || "auto-generate"}`);
-      uploadResponse = await cloudinary.uploader.upload(image, {
-        folder: folder || "sirekap",
-        public_id: finalPublicId,
-        resource_type: "auto"
+    console.log(`Mencoba upload Cloudinary via buffer stream, folder: ${uploadOptions.folder}, public_id: ${uploadOptions.public_id || "auto-generate"}`);
+
+    const uploadResponse = await new Promise<any>((resolve, reject) => {
+      const stream = cloudinary.uploader.upload_stream(uploadOptions, (error, result) => {
+        if (error) reject(error);
+        else resolve(result);
       });
-    } catch (directError: any) {
-      console.warn("Upload langsung tanpa preset gagal. Mencoba upload dengan preset: " + (directError.message || directError));
-      try {
-        // 2. Try signed upload with the custom preset
-        uploadResponse = await cloudinary.uploader.upload(image, {
-          folder: folder || "sirekap",
-          upload_preset: preset,
-          public_id: finalPublicId,
-          resource_type: "auto"
-        });
-      } catch (presetError: any) {
-        console.warn("Upload dengan preset gagal, mencoba unsigned upload...", presetError.message || presetError);
-        // 3. Try unsigned upload with the preset
-        try {
-          uploadResponse = await cloudinary.uploader.unsigned_upload(image, preset, {
-            folder: folder || "sirekap",
-            public_id: finalPublicId,
-            resource_type: "auto"
-          });
-        } catch (unsignedError: any) {
-          throw new Error(`Semua metode upload gagal. Detail error langsung: ${directError.message || directError}. Detail preset: ${presetError.message || presetError}`);
-        }
-      }
-    }
+      stream.end(file.buffer);
+    });
 
     res.json({
       secure_url: uploadResponse.secure_url,
