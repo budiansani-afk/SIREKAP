@@ -72,6 +72,63 @@ export default function DokumenView({
     });
   }, [dokumens, searchTerm, selectedCategory]);
 
+  // Trigger secure local download for both same-origin and different-origin (e.g., Cloudinary CDN) files
+  const handleDownloadFile = async (url: string, filename: string) => {
+    if (!url) return;
+    
+    // 1. If it's a Cloudinary URL, inject "fl_attachment" Delivery Flag to force the CDN 
+    // to return proper attachment headers. This is the most secure, performant, and reliable way in all browsers.
+    if (url.includes("res.cloudinary.com/")) {
+      try {
+        let downloadUrl = url;
+        if (url.includes("/upload/")) {
+          downloadUrl = url.replace("/upload/", "/upload/fl_attachment/");
+        } else {
+          downloadUrl = url + "?fl_attachment=true";
+        }
+        
+        console.log(`[DOWNLOAD] Triggering native Cloudinary download with fl_attachment: ${downloadUrl}`);
+        const link = document.createElement("a");
+        link.href = downloadUrl;
+        link.target = "_blank";
+        link.setAttribute("download", filename || "dokumen");
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        return;
+      } catch (err) {
+        console.warn("[DOWNLOAD] Gagal mengolah URL Cloudinary, fallback ke download blob:", err);
+      }
+    }
+
+    // 2. Fetch Blob fallback for any other source types
+    try {
+      console.log(`[DOWNLOAD] Fetching blob for URL: ${url}`);
+      const response = await fetch(url);
+      if (!response.ok) throw new Error("Gagal mengambil file");
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      
+      const link = document.createElement("a");
+      link.href = blobUrl;
+      link.download = filename || "dokumen";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(blobUrl);
+    } catch (err: any) {
+      console.error("[DOWNLOAD] Blob download failed:", err);
+      // Absolute fallback if everything fails (CORS blocks, etc): open direct in blank page
+      const link = document.createElement("a");
+      link.href = url;
+      link.target = "_blank";
+      link.setAttribute("download", filename || "dokumen");
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+  };
+
   // Handle uploaded file as base64 representing file storage in firestore
   const handleFileUploadAndConvertObj = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -334,14 +391,14 @@ export default function DokumenView({
                   >
                     <Eye size={13} />
                   </button>
-                  <a 
-                    href={d.data_url} 
-                    download={d.nama_dokumen}
-                    className="p-1.5 bg-white border hover:bg-emerald-50 text-emerald-800 rounded-lg hover:border-emerald-300 transition"
-                    title="Download File"
+                  <button 
+                    onClick={() => handleDownloadFile(d.data_url, d.nama_dokumen)}
+                    className="p-1.5 bg-white border hover:bg-emerald-50 text-emerald-800 rounded-lg hover:border-emerald-300 transition cursor-pointer"
+                    title="Download File ke Lokal"
+                    id={`btn-download-card-${i}`}
                   >
                     <Download size={13} />
-                  </a>
+                  </button>
                   {canEdit && (
                     <button 
                       onClick={() => handleDelete(d)}
@@ -412,15 +469,15 @@ export default function DokumenView({
               <div className="border-2 border-dashed border-slate-200 hover:border-blue-500 rounded-xl p-4 text-center cursor-pointer transition relative bg-slate-50/50">
                 <input 
                   type="file"
-                  accept="image/*"
+                  accept="image/*,application/pdf"
                   onChange={handleFileUploadAndConvertObj}
                   required
                   disabled={isUploading}
                   className="absolute inset-0 opacity-0 cursor-pointer disabled:cursor-not-allowed"
                 />
                 <Upload className="mx-auto text-blue-800 mb-1 animate-pulse" size={24} />
-                <p className="font-bold text-slate-700">Pilih Berkas Foto / Gambar</p>
-                <p className="text-[10px] text-slate-400 mt-0.5">Hanya file Foto (PNG, JPG, JPEG, WEBP, GIF)</p>
+                <p className="font-bold text-slate-700">Pilih Berkas Foto / PDF</p>
+                <p className="text-[10px] text-slate-400 mt-0.5">Hanya berkas Foto (PNG, JPG, WEBP) atau Dokumen PDF (.pdf)</p>
               </div>
 
               {fileName && (
@@ -564,14 +621,14 @@ export default function DokumenView({
                 >
                   Buka di Tab Baru
                 </a>
-                <a 
-                  href={selectedFile} 
-                  download={activeDoc.nama_dokumen}
-                  className="px-4 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 hover:scale-[1.02] active:scale-[0.98] rounded-lg shadow-sm transition-all flex items-center gap-1.5"
+                <button 
+                  onClick={() => handleDownloadFile(selectedFile, activeDoc.nama_dokumen)}
+                  className="px-4 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 hover:scale-[1.02] active:scale-[0.98] rounded-lg shadow-sm transition-all flex items-center gap-1.5 cursor-pointer"
+                  id="btn-download-preview"
                 >
                   <Download size={14} />
                   Unduh Berkas
-                </a>
+                </button>
               </div>
             </div>
           </div>

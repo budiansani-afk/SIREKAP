@@ -318,9 +318,10 @@ app.post("/api/cloudinary/delete", async (req, res) => {
       });
     } else {
       console.warn(`[Server Cloudinary Delete] EXHAUSTED ALL PATHWAYS! No live file matching candidates was found (or was already deleted).`);
-      // Return 200 with success: false but preserve details so the UI can decide
+      // Return 200 with success: false and an explicit descriptive error message as requested
       return res.json({
         success: false,
+        error: `Asset ${public_id || "unknown"} not found or could not be verified/deleted on Cloudinary servers (status: ${lastResult?.result || "not found"}).`,
         result: lastResult?.result || "not found",
         public_id
       });
