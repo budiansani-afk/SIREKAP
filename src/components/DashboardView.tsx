@@ -32,6 +32,7 @@ interface DashboardProps {
   rkaList: RKA[];
   dokumens: DokumenArsip[];
   onNavigate?: (page: 'dashboard' | 'program' | 'rka' | 'realisasi' | 'pihakKetiga' | 'dokumen' | 'laporan' | 'analisis' | 'logs' | 'pengaturan', tabDetail?: string) => void;
+  onShowInfo?: (info: { title: string; content: string; type: 'guide' | 'alert' }) => void;
 }
 
 const CustomTooltip = ({ active, payload, label }: any) => {
@@ -90,9 +91,9 @@ export default function DashboardView({
   pihakKetigas,
   dokumens,
   rkaList,
-  onNavigate
+  onNavigate,
+  onShowInfo
 }: DashboardProps) {
-  const [selectedInfo, setSelectedInfo] = React.useState<{ title: string; content: string; type: 'guide' | 'alert' } | null>(null);
 
   // Calculate totals
   const totalPaguAll = useMemo(() => rkaList.reduce((sum, r) => sum + (r.jumlah || 0), 0), [rkaList]);
@@ -155,35 +156,6 @@ export default function DashboardView({
 
   return (
     <div className="space-y-6" id="dashboard-container">
-      {/* Welcome Banner */}
-      <div 
-        onClick={() => setSelectedInfo({
-          title: "SIREKAP TANAH - Informasi Lengkap Aplikasi",
-          content: "SIREKAP TANAH (Sistem Informasi Rekapitulasi, Evaluasi, dan Kinerja Anggaran Pertanahan) merupakan aplikasi pengelolaan anggaran Bidang Pertanahan yang dirancang untuk mendukung perencanaan, pelaksanaan, monitoring, evaluasi, dan pelaporan kegiatan secara terintegrasi.\n\nSistem ini menyediakan kinerja secara real-time mengenai pagu anggaran, realisasi keuangan, capaian fisik, serta berkas arsip dokumen pendukung kegiatan pertanahan.\n\nTujuan Utama:\n• Meningkatkan efektivitas pengelolaan anggaran pertanahan.\n• Mempermudah monitoring dan evaluasi kegiatan secara terstruktur.\n• Menyediakan data dan laporan yang akurat, dinamis, dan terintegrasi.\n• Mendukung transparansi serta akuntabilitas pelaksanaan program kerja.",
-          type: 'guide'
-        })}
-        className="bg-gradient-to-r from-blue-900 via-blue-800 to-orange-600 hover:from-blue-950 hover:to-orange-700 rounded-xl p-5 text-white shadow-md cursor-pointer group transition-all duration-300 relative overflow-hidden animate-fade-in flex flex-col sm:flex-row items-center justify-between gap-4 border border-blue-200/20" 
-        id="welcome-pane"
-        title="Klik untuk melihat Informasi Lengkap SIREKAP TANAH"
-      >
-        <div className="absolute right-0 bottom-0 opacity-10 transform translate-x-12 translate-y-6 group-hover:scale-105 transition-transform duration-300">
-          <Activity size={240} />
-        </div>
-        <div className="relative z-10 flex flex-col gap-1.5 max-w-2xl justify-center">
-          <p className="text-sm md:text-md text-white font-extrabold leading-relaxed group-hover:text-amber-100 transition-colors">
-            "Terintegrasi untuk Perencanaan, Realisasi, dan Evaluasi Anggaran Pertanahan | Data Akurat, Evaluasi Cepat, Kinerja Tepat"
-          </p>
-        </div>
-        <div className="relative z-10 shrink-0 mt-2 sm:mt-0">
-          <button 
-            type="button"
-            className="px-4 py-2 bg-white hover:bg-slate-50 text-blue-950 font-black text-xs rounded-lg shadow-sm transition-all flex items-center gap-1.5 cursor-pointer transform group-hover:scale-105 active:scale-95"
-          >
-            Info Aplikasi
-          </button>
-        </div>
-      </div>
-
       {/* Compact Alerts (Sistem Peringatan Dini dibuat lebih kecil) */}
       {alerts.length > 0 && (
         <div className="bg-amber-50/90 border border-amber-200/80 rounded-lg p-2.5 text-amber-950 text-[11px] shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 border-l-4 border-l-amber-500" id="dashboard-alerts">
@@ -197,7 +169,7 @@ export default function DashboardView({
             </marquee>
           </div>
           <button 
-            onClick={() => setSelectedInfo({
+            onClick={() => onShowInfo?.({
               title: "Daftar Warning & Petunjuk Penanganan Defisit",
               content: alerts.map((a, idx) => `${idx + 1}. ${a}`).join("\n\n") + "\n\nLangkah Penanganan:\n1. Segera lakukan penyesuaian/revisi DPA melalui menu RKA belanja jika terdapat defisit belanja kas.\n2. Hubungi operator penanggung jawab daerah setempat untuk memvalidasi kelengkapan berkas fisik SP2D.\n3. Cocokkan sisa DPA agar rasio tetap berada di zona hijau.",
               type: 'alert'
@@ -507,56 +479,6 @@ export default function DashboardView({
           </div>
         </div>
       </div>
-
-      {/* Informational Lightbox Overlay Modal */}
-      {selectedInfo && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 antialiased" id="info-overlay-lightbox">
-          <div className="bg-white rounded-2xl border border-slate-100 shadow-2xl max-w-lg w-full overflow-hidden transform scale-100 transition-all duration-300">
-            {/* Header */}
-            <div className={`p-5 text-white ${selectedInfo.type === 'alert' ? 'bg-gradient-to-r from-amber-600 to-amber-700' : 'bg-gradient-to-r from-[#172554] to-blue-750'}`}>
-              <div className="flex items-center gap-2.5">
-                {selectedInfo.type === 'alert' ? <AlertTriangle size={20} className="animate-pulse text-white" /> : <Activity size={20} className="text-white" />}
-                <h3 className="font-bold text-sm tracking-tight">{selectedInfo.title}</h3>
-              </div>
-            </div>
-            
-            {/* Contents */}
-            <div className="p-6 space-y-4">
-              <p className="text-slate-700 text-xs leading-relaxed whitespace-pre-wrap font-semibold">
-                {selectedInfo.content}
-              </p>
-
-              {/* Decorative Guide Blocks */}
-              {selectedInfo.type === 'guide' && (
-                <div className="bg-slate-50 p-4 rounded-xl border border-slate-150 space-y-2.5 mt-3 text-[11px] text-slate-650">
-                  <div className="flex items-start gap-2">
-                    <span className="text-[#10409F] font-extrabold font-mono">1.</span>
-                    <p><b>Hierarki Program</b>: Klik nama Program/Kegiatan di halaman Program & Kegiatan untuk menelusuri penyerapan mendalam secara interaktif.</p>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <span className="text-[#10409F] font-extrabold font-mono">2.</span>
-                    <p><b>Filter Uraian</b>: Klik nama Uraian Belanja di daftar realisasi SP2D untuk menyeleksi rekap kas bulanan secara instan.</p>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <span className="text-[#10409F] font-extrabold font-mono">3.</span>
-                    <p><b>Administrasi Pejabat</b>: Mengubah penandatangan laporan di menu administrasi sistem secara permanen.</p>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Footer */}
-            <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end">
-              <button 
-                onClick={() => setSelectedInfo(null)}
-                className="px-4 py-2 text-xs font-black bg-slate-900 hover:bg-slate-800 text-white rounded-lg transition shadow-xs cursor-pointer"
-              >
-                Tutup Informasi
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
     </div>
   );

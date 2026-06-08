@@ -367,7 +367,12 @@ export default function BelanjaPihakKetigaView({
                         'Akan Berakhir': 'bg-amber-100 text-amber-800',
                         'Belum Mulai': 'bg-blue-100 text-blue-800'
                       };
-                      return <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${badgeMap[status] || 'bg-slate-100'}`}>{status}</span>;
+                      return (
+                        <span className={`flex items-center gap-1 text-[9px] font-bold px-2 py-0.5 rounded-full ${badgeMap[status] || 'bg-slate-100'}`}>
+                          {status === 'Akan Berakhir' && <AlertTriangle size={10} />}
+                          {status}
+                        </span>
+                      );
                     })()}
                     <span className="font-mono text-[10px] text-slate-500 font-bold flex items-center gap-1"><Calendar size={12} /> {m.tanggal}</span>
                   </div>

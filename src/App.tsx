@@ -94,6 +94,7 @@ export default function App() {
   const [activePage, setActivePage] = useState<ViewPage>("dashboard");
   const [programActiveTab, setProgramActiveTab] = useState<'program' | 'kegiatan' | 'sub_kegiatan'>('program');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [selectedInfo, setSelectedInfo] = useState<{ title: string; content: string; type: 'guide' | 'alert' } | null>(null);
 
   // States for DB synced collections
   const [programs, setPrograms] = useState<Program[]>([]);
@@ -911,7 +912,9 @@ export default function App() {
             <div className={`p-4 border-b border-blue-950 bg-[#101a33] ${isSidebarOpen ? '' : 'text-center p-3'}`}>
               {isSidebarOpen ? (
                 <div className="flex flex-col justify-center animate-fade-in">
-                  <span className="text-[9px] uppercase font-black tracking-widest text-slate-400/80">MODUL MENU AKTIF</span>
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="text-[9px] uppercase font-black tracking-widest text-slate-400/80">MODUL MENU AKTIF</span>
+                  </div>
                   <h2 className="text-xs sm:text-xs font-black text-orange-300 font-display tracking-wide uppercase leading-tight mt-1 truncate">
                     {menuItems.find(item => item.id === activePage)?.label || "Dashboard Utama"}
                   </h2>
@@ -994,22 +997,26 @@ export default function App() {
             )}
 
             {isSidebarOpen ? (
-              <div className="flex items-center gap-3 bg-[#13203f] p-2.5 rounded-xl border border-blue-900/40 animate-fade-in">
-                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-orange-500 to-orange-600 text-white flex items-center justify-center font-bold text-xs shrink-0 font-display shadow-2xs">
-                  {userRole === UserRole.ADMIN ? 'AD' : userRole === UserRole.OPERATOR ? 'OP' : 'PM'}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-bold truncate text-slate-100">{userDisplayName}</p>
-                  <p className="text-[9px] text-[#38bdf8] truncate font-mono uppercase tracking-wide font-black">{userRole} ACCESS</p>
-                </div>
-              </div>
+              <button 
+                onClick={() => setSelectedInfo({
+                  title: "SIREKAP TANAH - Informasi Lengkap Aplikasi",
+                  content: "SIREKAP TANAH (Sistem Informasi Rekapitulasi, Evaluasi, dan Kinerja Anggaran Pertanahan) merupakan aplikasi pengelolaan anggaran Bidang Pertanahan yang dirancang untuk mendukung perencanaan, pelaksanaan, monitoring, evaluasi, dan pelaporan kegiatan secara terintegrasi.\n\nSistem ini menyediakan kinerja secara real-time mengenai pagu anggaran, realisasi keuangan, capaian fisik, serta berkas arsip dokumen pendukung kegiatan pertanahan.\n\nTujuan Utama:\n• Meningkatkan efektivitas pengelolaan anggaran pertanahan.\n• Mempermudah monitoring dan evaluasi kegiatan secara terstruktur.\n• Menyediakan data dan laporan yang akurat, dinamis, dan terintegrasi.\n• Mendukung transparansi serta akuntabilitas pelaksanaan program kerja.",
+                  type: 'guide'
+                })}
+                className="flex items-center gap-3 bg-[#13203f]/60 hover:bg-blue-900/40 p-2.5 rounded-xl border border-blue-900/40 animate-fade-in w-full transition" 
+                id="panel-bottom-button"
+              >
+                <span className="text-[10px] text-slate-200 font-black uppercase tracking-widest text-center w-full">SIREKAP 2026</span>
+              </button>
             ) : (
-              <div className="flex items-center justify-center animate-fade-in" title={`${userDisplayName} (${userRole})`}>
-                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-orange-500 to-orange-600 text-white flex items-center justify-center font-black text-xs font-display shadow-2xs">
-                  {userRole === UserRole.ADMIN ? 'AD' : userRole === UserRole.OPERATOR ? 'OP' : 'PM'}
+              <div className="flex items-center justify-center animate-fade-in">
+                <div className="w-8 h-8 rounded-full bg-blue-900/50 text-blue-300 flex items-center justify-center font-black text-[10px] border border-blue-800">
+                  {userRole.substring(0, 2).toUpperCase()}
                 </div>
               </div>
             )}
+            
+            {/* New Modal State and Handler logic will be implemented in subsequent steps */}
           </div>
         </aside>
 
@@ -1019,6 +1026,56 @@ export default function App() {
         </main>
 
       </div>
+
+      {/* Informational Lightbox Overlay Modal */}
+      {selectedInfo && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 antialiased" id="info-overlay-lightbox">
+          <div className="bg-white rounded-2xl border border-slate-100 shadow-2xl max-w-lg w-full overflow-hidden transform scale-100 transition-all duration-300">
+            {/* Header */}
+            <div className={`p-5 text-white ${selectedInfo.type === 'alert' ? 'bg-gradient-to-r from-amber-600 to-amber-700' : 'bg-gradient-to-r from-[#172554] to-blue-750'}`}>
+              <div className="flex items-center gap-2.5">
+                {selectedInfo.type === 'alert' ? <AlertTriangle size={20} className="animate-pulse text-white" /> : <Activity size={20} className="text-white" />}
+                <h3 className="font-bold text-sm tracking-tight">{selectedInfo.title}</h3>
+              </div>
+            </div>
+            
+            {/* Contents */}
+            <div className="p-6 space-y-4">
+              <p className="text-slate-700 text-xs leading-relaxed whitespace-pre-wrap font-semibold">
+                {selectedInfo.content}
+              </p>
+
+              {/* Decorative Guide Blocks */}
+              {selectedInfo.type === 'guide' && (
+                <div className="bg-slate-50 p-4 rounded-xl border border-slate-150 space-y-2.5 mt-3 text-[11px] text-slate-650">
+                  <div className="flex items-start gap-2">
+                    <span className="text-[#10409F] font-extrabold font-mono">1.</span>
+                    <p><b>Hierarki Program</b>: Klik nama Program/Kegiatan di halaman Program & Kegiatan untuk menelusuri penyerapan mendalam secara interaktif.</p>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <span className="text-[#10409F] font-extrabold font-mono">2.</span>
+                    <p><b>Filter Uraian</b>: Klik nama Uraian Belanja di daftar realisasi SP2D untuk menyeleksi rekap kas bulanan secara instan.</p>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <span className="text-[#10409F] font-extrabold font-mono">3.</span>
+                    <p><b>Administrasi Pejabat</b>: Mengubah penandatangan laporan di menu administrasi sistem secara permanen.</p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end">
+              <button 
+                onClick={() => setSelectedInfo(null)}
+                className="px-4 py-2 text-xs font-black bg-slate-900 hover:bg-slate-800 text-white rounded-lg transition shadow-xs cursor-pointer"
+              >
+                Tutup Informasi
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );
