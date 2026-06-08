@@ -54,7 +54,7 @@ service cloud.firestore {
 
     // Rules for sibiru_program
     match /sibiru_program/{id} {
-      allow read: if isVerified();
+      allow read, write if true;
       allow create: if isAdmin() && isValidId(id) && 
         incoming().kode_program is string && incoming().kode_program.size() <= 32 &&
         incoming().nama_program is string && incoming().nama_program.size() <= 256;
@@ -65,7 +65,7 @@ service cloud.firestore {
 
     // Rules for sibiru_kegiatan
     match /sibiru_kegiatan/{id} {
-      allow read: if isVerified();
+      allow read, write if true;
       allow create: if isAdmin() && isValidId(id) &&
         incoming().kode_kegiatan is string && incoming().kode_kegiatan.size() <= 32 &&
         incoming().nama_kegiatan is string && incoming().nama_kegiatan.size() <= 256 &&
@@ -77,7 +77,7 @@ service cloud.firestore {
 
     // Rules for sibiru_sub_kegiatan
     match /sibiru_sub_kegiatan/{id} {
-      allow read: if isVerified();
+      allow read, write if true;
       allow create: if isAdmin() && isValidId(id) &&
         incoming().kode_sub_kegiatan is string && incoming().kode_sub_kegiatan.size() <= 32 &&
         incoming().nama_sub_kegiatan is string && incoming().nama_sub_kegiatan.size() <= 256 &&
@@ -89,7 +89,7 @@ service cloud.firestore {
 
     // Rules for sibiru_rka
     match /sibiru_rka/{id} {
-      allow read: if isVerified();
+      allow read, write if true;
       allow create: if isOperator() && isValidId(id) &&
         incoming().uraian_belanja is string && incoming().uraian_belanja.size() <= 500 &&
         incoming().jumlah is number && incoming().jumlah >= 0 &&
@@ -102,7 +102,7 @@ service cloud.firestore {
 
     // Rules for sibiru_realisasi
     match /sibiru_realisasi/{id} {
-      allow read: if isVerified();
+      allow read, write if true;
       allow create: if isOperator() && isValidId(id) &&
         incoming().uraian_belanja is string && incoming().uraian_belanja.size() <= 500 &&
         incoming().nominal_realisasi is number && incoming().nominal_realisasi >= 0 &&

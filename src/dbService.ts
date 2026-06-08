@@ -193,6 +193,27 @@ export async function synchronizeCalculations() {
   }
 }
 
+export async function clearDatabase() {
+  const collectionsToClear = [
+    COLL_PROGRAM,
+    COLL_KEGIATAN,
+    COLL_SUB_KEGIATAN,
+    COLL_RKA,
+    COLL_REALISASI,
+    COLL_MONITORING_FISIK,
+    COLL_DOKUMEN,
+    COLL_PENGGUNA,
+    COLL_PENGATURAN,
+    COLL_LOG_AKTIVITAS
+  ];
+  for (const collName of collectionsToClear) {
+    const snapshot = await getDocs(collection(db, collName));
+    for (const docSnap of snapshot.docs) {
+      await deleteDoc(doc(db, collName, docSnap.id));
+    }
+  }
+}
+
 // 3. Backup & Restore Data
 export async function backupDatabaseToJSON() {
   try {

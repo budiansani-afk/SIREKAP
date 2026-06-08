@@ -218,38 +218,6 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
-  // Automatic Clean-up for zero-budget programs (disabled: now allowed to persist even with zero budget/not yet defined)
-  /*
-  useEffect(() => {
-    if (!user || programs.length === 0) return;
-
-    const runCleanup = async () => {
-      const validIds = ["2.10.01", "2.10.02", "2.10.03"];
-      // Identify programs that have pagu <= 0 or whose ID is not one of the valid 3 seeded programs
-      const extraneous = programs.filter(p => !p.pagu || p.pagu === 0 || !validIds.includes(p.id));
-      
-      for (const p of extraneous) {
-        console.log("[CLEANUP] Menghapus program sisa/anggaran nol:", p.id, p.nama_program);
-        try {
-          await deleteDoc(doc(db, COLL_PROGRAM, p.id));
-          await createAuditLog(
-            user?.email || "System Cleanup",
-            userRole || "Admin",
-            "HAPUS_PROGRAM_OTOMATIS",
-            "PROGRAM",
-            p,
-            { info: "Pembersihan otomatis program sisa / anggaran nol" }
-          );
-        } catch (e) {
-          console.warn("Gagal menghapus program sisa:", e);
-        }
-      }
-    };
-
-    runCleanup();
-  }, [programs, user, userRole]);
-  */
-
   // Auto seed on boot
   useEffect(() => {
     const initSeed = async () => {

@@ -25,7 +25,8 @@ import {
   COLL_KEGIATAN, 
   COLL_SUB_KEGIATAN, 
   createAuditLog, 
-  synchronizeCalculations 
+  synchronizeCalculations,
+  clearDatabase 
 } from '../dbService';
 
 interface ProgramViewProps {
@@ -198,11 +199,15 @@ export default function ProgramView({
       
       // If code was changed during editing, delete the old document
       if (editItem && editItem.id && editItem.id !== docId) {
+        console.log(`[DEBUG_HAPUS] WILL DELETE OLD DOC: ${collectionName}/${editItem.id} because ID changed to ${docId}`);
         try {
           await deleteDoc(doc(db, collectionName, editItem.id));
+          console.log(`[DEBUG_HAPUS] OLD DOC DELETED SUCCESSFULLY: ${editItem.id}`);
         } catch (err) {
-          console.error("Failed to delete old master doc:", err);
+          console.error(`[DEBUG_HAPUS] FAILED TO DELETE OLD DOC: ${editItem.id}`, err);
         }
+      } else {
+        console.log(`[DEBUG_HAPUS] NO DELETION: editItem.id=${editItem?.id}, docId=${docId}`);
       }
 
       // Log the changes
@@ -245,6 +250,7 @@ export default function ProgramView({
         logModule = "SUB_KEGIATAN";
       }
 
+      console.log(`[DEBUG_HAPUS] DELETING DOC FROM ${collectionName}: ${item.id}`);
       await deleteDoc(doc(db, collectionName, item.id)).catch(err => handleFirestoreError(err, OperationType.DELETE, `${collectionName}/${item.id}`));
       
       await createAuditLog(
@@ -305,6 +311,16 @@ export default function ProgramView({
             >
               <Plus size={15} />
               Tambah {activeTab === 'program' ? 'Program' : activeTab === 'kegiatan' ? 'Kegiatan' : 'Sub Kegiatan'}
+            </button>
+          )}
+
+          {currentUserEmail === 'budiansani@gmail.com' && (
+            <button 
+              onClick={async () => { if(confirm("Yakin hapus SEMUA database?")) { await clearDatabase(); location.reload(); } }}
+              className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-red-700 hover:bg-red-800 rounded-lg shadow-sm transition cursor-pointer"
+            >
+              <Trash2 size={15} />
+              Hapus Database
             </button>
           )}
         </div>
