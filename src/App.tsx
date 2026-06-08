@@ -779,6 +779,7 @@ export default function App() {
             kegiatans={kegiatans} 
             subKegiatans={subKegiatans} 
             realisasis={realisasis} 
+            pihakKetigas={pihakKetigas}
           />
         );
       case "logs":

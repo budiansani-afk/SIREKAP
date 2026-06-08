@@ -65,15 +65,35 @@ export default function BelanjaPihakKetigaView({
 
   const canEdit = currentUserRole === UserRole.ADMIN || currentUserRole === UserRole.OPERATOR;
 
+  // Status options
+  const statusOptions = ['Aktif', 'Akan Berakhir', 'Selesai', 'Belum Mulai'];
+  const [selectedStatus, setSelectedStatus] = useState<string>('');
+
+  // Helper to calculate status
+  const getContractStatus = (m: BelanjaPihakKetiga): string => {
+    const now = new Date();
+    const end = new Date(m.masa_kerja_selesai || '');
+    const start = new Date(m.masa_kerja_mulai || '');
+    if (!m.masa_kerja_mulai) return 'Belum Mulai';
+    
+    const diffDays = Math.ceil((end.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+    
+    if (now > end) return 'Selesai';
+    if (diffDays <= 30 && diffDays >= 0) return 'Akan Berakhir';
+    if (now >= start) return 'Aktif';
+    return 'Belum Mulai';
+  };
+
   // Search filter
   const filteredPihakKetigas = useMemo(() => {
     return pihakKetigas.filter(m => {
       const matchSearch = String(m.kode_sub_kegiatan).toLowerCase().includes(searchTerm.toLowerCase()) ||
                           String(m.catatan || '').toLowerCase().includes(searchTerm.toLowerCase());
       const matchSub = selectedSubKeg === '' || m.kode_sub_kegiatan === selectedSubKeg;
-      return matchSearch && matchSub;
+      const matchStatus = selectedStatus === '' || getContractStatus(m) === selectedStatus;
+      return matchSearch && matchSub && matchStatus;
     });
-  }, [pihakKetigas, searchTerm, selectedSubKeg]);
+  }, [pihakKetigas, searchTerm, selectedSubKeg, selectedStatus]);
 
   // Handle Foto upload
   const handleFotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -293,6 +313,13 @@ export default function BelanjaPihakKetigaView({
           ))}
         </select>
 
+        <select value={selectedStatus} onChange={(e) => setSelectedStatus(e.target.value)} className="p-2 border border-slate-200 bg-white rounded-lg flex-1 max-w-[200px] focus:outline-blue-600">
+          <option value="">Semua Status</option>
+          {statusOptions.map((s, idx) => (
+            <option key={idx} value={s}>{s}</option>
+          ))}
+        </select>
+
         <div className="relative flex-1 max-w-xs">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
           <input 
@@ -312,7 +339,7 @@ export default function BelanjaPihakKetigaView({
             <div className="p-12 text-center text-slate-500 font-semibold">Tabel belanja pihak ketiga kosong. Harap tambahkan data baru.</div>
           ) : (
             filteredPihakKetigas.map((m, i) => (
-              <div key={m.id} onClick={() => setSelectedItem(m)} className="p-5 flex flex-col md:flex-row gap-5 items-start hover:bg-slate-50/30 transition duration-150 cursor-pointer" id={`mon-row-${i}`}>
+              <div key={m.id} className="p-5 flex flex-col md:flex-row gap-5 items-start hover:bg-slate-50/30 transition duration-150" id={`mon-row-${i}`}>
                 {/* Photo or Placeholder */}
                 <div className="w-full md:w-32 h-32 bg-slate-100 border rounded-lg hover:border-blue-500 transition overflow-hidden flex items-center justify-center flex-shrink-0 relative">
                   {m.foto_kegiatan ? (
@@ -332,6 +359,16 @@ export default function BelanjaPihakKetigaView({
                       <span className="text-[10px] bg-indigo-100 text-indigo-900 font-black px-2 py-0.5 rounded-full font-mono">{m.kode_sub_kegiatan}</span>
                       <h4 className="font-bold text-slate-900 mt-1 text-xs">{subKegiatans.find(s => s.kode_sub_kegiatan === m.kode_sub_kegiatan)?.nama_sub_kegiatan || 'Sub Kegiatan Terdaftar'}</h4>
                     </div>
+                    {(() => {
+                      const status = getContractStatus(m);
+                      const badgeMap: { [key: string]: string } = {
+                        'Aktif': 'bg-green-100 text-green-800',
+                        'Selesai': 'bg-slate-100 text-slate-600',
+                        'Akan Berakhir': 'bg-amber-100 text-amber-800',
+                        'Belum Mulai': 'bg-blue-100 text-blue-800'
+                      };
+                      return <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${badgeMap[status] || 'bg-slate-100'}`}>{status}</span>;
+                    })()}
                     <span className="font-mono text-[10px] text-slate-500 font-bold flex items-center gap-1"><Calendar size={12} /> {m.tanggal}</span>
                   </div>
 
@@ -362,10 +399,7 @@ export default function BelanjaPihakKetigaView({
                 {/* Crud Actions right aligned */}
                 <div className="flex md:flex-col items-center gap-1 text-center justify-end self-stretch md:border-l border-slate-100 md:pl-4">
                   <button onClick={() => setSelectedItem(m)} className="p-2 hover:bg-emerald-100 text-emerald-700 rounded-lg transition" title="Lihat">
-                    <div className="flex items-center gap-1">
-                      <Eye size={14} />
-                      <span className="text-[10px] font-black uppercase">Lihat</span>
-                    </div>
+                    <Eye size={14} />
                   </button>
                   {canEdit && (
                     <>

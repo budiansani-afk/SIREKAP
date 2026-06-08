@@ -11,7 +11,8 @@ import {
   AlertTriangle,
   Receipt,
   Download,
-  DollarSign
+  DollarSign,
+  Eye
 } from 'lucide-react';
 import { Realisasi, Program, Kegiatan, SubKegiatan, UserRole, RKA } from '../types';
 import { formatRupiah, exportToCSV } from '../utils/helpers';
@@ -47,6 +48,8 @@ export default function RealisasiView({
   // Modals
   const [showForm, setShowForm] = useState(false);
   const [showDetail, setShowDetail] = useState(false);
+  const [showPhoto, setShowPhoto] = useState(false);
+  const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null);
   const [detailItem, setDetailItem] = useState<Realisasi | null>(null);
   const [editItem, setEditItem] = useState<Realisasi | null>(null);
 
@@ -528,20 +531,18 @@ export default function RealisasiView({
             <thead>
               <tr className="bg-slate-50 border-b border-slate-100 font-semibold text-slate-600">
                 <th className="p-3.5 pl-4 w-32">Tanggal / Bulan</th>
-                <th className="p-3.5 w-40">Sub Kegiatan</th>
                 <th className="p-3.5">Uraian / Keterangan</th>
                 <th className="p-3.5 text-right w-36">Pagu Anggaran</th>
                 <th className="p-3.5 text-right w-36">Nominal Realisasi</th>
                 <th className="p-3.5 text-right w-36">Sisa Anggaran</th>
                 <th className="p-3.5 text-center w-28">Persen Serapan</th>
-                <th className="p-3.5 text-center w-28">Lampiran / Bukti</th>
                 {canEdit && <th className="p-3.5 text-center w-24">Aksi</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-slate-700">
               {filteredRealisasis.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="p-8 text-center text-slate-500 font-semibold">Tabel realisasi kosong / Atur saringan filter.</td>
+                  <td colSpan={7} className="p-8 text-center text-slate-500 font-semibold">Tabel realisasi kosong / Atur saringan filter.</td>
                 </tr>
               ) : (
                 filteredRealisasis.map((r, i) => {
@@ -563,7 +564,6 @@ export default function RealisasiView({
                         <p className="font-bold text-slate-900 flex items-center gap-1 font-mono text-[11px]"><Calendar size={12} className="text-blue-800" />{r.tanggal}</p>
                         <span className="text-[10px] text-slate-500 font-semibold uppercase">{r.bulan}</span>
                       </td>
-                      <td className="p-3.5 font-mono text-[11px] font-bold text-slate-900" title={r.kode_sub_kegiatan}>{r.kode_sub_kegiatan}</td>
                       <td 
                         className="p-3.5 cursor-pointer"
                         onClick={() => {
@@ -585,23 +585,18 @@ export default function RealisasiView({
                       <td className="p-3.5 text-center">
                         <span className={`px-2 py-0.5 rounded-full font-black text-[10px] ${matchPercent >= 100 ? 'bg-emerald-100 text-emerald-900' : 'bg-blue-100 text-blue-900'}`}>{matchPercent}%</span>
                       </td>
-                      <td className="p-3.5 text-center">
-                        {r.bukti_transaksi ? (
-                          <a 
-                            href={r.bukti_transaksi} 
-                            download={`sp2d_${r.id}.png`}
-                            className="inline-flex items-center gap-1 text-[10px] font-black text-emerald-800 bg-emerald-50 px-2 py-1 rounded-md border border-emerald-200 hover:bg-emerald-100 transition whitespace-nowrap"
-                          >
-                            <Receipt size={11} />
-                            Unduh Bukti
-                          </a>
-                        ) : (
-                          <span className="text-[10px] text-slate-400 font-medium">Bebas SPJ</span>
-                        )}
-                      </td>
                       {canEdit && (
                         <td className="p-3.5 text-center">
                           <div className="flex items-center justify-center gap-1.5">
+                            {r.bukti_transaksi && (
+                              <button 
+                                onClick={() => { setSelectedPhoto(r.bukti_transaksi!); setShowPhoto(true); }}
+                                className="p-1.5 hover:bg-emerald-100 text-emerald-700 rounded transition" 
+                                title="Lihat Bukti Foto"
+                              >
+                                <Eye size={13} />
+                              </button>
+                            )}
                             <button onClick={() => openEditModal(r)} className="p-1.5 hover:bg-amber-100 text-amber-700 rounded transition" title="Edit"><Edit2 size={13} /></button>
                             <button onClick={() => handleDelete(r)} className="p-1.5 hover:bg-red-100 text-red-700 rounded transition" title="Hapus"><Trash2 size={13} /></button>
                           </div>
@@ -635,7 +630,6 @@ export default function RealisasiView({
             </div>
             
             <div className="p-6 space-y-6">
-              {/* Bagian Atas: Info Utama */}
               <div className="space-y-4 text-xs">
                 <div className="grid grid-cols-[1fr,2fr] gap-3 text-slate-700">
                   <span className="font-bold text-slate-500">Program:</span>
@@ -647,15 +641,17 @@ export default function RealisasiView({
                   <span className="font-bold text-slate-500">Sub-Kegiatan:</span>
                   <span>{subKegiatans.find(s => s.kode_sub_kegiatan === detailItem.kode_sub_kegiatan)?.nama_sub_kegiatan || detailItem.kode_sub_kegiatan}</span>
                   
-                  <span className="font-bold text-slate-500">Uraian/Detail:</span>
-                  <span className="font-bold">{detailItem.uraian_belanja}</span>
+                  <span className="font-bold text-slate-500">Uraian Detail:</span>
+                  <span className="font-bold text-slate-950 text-sm bg-yellow-50 px-2 py-1 rounded inline-block">{detailItem.uraian_belanja}</span>
                   
+                  <span className="font-bold text-slate-500">Tanggal:</span>
+                  <span className="font-mono text-slate-800">{detailItem.tanggal} ({detailItem.bulan})</span>
+
                   <span className="font-bold text-slate-500">Catatan:</span>
-                  <span className="italic text-slate-700">{detailItem.keterangan || '-'}</span>
+                  <span className="italic text-slate-700 bg-slate-50 p-2 rounded border border-slate-100">{detailItem.keterangan || '-'}</span>
                 </div>
               </div>
 
-              {/* Bagian Bawah: Anggaran & Gambar */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start border-t pt-6">
                 <div className="bg-slate-50 border border-slate-100 rounded-lg p-4 space-y-2 text-xs">
                     <div className="grid grid-cols-[1fr,1fr] gap-2 text-slate-700">
@@ -687,6 +683,51 @@ export default function RealisasiView({
           </div>
         </div>
       )}
+      
+      {/* Photo Popup Modal */}
+      {showPhoto && selectedPhoto && (
+        <div 
+          className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in"
+          onClick={() => setShowPhoto(false)}
+        >
+          <div 
+            className="bg-white rounded-xl shadow-2xl p-4 max-w-lg w-full"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="font-bold text-sm">Bukti Transaksi (SPJ)</h3>
+              <button 
+                onClick={() => setShowPhoto(false)} 
+                className="text-slate-600 hover:text-slate-900 font-bold text-lg"
+              >&times;</button>
+            </div>
+            
+            <img 
+              src={selectedPhoto} 
+              alt="Bukti SPJ" 
+              className="w-full h-auto rounded-lg mb-4" 
+            />
+            
+            <div className="flex justify-end gap-2">
+              <a 
+                href={selectedPhoto} 
+                download={`Bukti_SPJ_${Date.now()}.png`}
+                className="flex items-center gap-1.5 px-4 py-2 bg-emerald-700 text-white text-xs font-bold rounded-lg hover:bg-emerald-800 transition"
+              >
+                <Download size={14} />
+                Unduh
+              </a>
+              <button 
+                onClick={() => setShowPhoto(false)}
+                className="px-4 py-2 bg-slate-100 text-slate-800 text-xs font-bold rounded-lg hover:bg-slate-200 transition"
+              >
+                Tutup
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Add / Edit Form Dialog */}
       {showForm && (
         <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in" id="real-form-overlay">

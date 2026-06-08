@@ -10,7 +10,7 @@ import {
   ArrowRight,
   Sparkles
 } from 'lucide-react';
-import { Program, Kegiatan, SubKegiatan, Realisasi } from '../types';
+import { Program, Kegiatan, SubKegiatan, Realisasi, BelanjaPihakKetiga } from '../types';
 import { formatRupiah, formatPercent } from '../utils/helpers';
 import { 
   ResponsiveContainer, 
@@ -30,13 +30,15 @@ interface AnalisisViewProps {
   kegiatans: Kegiatan[];
   subKegiatans: SubKegiatan[];
   realisasis: Realisasi[];
+  pihakKetigas: BelanjaPihakKetiga[];
 }
 
 export default function AnalisisView({
   programs,
   kegiatans,
   subKegiatans,
-  realisasis
+  realisasis,
+  pihakKetigas
 }: AnalisisViewProps) {
 
   // Sorter rankings: highest absorption sub-kegiatan
@@ -56,6 +58,10 @@ export default function AnalisisView({
     if (subKegiatans.length === 0) return null;
     return [...subKegiatans].sort((a,b) => b.pagu - a.pagu)[0];
   }, [subKegiatans]);
+
+  const totalRealisasi = useMemo(() => realisasis.reduce((sum, r) => sum + r.nominal_realisasi, 0), [realisasis]);
+  const totalPihakKetiga = useMemo(() => pihakKetigas.reduce((sum, p) => sum + (p.jumlah_realisasi || 0), 0), [pihakKetigas]);
+  const rasioPihakKetiga = totalRealisasi > 0 ? (totalPihakKetiga / totalRealisasi) * 100 : 0;
 
   // Sorter progress ranking list representation
   const rankedSubKegiatans = useMemo(() => {
@@ -98,6 +104,16 @@ export default function AnalisisView({
         </div>
       </div>
 
+      {/* Recommendation Header */}
+      <div className="bg-amber-50 rounded-xl border border-amber-200 p-4 shadow-sm space-y-2">
+        <h4 className="font-bold text-amber-950 flex items-center gap-2">⭐ Rekomendasi Percepatan</h4>
+        <ul className="text-xs text-amber-900 list-disc list-inside space-y-1 font-medium">
+            <li>Tingkatkan realisasi pada Sub-Kegiatan dengan serapan terendah.</li>
+            <li>Evaluasi ulang pagu pada Sub-Kegiatan yang belum berjalan sama sekali.</li>
+            <li>Pastikan bukti fisik belanja pihak ketiga sudah lengkap dan terdokumentasi dengan baik.</li>
+        </ul>
+      </div>
+
       {/* Metric Cards Row */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4" id="analisis-metrics-grid">
         
@@ -125,15 +141,15 @@ export default function AnalisisView({
           </div>
         </div>
 
-        {/* Sizing master volume */}
+        {/* Pihak Ketiga Ratio */}
         <div className="bg-blue-50 rounded-2xl border border-blue-100 p-4.5 flex items-start gap-3.5 shadow-xs">
           <div className="p-2.5 bg-blue-100 rounded-xl text-blue-800 font-bold"><Award size={20} /></div>
           <div className="min-w-0">
-            <span className="text-[10px] text-blue-800 font-extrabold uppercase tracking-wide">Pagu Terbesar TA 2026</span>
-            <h4 className="text-base font-black text-blue-950 mt-1 leading-snug truncate" title={largestPaguSub?.nama_sub_kegiatan}>
-              {largestPaguSub ? formatRupiah(largestPaguSub.pagu) : 'Rp 0'}
+            <span className="text-[10px] text-blue-800 font-extrabold uppercase tracking-wide">Rasio Belanja Pihak Ketiga</span>
+            <h4 className="text-base font-black text-blue-950 mt-1 leading-snug truncate">
+              {rasioPihakKetiga.toFixed(2)}%
             </h4>
-            <p className="text-[10px] text-blue-700 font-medium truncate mt-0.5">{largestPaguSub?.nama_sub_kegiatan || 'Sub-Kegiatan'}</p>
+            <p className="text-[10px] text-blue-700 font-medium truncate mt-0.5">Dari total realisasi kas</p>
           </div>
         </div>
 
@@ -143,9 +159,9 @@ export default function AnalisisView({
           <div className="min-w-0">
             <span className="text-[10px] text-purple-800 font-extrabold uppercase tracking-wide">Rasio Sehat Penggunaan</span>
             <h4 className="text-base font-black text-purple-950 mt-1 leading-snug truncate">
-              {subKegiatans.filter(s => s.persentase >= 50).length} / {subKegiatans.length} Usulan
+              {subKegiatans.filter(s => s.persentase >= 50).length} / {subKegiatans.length}
             </h4>
-            <p className="text-[10px] text-purple-700 font-semibold truncate mt-0.5">Sudah melewati target serapan 50%.</p>
+            <p className="text-[10px] text-purple-700 font-semibold truncate mt-0.5" title="Rasio sehat artinya sub kegiatan telah mencapai serapan > 50% dari total pagu anggaran">Serapan &gt; 50% pagu.</p>
           </div>
         </div>
 

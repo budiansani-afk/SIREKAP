@@ -114,11 +114,10 @@ export default function RkaView({
       const matchProgram = filterProgram === '' || (r && r.kode_program === filterProgram);
       const matchKegiatan = filterKegiatan === '' || (r && r.kode_kegiatan === filterKegiatan);
       const matchSub = filterSubKegiatan === '' || (r && r.kode_sub_kegiatan === filterSubKegiatan);
-      const matchUraian = filterUraian === '' || (r && r.uraian_belanja ? String(r.uraian_belanja).toLowerCase().includes(filterUraian.toLowerCase()) : false);
 
-      return matchSearch && matchTahun && matchProgram && matchKegiatan && matchSub && matchUraian;
+      return matchSearch && matchTahun && matchProgram && matchKegiatan && matchSub;
     });
-  }, [rkaList, searchTerm, filterUraian, filterTahun, filterProgram, filterKegiatan, filterSubKegiatan]);
+  }, [rkaList, searchTerm, filterTahun, filterProgram, filterKegiatan, filterSubKegiatan]);
 
   // Total anggaran hasil filter
   const totalAnggaranFiltered = useMemo(() => {
@@ -505,7 +504,7 @@ export default function RkaView({
           </select>
         </div>
 
-        {/* Search */}
+        /* Search */
         <div>
           <label className="block text-slate-500 font-bold mb-1">Cari Keterangan Belanja</label>
           <div className="relative">
@@ -516,21 +515,6 @@ export default function RkaView({
               value={searchTerm} 
               onChange={(e) => setSearchTerm(e.target.value)} 
               className="w-full p-2 pl-8 border border-slate-200 rounded-md"
-            />
-          </div>
-        </div>
-
-        {/* Filter Uraian Detail Belanja */}
-        <div>
-          <label className="block text-slate-500 font-bold mb-1">Filter Uraian Detail</label>
-          <div className="relative">
-            <Filter className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#7a4805]" size={14} />
-            <input 
-              type="text" 
-              placeholder="Saring rincian detail..." 
-              value={filterUraian} 
-              onChange={(e) => setFilterUraian(e.target.value)} 
-              className="w-full p-2 pl-8 border border-slate-200 rounded-md bg-orange-50/30 focus:bg-white text-slate-800 font-semibold"
             />
           </div>
         </div>
@@ -599,14 +583,6 @@ export default function RkaView({
                     {canEdit && (
                       <td className="p-3 text-center">
                         <div className="flex items-center justify-center gap-1.5">
-                          <button 
-                            onClick={() => handleCopyData(r)} 
-                            className="px-2 py-1 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded text-[10px] font-black flex items-center gap-1 transition"
-                            title="Salin Data"
-                          >
-                            <Copy size={11} />
-                            <span>Salin</span>
-                          </button>
                           <button onClick={() => openEditModal(r)} className="p-1.5 hover:bg-amber-50 text-amber-700 rounded border border-transparent hover:border-amber-200" title="Edit"><Edit2 size={13} /></button>
                           <button onClick={() => handleDelete(r)} className="p-1.5 hover:bg-red-50 text-red-750 rounded border border-transparent hover:border-red-200" title="Hapus"><Trash2 size={13} /></button>
                         </div>
