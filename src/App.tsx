@@ -44,7 +44,7 @@ import {
   COLL_SUB_KEGIATAN, 
   COLL_RKA, 
   COLL_REALISASI, 
-  COLL_MONITORING_FISIK, 
+  COLL_BELANJA_PIHAK_KETIGA, 
   COLL_DOKUMEN, 
   COLL_LOG_AKTIVITAS, 
   COLL_PENGATURAN, 
@@ -58,7 +58,7 @@ import {
   SubKegiatan, 
   RKA, 
   Realisasi, 
-  MonitoringFisik, 
+  BelanjaPihakKetiga, 
   DokumenArsip, 
   ActivityLog, 
   AppSettings, 
@@ -71,7 +71,7 @@ import DashboardView from './components/DashboardView';
 import ProgramView from './components/ProgramView';
 import RkaView from './components/RkaView';
 import RealisasiView from './components/RealisasiView';
-import MonitoringView from './components/MonitoringView';
+import BelanjaPihakKetigaView from './components/BelanjaPihakKetigaView';
 import DokumenView from './components/DokumenView';
 import LaporanView from './components/LaporanView';
 import AnalisisView from './components/AnalisisView';
@@ -83,7 +83,7 @@ type ViewPage =
   | "program" 
   | "rka" 
   | "realisasi" 
-  | "monitoring" 
+  | "pihakKetiga" 
   | "dokumen" 
   | "laporan" 
   | "analisis" 
@@ -101,7 +101,7 @@ export default function App() {
   const [subKegiatans, setSubKegiatans] = useState<SubKegiatan[]>([]);
   const [rkaList, setRkaList] = useState<RKA[]>([]);
   const [realisasis, setRealisasis] = useState<Realisasi[]>([]);
-  const [monitorings, setMonitorings] = useState<MonitoringFisik[]>([]);
+  const [pihakKetigas, setPihakKetigas] = useState<BelanjaPihakKetiga[]>([]);
   const [dokumens, setDokumens] = useState<DokumenArsip[]>([]);
   const [logs, setLogs] = useState<ActivityLog[]>([]);
   const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
@@ -308,8 +308,8 @@ export default function App() {
       setRealisasis(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Realisasi)));
     });
 
-    const unsubMon = onSnapshot(collection(db, COLL_MONITORING_FISIK), (snap) => {
-      setMonitorings(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as MonitoringFisik)));
+    const unsubMon = onSnapshot(collection(db, COLL_BELANJA_PIHAK_KETIGA), (snap) => {
+      setPihakKetigas(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as BelanjaPihakKetiga)));
     });
 
     const unsubDoc = onSnapshot(collection(db, COLL_DOKUMEN), (snap) => {
@@ -528,7 +528,7 @@ export default function App() {
     { id: "program", label: "Program & Kegiatan", icon: <Layers size={16} /> },
     { id: "rka", label: "E-RKA Detail Belanja", icon: <FileSpreadsheet size={16} /> },
     { id: "realisasi", label: "Realisasi SP2D", icon: <TrendingUp size={16} /> },
-    { id: "monitoring", label: "Monitoring Fisik", icon: <Activity size={16} /> },
+    { id: "pihakKetiga", label: "Belanja Pihak Ketiga", icon: <Activity size={16} /> },
     { id: "dokumen", label: "Arsip Dokumen", icon: <FolderCheck size={16} /> },
     { id: "laporan", label: "Laporan & Cetak", icon: <FileText size={16} /> },
     { id: "analisis", label: "Analisis Kinerja", icon: <Sparkles size={16} /> },
@@ -689,8 +689,9 @@ export default function App() {
             programs={programs} 
             kegiatans={kegiatans} 
             subKegiatans={subKegiatans} 
+            rkaList={rkaList}
             realisasis={realisasis} 
-            monitorings={monitorings}
+            pihakKetigas={pihakKetigas}
             dokumens={dokumens}
             onNavigate={(page, tabDetail) => {
               setActivePage(page as any);
@@ -736,13 +737,14 @@ export default function App() {
             currentUserEmail={user.email} 
           />
         );
-      case "monitoring":
+      case "pihakKetiga":
         return (
-          <MonitoringView 
-            monitorings={monitorings} 
+          <BelanjaPihakKetigaView 
+            pihakKetigas={pihakKetigas} 
             programs={programs} 
             kegiatans={kegiatans} 
             subKegiatans={subKegiatans} 
+            rkaList={rkaList}
             currentUserRole={userRole} 
             currentUserEmail={user.email} 
           />
@@ -762,7 +764,8 @@ export default function App() {
             kegiatans={kegiatans} 
             subKegiatans={subKegiatans} 
             realisasis={realisasis} 
-            monitorings={monitorings} 
+            pihakKetigas={pihakKetigas} 
+            rkaList={rkaList}
             settings={appSettings}
             currentUserEmail={user?.email || ''}
             currentUserRole={userRole}

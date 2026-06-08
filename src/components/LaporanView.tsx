@@ -12,7 +12,7 @@ import {
   Activity,
   Award
 } from 'lucide-react';
-import { Program, Kegiatan, SubKegiatan, Realisasi, MonitoringFisik, AppSettings, UserRole, ActivityLog } from '../types';
+import { Program, Kegiatan, SubKegiatan, Realisasi, BelanjaPihakKetiga, AppSettings, UserRole, ActivityLog, RKA } from '../types';
 import { formatRupiah, formatPercent } from '../utils/helpers';
 import { createAuditLog } from '../dbService';
 
@@ -21,7 +21,8 @@ interface LaporanViewProps {
   kegiatans: Kegiatan[];
   subKegiatans: SubKegiatan[];
   realisasis: Realisasi[];
-  monitorings: MonitoringFisik[];
+  pihakKetigas: BelanjaPihakKetiga[];
+  rkaList: RKA[];
   settings?: AppSettings | null;
   currentUserEmail: string;
   currentUserRole: UserRole;
@@ -43,7 +44,8 @@ export default function LaporanView({
   kegiatans,
   subKegiatans,
   realisasis,
-  monitorings,
+  pihakKetigas,
+  rkaList,
   settings,
   currentUserEmail,
   currentUserRole,
@@ -101,7 +103,7 @@ export default function LaporanView({
       case "rekap_sub_kegiatan": return "LAPORAN REALISASI ANGGARAN PER SUB-KEGIATAN";
       case "bulanan": return `LAPORAN PERKEMBANGAN REALISASI BULANAN (${selectedMonth})`;
       case "tahunan": return "LAPORAN REKAPITULASI TAHUNAN KABUPATEN BIMA";
-      case "monitoring_fisik": return "LAPORAN MONITORING FISIK LAPANGAN";
+      case "belanja_pihak_ketiga": return "LAPORAN PELAKSANAAN BELANJA PIHAK KETIGA";
       default: return "LAPORAN KEUANGAN";
     }
   }, [selectedLaporan, selectedMonth]);
@@ -143,19 +145,19 @@ export default function LaporanView({
         return filteredRealM.map(r => ({
           kode: r.tanggal,
           nama: `${r.kode_sub_kegiatan} - ${r.uraian_belanja}`,
-          pagu: subKegiatans.find(s => s.kode_sub_kegiatan === r.kode_sub_kegiatan)?.pagu || 0,
+          pagu: rkaList.find(a => a.uraian_belanja === r.uraian_belanja)?.jumlah || 0,
           realisasi: r.nominal_realisasi,
-          sisa: r.sisa_anggaran,
+          sisa: Math.max(0, (rkaList.find(a => a.uraian_belanja === r.uraian_belanja)?.jumlah || 0) - r.nominal_realisasi),
           persen: r.persentase_realisasi
         }));
-      case "monitoring_fisik":
-        return monitorings.map(m => ({
+      case "belanja_pihak_ketiga":
+        return pihakKetigas.map(m => ({
           kode: m.tanggal,
-          nama: `${m.kode_sub_kegiatan} - ${subKegiatans.find(s => s.kode_sub_kegiatan === m.kode_sub_kegiatan)?.nama_sub_kegiatan || 'Sektor'}`,
-          pagu: m.target_fisik, // mapping pagu text element to Target Physical
-          realisasi: m.realisasi_fisik, // mapping realisasi text to Realisasi Physical
-          sisa: Math.max(0, m.target_fisik - m.realisasi_fisik), // mapping gap
-          persen: m.persentase
+          nama: m.uraian_belanja,
+          pagu: 0, // Not applicable for PK
+          realisasi: m.realisasi,
+          sisa: 0, // Not applicable for PK
+          persen: 0
         }));
       case "tahunan":
       default:
@@ -169,7 +171,7 @@ export default function LaporanView({
           persen: s.persentase
         }));
     }
-  }, [selectedLaporan, programs, kegiatans, subKegiatans, realisasis, monitorings, selectedMonth]);
+  }, [selectedLaporan, programs, kegiatans, subKegiatans, realisasis, pihakKetigas, selectedMonth]);
 
   // Content signature of current report content
   const currentReportContentSignature = useMemo(() => {
@@ -336,7 +338,7 @@ export default function LaporanView({
             <option value="rekap_sub_kegiatan">5. Laporan Serapan Anggaran per Sub-Kegiatan</option>
             <option value="bulanan">6. Laporan Realisasi Bulanan Berjalan</option>
             <option value="tahunan">7. Laporan Kinerja Belanja Tahunan</option>
-            <option value="monitoring_fisik">8. Laporan Kinerja Fisik Sengketa Lahan</option>
+            <option value="belanja_pihak_ketiga">8. Laporan Belanja Jasa Pihak Ketiga</option>
           </select>
         </div>
 
@@ -416,13 +418,13 @@ export default function LaporanView({
                 <th className="p-3 border border-slate-300 w-32">KODE / TANGGAL</th>
                 <th className="p-3 border border-slate-300">NAMA & URAIAN DETAIL KEGIATAN</th>
                 <th className="p-3 border border-slate-300 text-right w-36">
-                  {selectedLaporan === "monitoring_fisik" ? "TARGET FISIK" : "PAGU ANGGARAN"}
+                  {selectedLaporan === "belanja_pihak_ketiga" ? "NILAI KONTRAK" : "PAGU ANGGARAN"}
                 </th>
                 <th className="p-3 border border-slate-300 text-right w-36">
-                  {selectedLaporan === "monitoring_fisik" ? "REALISASI FISIK" : "REALISASI KAS"}
+                  {selectedLaporan === "belanja_pihak_ketiga" ? "REALISASI" : "REALISASI KAS"}
                 </th>
                 <th className="p-3 border border-slate-300 text-right w-36">
-                  {selectedLaporan === "monitoring_fisik" ? "GAP KEMULIAAN" : "SISA PLAFON"}
+                  {selectedLaporan === "belanja_pihak_ketiga" ? "SISA" : "SISA PLAFON"}
                 </th>
                 <th className="p-3 border border-slate-300 text-center w-20">RASIO SERAPAN</th>
               </tr>
@@ -433,13 +435,13 @@ export default function LaporanView({
                   <td className="p-2.5 border border-slate-200 font-mono font-semibold whitespace-nowrap">{row.kode}</td>
                   <td className="p-2.5 border border-slate-200 break-words whitespace-normal min-w-[260px] max-w-md font-semibold text-slate-900 leading-snug">{row.nama}</td>
                   <td className="p-2.5 border border-slate-200 text-right lg:font-bold whitespace-nowrap">
-                    {selectedLaporan === "monitoring_fisik" ? `${row.pagu}%` : formatRupiah(row.pagu)}
+                    {selectedLaporan === "belanja_pihak_ketiga" ? "-" : formatRupiah(row.pagu)}
                   </td>
                   <td className="p-2.5 border border-slate-200 text-right text-emerald-800 font-semibold whitespace-nowrap">
-                    {selectedLaporan === "monitoring_fisik" ? `${row.realisasi}%` : formatRupiah(row.realisasi)}
+                    {selectedLaporan === "belanja_pihak_ketiga" ? formatRupiah(row.realisasi) : formatRupiah(row.realisasi)}
                   </td>
                   <td className="p-2.5 border border-slate-200 text-right text-slate-600 whitespace-nowrap">
-                    {selectedLaporan === "monitoring_fisik" ? `${row.sisa}%` : formatRupiah(row.sisa)}
+                    {selectedLaporan === "belanja_pihak_ketiga" ? "-" : formatRupiah(row.sisa)}
                   </td>
                   <td className="p-2.5 border border-slate-200 text-center font-bold whitespace-nowrap">
                     {row.persen}%
@@ -451,13 +453,13 @@ export default function LaporanView({
               <tr className="bg-slate-50 font-black text-rose-950 divide-x border-t-2 border-slate-300">
                 <td colSpan={2} className="p-3 text-right uppercase border border-slate-300">TOTAL KESELURUHAN (TOTAL EXPENDITURES):</td>
                 <td className="p-3 text-right border border-slate-300">
-                  {selectedLaporan === "monitoring_fisik" ? `${(totalPaguSum / Math.max(1, reportRows.length)).toFixed(1)}%` : formatRupiah(totalPaguSum)}
+                  {selectedLaporan === "belanja_pihak_ketiga" ? "-" : formatRupiah(totalPaguSum)}
                 </td>
                 <td className="p-3 text-right border border-slate-300">
-                  {selectedLaporan === "monitoring_fisik" ? `${(totalRealisasiSum / Math.max(1, reportRows.length)).toFixed(1)}%` : formatRupiah(totalRealisasiSum)}
+                  {formatRupiah(totalRealisasiSum)}
                 </td>
                 <td className="p-3 text-right border border-slate-300">
-                  {selectedLaporan === "monitoring_fisik" ? `${(totalSisaSum / Math.max(1, reportRows.length)).toFixed(1)}%` : formatRupiah(totalSisaSum)}
+                  {selectedLaporan === "belanja_pihak_ketiga" ? "-" : formatRupiah(totalSisaSum)}
                 </td>
                 <td className="p-3 text-center border border-slate-300">
                   {avgPersenSum.toFixed(2)}%

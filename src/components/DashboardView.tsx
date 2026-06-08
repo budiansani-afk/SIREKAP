@@ -11,7 +11,7 @@ import {
   AlertTriangle,
   ArrowUpRight
 } from 'lucide-react';
-import { Program, Kegiatan, SubKegiatan, Realisasi, MonitoringFisik, DokumenArsip } from '../types';
+import { Program, Kegiatan, SubKegiatan, Realisasi, BelanjaPihakKetiga, DokumenArsip, RKA } from '../types';
 import { formatRupiah, formatPercent } from '../utils/helpers';
 import { 
   ResponsiveContainer, 
@@ -28,9 +28,10 @@ interface DashboardProps {
   kegiatans: Kegiatan[];
   subKegiatans: SubKegiatan[];
   realisasis: Realisasi[];
-  monitorings: MonitoringFisik[];
+  pihakKetigas: BelanjaPihakKetiga[];
+  rkaList: RKA[];
   dokumens: DokumenArsip[];
-  onNavigate?: (page: 'dashboard' | 'program' | 'rka' | 'realisasi' | 'monitoring' | 'dokumen' | 'laporan' | 'analisis' | 'logs' | 'pengaturan', tabDetail?: string) => void;
+  onNavigate?: (page: 'dashboard' | 'program' | 'rka' | 'realisasi' | 'pihakKetiga' | 'dokumen' | 'laporan' | 'analisis' | 'logs' | 'pengaturan', tabDetail?: string) => void;
 }
 
 const CustomTooltip = ({ active, payload, label }: any) => {
@@ -59,22 +60,61 @@ const formatYAxis = (value: number) => {
   return value.toString();
 };
 
+interface StatCardProps {
+  title: string;
+  value: string;
+  subtitle: string;
+  color: 'blue' | 'emerald' | 'amber';
+}
+
+const StatCard = ({ title, value, subtitle, color }: StatCardProps) => {
+  const colorMap = {
+    blue: 'bg-white border-slate-200 text-blue-700',
+    emerald: 'bg-white border-slate-200 text-emerald-700',
+    amber: 'bg-white border-slate-200 text-amber-700'
+  };
+  return (
+    <div className={`p-4 rounded-xl border shadow-sm hover:shadow transition-all ${colorMap[color]}`}>
+      <p className="text-slate-400 text-[10px] font-bold uppercase tracking-wider block truncate">{title}</p>
+      <h3 className="text-lg font-black text-slate-950 mt-1 truncate" title={value}>{value}</h3>
+      <p className="text-[10px] mt-0.5 font-bold">{subtitle}</p>
+    </div>
+  );
+};
+
 export default function DashboardView({
   programs,
   kegiatans,
   subKegiatans,
   realisasis,
-  monitorings,
+  pihakKetigas,
   dokumens,
+  rkaList,
   onNavigate
 }: DashboardProps) {
   const [selectedInfo, setSelectedInfo] = React.useState<{ title: string; content: string; type: 'guide' | 'alert' } | null>(null);
 
   // Calculate totals
-  const totalPagu = useMemo(() => programs.reduce((sum, p) => sum + (p.pagu || 0), 0), [programs]);
-  const totalRealisasi = useMemo(() => realisasis.reduce((sum, r) => sum + (r.nominal_realisasi || 0), 0), [realisasis]);
-  const totalSisa = Math.max(0, totalPagu - totalRealisasi);
-  const persentaseSerapan = totalPagu > 0 ? (totalRealisasi / totalPagu) * 100 : 0;
+  const totalPaguAll = useMemo(() => rkaList.reduce((sum, r) => sum + (r.jumlah || 0), 0), [rkaList]);
+  const totalRealisasiAll = useMemo(() => realisasis.reduce((sum, r) => sum + (r.nominal_realisasi || 0), 0), [realisasis]);
+  
+  const pkUraians = useMemo(() => new Set(pihakKetigas.map(p => p.uraian_belanja)), [pihakKetigas]);
+  const totalPaguPK = useMemo(() => 
+    rkaList.reduce((sum, r) => pkUraians.has(r.uraian_belanja) ? sum + (r.jumlah || 0) : sum, 0),
+    [rkaList, pkUraians]
+  );
+  const totalRealisasiPK = useMemo(() => (pihakKetigas || []).reduce((sum, m) => sum + (m.realisasi || 0), 0), [pihakKetigas]);
+  
+  const totalPaguNonPK = Math.max(0, totalPaguAll - totalPaguPK);
+  const totalRealisasiNonPK = Math.max(0, totalRealisasiAll - totalRealisasiPK);
+  
+  const totalSisaAll = Math.max(0, totalPaguAll - totalRealisasiAll);
+  const totalSisaNonPK = Math.max(0, totalPaguNonPK - totalRealisasiNonPK);
+  const totalSisaPK = Math.max(0, totalPaguPK - totalRealisasiPK);
+  
+  const persentaseSerapanAll = totalPaguAll > 0 ? (totalRealisasiAll / totalPaguAll) * 100 : 0;
+  const persentaseSerapanPK = totalPaguPK > 0 ? (totalRealisasiPK / totalPaguPK) * 100 : 0;
+  const persentaseSerapanNonPK = totalPaguNonPK > 0 ? (totalRealisasiNonPK / totalPaguNonPK) * 100 : 0;
 
   // Monthly breakdown
   const monthlyData = useMemo(() => {
@@ -95,23 +135,12 @@ export default function DashboardView({
 
   const maxMonthAmount = Math.max(...monthlyData.map(d => d.amount), 1000000);
 
-  // Overall Physical Target vs Realisation
-  const avgPhysical = useMemo(() => {
-    if (monitorings.length === 0) return { target: 0, realisasi: 0 };
-    const sumTarget = monitorings.reduce((sum, m) => sum + (m.target_fisik || 0), 0);
-    const sumReal = monitorings.reduce((sum, m) => sum + (m.realisasi_fisik || 0), 0);
-    return {
-      target: parseFloat((sumTarget / monitorings.length).toFixed(2)),
-      realisasi: parseFloat((sumReal / monitorings.length).toFixed(2))
-    };
-  }, [monitorings]);
-
   // Notifications
   const alerts = useMemo(() => {
     const list: string[] = [];
     // If absorption is very low for modern time of year (e.g. June 2026 should be around 40-50%)
-    if (persentaseSerapan < 30) {
-      list.push(`Serapan anggaran keseluruhan baru mencapai ${persentaseSerapan.toFixed(2)}%, di bawah target paruh tahun 40%.`);
+    if (persentaseSerapanAll < 30) {
+      list.push(`Serapan anggaran keseluruhan baru mencapai ${persentaseSerapanAll.toFixed(2)}%, di bawah target paruh tahun 40%.`);
     }
 
     // Check if any Sub-Kegiatan has realisasi exceeding pagu
@@ -122,7 +151,7 @@ export default function DashboardView({
     });
 
     return list;
-  }, [persentaseSerapan, subKegiatans]);
+  }, [persentaseSerapanAll, subKegiatans]);
 
   return (
     <div className="space-y-6" id="dashboard-container">
@@ -181,66 +210,24 @@ export default function DashboardView({
       )}
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4" id="stats-grid">
-        {/* Pagu */}
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-3.5 hover:border-blue-500 hover:shadow transition-all duration-200 min-w-0 overflow-hidden" id="card-pagu">
-          <div className="w-11 h-11 bg-blue-50 text-blue-850 rounded-lg shrink-0 flex items-center justify-center font-black text-sm select-none border border-blue-100 shadow-3xs" title="Rupiah">
-            Rp
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="text-slate-400 text-[10px] font-bold uppercase tracking-wider block truncate">Total Pagu</p>
-            <h3 className="text-sm xs:text-base md:text-lg font-black text-slate-900 mt-0.5 tracking-tight font-display truncate" title={formatRupiah(totalPagu)}>
-              {formatRupiah(totalPagu)}
-            </h3>
-            <p className="text-[10px] text-blue-600 mt-0.5 font-bold truncate">Batas Plafon Bidang</p>
-          </div>
+      <div className="space-y-4" id="stats-grid">
+        {/* Row 1: Overall */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <StatCard title="Total Pagu" value={formatRupiah(totalPaguAll)} subtitle="Total Anggaran" color="blue" />
+          <StatCard title="Total Realisasi" value={formatRupiah(totalRealisasiAll)} subtitle={`${persentaseSerapanAll.toFixed(1)}% Serapan`} color="emerald" />
+          <StatCard title="Sisa Anggaran" value={formatRupiah(totalSisaAll)} subtitle="Dana Tersisa" color="amber" />
         </div>
-
-        {/* Realisasi */}
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-3.5 hover:border-[#16a34a] hover:shadow transition-all duration-200 min-w-0 overflow-hidden" id="card-realisasi">
-          <div className="w-11 h-11 bg-emerald-50 text-emerald-850 rounded-lg shrink-0 flex items-center justify-center font-black text-sm select-none border border-emerald-100 shadow-3xs" title="Rupiah">
-            Rp
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="text-slate-400 text-[10px] font-bold uppercase tracking-wider block truncate">Total Realisasi</p>
-            <h3 className="text-sm xs:text-base md:text-lg font-black text-slate-950 mt-0.5 tracking-tight font-display truncate" title={formatRupiah(totalRealisasi)}>
-              {formatRupiah(totalRealisasi)}
-            </h3>
-            <div className="flex items-center gap-1.5 mt-0.5 min-w-0">
-              <span className="text-[9px] font-black bg-emerald-100 text-emerald-850 px-1 py-0.5 rounded shrink-0">
-                {persentaseSerapan.toFixed(1)}%
-              </span>
-              <span className="text-[10px] text-slate-500 font-semibold truncate">Anggaran Terserap</span>
-            </div>
-          </div>
+        {/* Row 2: Non-PK */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <StatCard title="Pagu Non-PK" value={formatRupiah(totalPaguNonPK)} subtitle="Total Anggaran Non-PK" color="blue" />
+          <StatCard title="Realisasi Non-PK" value={formatRupiah(totalRealisasiNonPK)} subtitle={`${persentaseSerapanNonPK.toFixed(1)}% Serapan`} color="emerald" />
+          <StatCard title="Sisa Anggaran Non-PK" value={formatRupiah(totalSisaNonPK)} subtitle="Dana Tersisa Non-PK" color="amber" />
         </div>
-
-        {/* Sisa */}
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-3.5 hover:border-amber-500 hover:shadow transition-all duration-200 min-w-0 overflow-hidden" id="card-sisa">
-          <div className="w-11 h-11 bg-amber-50 text-amber-900 rounded-lg shrink-0 flex items-center justify-center font-black text-sm select-none border border-amber-100 shadow-3xs" title="Rupiah">
-            Rp
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="text-slate-400 text-[10px] font-bold uppercase tracking-wider block truncate">Sisa Anggaran</p>
-            <h3 className="text-sm xs:text-base md:text-lg font-black text-slate-900 mt-0.5 tracking-tight font-display truncate" title={formatRupiah(totalSisa)}>
-              {formatRupiah(totalSisa)}
-            </h3>
-            <p className="text-[10px] text-slate-500 mt-0.5 font-bold truncate">Sisa Kas Belanja Lahan</p>
-          </div>
-        </div>
-
-        {/* Realisasi Fisik */}
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-3.5 hover:border-[#4f46e5] hover:shadow transition-all duration-200 min-w-0 overflow-hidden" id="card-fisik">
-          <div className="w-11 h-11 bg-indigo-50 text-indigo-900 rounded-lg shrink-0 flex items-center justify-center font-bold text-sm select-none border border-indigo-100 shadow-3xs">
-            %
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="text-slate-400 text-[10px] font-bold uppercase tracking-wider block truncate">Capaian Fisik</p>
-            <h3 className="text-xs sm:text-sm md:text-base lg:text-lg font-black text-slate-900 mt-0.5 tracking-tight font-display truncate">
-              {avgPhysical.realisasi}%
-            </h3>
-            <p className="text-[10px] text-indigo-650 mt-0.5 font-bold truncate">Target {avgPhysical.target}%</p>
-          </div>
+        {/* Row 3: PK */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <StatCard title="Pagu Pihak Ketiga" value={formatRupiah(totalPaguPK)} subtitle="Total Anggaran PK" color="blue" />
+          <StatCard title="Realisasi Pihak Ketiga" value={formatRupiah(totalRealisasiPK)} subtitle={`${persentaseSerapanPK.toFixed(1)}% Serapan`} color="emerald" />
+          <StatCard title="Sisa Anggaran PK" value={formatRupiah(totalSisaPK)} subtitle="Dana Tersisa PK" color="amber" />
         </div>
       </div>
 
@@ -380,7 +367,7 @@ export default function DashboardView({
                 <path
                   className="text-blue-700"
                   strokeWidth="3.5"
-                  strokeDasharray={`${persentaseSerapan}, 100`}
+                  strokeDasharray={`${persentaseSerapanAll}, 100`}
                   strokeLinecap="round"
                   stroke="currentColor"
                   fill="none"
@@ -388,7 +375,7 @@ export default function DashboardView({
                 />
               </svg>
               <div className="absolute text-center">
-                <span className="text-2xl font-black text-slate-850">{persentaseSerapan.toFixed(1)}%</span>
+                <span className="text-2xl font-black text-slate-850">{persentaseSerapanAll.toFixed(1)}%</span>
                 <p className="text-[9px] text-slate-550 font-bold tracking-wider uppercase mt-1">TERSERAP</p>
               </div>
             </div>
@@ -401,15 +388,15 @@ export default function DashboardView({
               </div>
               <div className="flex justify-between">
                 <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-500"></span> Tinggi (&gt;= 80%)</span>
-                <span className="font-bold text-emerald-800">{persentaseSerapan >= 80 ? "Aktif" : "-"}</span>
+                <span className="font-bold text-emerald-800">{persentaseSerapanAll >= 80 ? "Aktif" : "-"}</span>
               </div>
               <div className="flex justify-between">
                 <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-blue-500"></span> Sedang (50% - 79%)</span>
-                <span className="font-bold text-blue-800">{(persentaseSerapan >= 50 && persentaseSerapan < 80) ? "Aktif" : "-"}</span>
+                <span className="font-bold text-blue-800">{(persentaseSerapanAll >= 50 && persentaseSerapanAll < 80) ? "Aktif" : "-"}</span>
               </div>
               <div className="flex justify-between">
                 <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-amber-500"></span> Lambat (&lt; 50%)</span>
-                <span className="font-bold text-amber-700">{persentaseSerapan < 50 ? "Aktif" : "-"}</span>
+                <span className="font-bold text-amber-700">{persentaseSerapanAll < 50 ? "Aktif" : "-"}</span>
               </div>
             </div>
           </div>
@@ -417,11 +404,11 @@ export default function DashboardView({
           <div className="grid grid-cols-2 gap-4 w-full mt-4 text-center text-xs border-t border-slate-100 pt-3">
             <div className="p-2 bg-blue-50/50 rounded-xl border border-blue-100/50">
               <p className="text-slate-500 font-semibold text-[10px] uppercase">Realisasi</p>
-              <p className="font-bold text-blue-700 font-mono text-[11px] mt-0.5">{formatRupiah(totalRealisasi)}</p>
+              <p className="font-bold text-blue-700 font-mono text-[11px] mt-0.5">{formatRupiah(totalRealisasiAll)}</p>
             </div>
             <div className="p-2 bg-slate-50 rounded-xl border border-slate-100">
               <p className="text-slate-500 font-semibold text-[10px] uppercase">Sisa Kas</p>
-              <p className="font-bold text-slate-750 font-mono text-[11px] mt-0.5">{formatRupiah(totalSisa)}</p>
+              <p className="font-bold text-slate-750 font-mono text-[11px] mt-0.5">{formatRupiah(totalSisaAll)}</p>
             </div>
           </div>
         </div>

@@ -14,44 +14,50 @@ import {
   Search,
   ShieldCheck
 } from 'lucide-react';
-import { MonitoringFisik, Program, Kegiatan, SubKegiatan, UserRole } from '../types';
+import { BelanjaPihakKetiga, Program, Kegiatan, SubKegiatan, RKA, UserRole } from '../types';
 import { formatRupiah, exportToCSV } from '../utils/helpers';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { doc, setDoc, deleteDoc } from 'firebase/firestore';
-import { COLL_MONITORING_FISIK, createAuditLog } from '../dbService';
+import { COLL_BELANJA_PIHAK_KETIGA, createAuditLog } from '../dbService';
 import { uploadFile, deleteFile } from '../cloudinaryService';
 
-interface MonitoringViewProps {
-  monitorings: MonitoringFisik[];
+interface BelanjaPihakKetigaProps {
+  pihakKetigas: BelanjaPihakKetiga[];
   programs: Program[];
   kegiatans: Kegiatan[];
   subKegiatans: SubKegiatan[];
+  rkaList: RKA[];
   currentUserRole: UserRole;
   currentUserEmail: string;
 }
 
-export default function MonitoringView({
-  monitorings,
+export default function BelanjaPihakKetigaView({
+  pihakKetigas,
   programs,
   kegiatans,
   subKegiatans,
+  rkaList,
   currentUserRole,
   currentUserEmail
-}: MonitoringViewProps) {
+}: BelanjaPihakKetigaProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedSubKeg, setSelectedSubKeg] = useState('');
 
   // Modals
   const [showForm, setShowForm] = useState(false);
-  const [editItem, setEditItem] = useState<MonitoringFisik | null>(null);
+  const [editItem, setEditItem] = useState<BelanjaPihakKetiga | null>(null);
+  const [selectedItem, setSelectedItem] = useState<BelanjaPihakKetiga | null>(null);
 
   // Form Fields
   const [formTanggal, setFormTanggal] = useState<string>(new Date().toISOString().substring(0, 10));
   const [formSubKeg, setFormSubKeg] = useState<string>('');
-  const [formTarget, setFormTarget] = useState<number>(100);
-  const [formRealisasiFisik, setFormRealisasiFisik] = useState<number>(0);
-  const [formKendala, setFormKendala] = useState<string>('');
-  const [formTindakLanjut, setFormTindakLanjut] = useState<string>('');
+  const [formDetailBelanja, setFormDetailBelanja] = useState<string>('');
+  const [formNamaPelaksana, setFormNamaPelaksana] = useState<string>('');
+  const [formNomorKontrak, setFormNomorKontrak] = useState<string>('');
+  const [formMasaKerjaMulai, setFormMasaKerjaMulai] = useState<string>('');
+  const [formMasaKerjaSelesai, setFormMasaKerjaSelesai] = useState<string>('');
+  const [formRealisasi, setFormRealisasi] = useState<number>(0);
+  const [formCatatan, setFormCatatan] = useState<string>('');
   const [formFotoFile, setFormFotoFile] = useState<File | null>(null);
   const [existingFotoUrl, setExistingFotoUrl] = useState<string>('');
   const [formFotoFileName, setFormFotoFileName] = useState<string>('');
@@ -60,14 +66,14 @@ export default function MonitoringView({
   const canEdit = currentUserRole === UserRole.ADMIN || currentUserRole === UserRole.OPERATOR;
 
   // Search filter
-  const filteredMonitorings = useMemo(() => {
-    return monitorings.filter(m => {
+  const filteredPihakKetigas = useMemo(() => {
+    return pihakKetigas.filter(m => {
       const matchSearch = String(m.kode_sub_kegiatan).toLowerCase().includes(searchTerm.toLowerCase()) ||
-                          String(m.kendala || '').toLowerCase().includes(searchTerm.toLowerCase());
+                          String(m.catatan || '').toLowerCase().includes(searchTerm.toLowerCase());
       const matchSub = selectedSubKeg === '' || m.kode_sub_kegiatan === selectedSubKeg;
       return matchSearch && matchSub;
     });
-  }, [monitorings, searchTerm, selectedSubKeg]);
+  }, [pihakKetigas, searchTerm, selectedSubKeg]);
 
   // Handle Foto upload
   const handleFotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -84,45 +90,45 @@ export default function MonitoringView({
     setFormFotoFile(file);
   };
 
-  // Compute calculated performance ratio % e.g. (realisasiFisik / targetFisik) * 100
-  const computedPercent = useMemo(() => {
-    if (formTarget <= 0) return 0;
-    return parseFloat(((formRealisasiFisik / formTarget) * 100).toFixed(1));
-  }, [formTarget, formRealisasiFisik]);
-
   // Open Form Dialogs
   const openAddModal = () => {
     setEditItem(null);
     setFormTanggal(new Date().toISOString().substring(0, 10));
     setFormSubKeg('');
-    setFormTarget(100);
-    setFormRealisasiFisik(0);
-    setFormKendala('');
-    setFormTindakLanjut('');
+    setFormDetailBelanja('');
+    setFormNamaPelaksana('');
+    setFormNomorKontrak('');
+    setFormMasaKerjaMulai('');
+    setFormMasaKerjaSelesai('');
+    setFormRealisasi(0);
+    setFormCatatan('');
     setFormFotoFile(null);
     setExistingFotoUrl('');
     setFormFotoFileName('');
     setShowForm(true);
   };
 
-  const openEditModal = (item: MonitoringFisik) => {
+  const openEditModal = (item: BelanjaPihakKetiga) => {
     setEditItem(item);
     setFormTanggal(item.tanggal);
     setFormSubKeg(item.kode_sub_kegiatan);
-    setFormTarget(item.target_fisik);
-    setFormRealisasiFisik(item.realisasi_fisik);
-    setFormKendala(item.kendala || '');
-    setFormTindakLanjut(item.tindak_lanjut || '');
+    setFormDetailBelanja(item.uraian_belanja);
+    setFormNamaPelaksana(item.nama_pelaksana);
+    setFormNomorKontrak(item.nomor_kontrak);
+    setFormMasaKerjaMulai(item.masa_kerja_mulai);
+    setFormMasaKerjaSelesai(item.masa_kerja_selesai);
+    setFormRealisasi(item.realisasi);
+    setFormCatatan(item.catatan || '');
     setFormFotoFile(null);
     setExistingFotoUrl(item.foto_kegiatan || '');
-    setFormFotoFileName(item.foto_kegiatan ? 'Dokumentasi_Foto_Sektor.png' : '');
+    setFormFotoFileName(item.foto_kegiatan ? 'Dokumentasi_Foto.png' : '');
     setShowForm(true);
   };
 
   // Submit Form
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formSubKeg || formTarget <= 0 || formRealisasiFisik < 0) {
+    if (!formSubKeg || !formDetailBelanja || !formNamaPelaksana || formRealisasi < 0) {
       alert("Harap lengkapi semua field bertanda *");
       return;
     }
@@ -149,10 +155,10 @@ export default function MonitoringView({
           }
         }
 
-        // Upload the new image to Cloudinary with custom name based on sub-activity code
+        // Upload the new image to Cloudinary
         const originalExtension = formFotoFile.name.split('.').pop() || 'png';
-        const customFileName = `Foto_Kegiatan_${formSubKeg}.${originalExtension}`;
-        const uploadRes = await uploadFile(formFotoFile, "sirekap", customFileName);
+        const customFileName = `Foto_Belanja_${formSubKeg}_${Date.now()}.${originalExtension}`;
+        const uploadRes = await uploadFile(formFotoFile, "sirekap_pihak_ketiga", customFileName);
         cloudinaryUrl = uploadRes.secure_url;
         cloudinaryPublicId = uploadRes.public_id;
       } else if (!existingFotoUrl && editItem?.foto_kegiatan_public_id) {
@@ -166,48 +172,50 @@ export default function MonitoringView({
         cloudinaryPublicId = '';
       }
 
-      const docId = editItem ? editItem.id : `monitor_${Date.now()}`;
-      const payload: MonitoringFisik = {
+      const docId = editItem ? editItem.id : `pihak_ketiga_${Date.now()}`;
+      const payload: BelanjaPihakKetiga = {
         id: docId,
         tanggal: formTanggal,
         kode_program: linkedSub.kode_program,
         kode_kegiatan: linkedSub.kode_kegiatan,
         kode_sub_kegiatan: formSubKeg,
-        target_fisik: formTarget,
-        realisasi_fisik: formRealisasiFisik,
-        persentase: computedPercent,
-        kendala: formKendala.trim(),
-        tindak_lanjut: formTindakLanjut.trim(),
+        uraian_belanja: formDetailBelanja.trim(),
+        nama_pelaksana: formNamaPelaksana.trim(),
+        nomor_kontrak: formNomorKontrak.trim(),
+        masa_kerja_mulai: formMasaKerjaMulai,
+        masa_kerja_selesai: formMasaKerjaSelesai,
+        realisasi: formRealisasi,
+        catatan: formCatatan.trim(),
         foto_kegiatan: cloudinaryUrl || undefined,
         foto_kegiatan_public_id: cloudinaryPublicId || undefined
       };
 
-      await setDoc(doc(db, COLL_MONITORING_FISIK, docId), payload).catch(err => handleFirestoreError(err, OperationType.WRITE, `${COLL_MONITORING_FISIK}/${docId}`));
+      await setDoc(doc(db, COLL_BELANJA_PIHAK_KETIGA, docId), payload).catch(err => handleFirestoreError(err, OperationType.WRITE, `${COLL_BELANJA_PIHAK_KETIGA}/${docId}`));
 
       // Handle audit logging
       await createAuditLog(
         currentUserEmail,
         currentUserRole,
-        editItem ? "UPDATE MONITORING FISIK" : "TAMBAH MONITORING FISIK",
-        "MONITORING_FISIK",
+        editItem ? "UPDATE BELANJA PIHAK KETIGA" : "TAMBAH BELANJA PIHAK KETIGA",
+        "BELANJA_PIHAK_KETIGA",
         editItem,
         payload
       );
 
-      alert(`[NOTIFIKASI DATA BERUBAH]\nBerhasil menyimpan realisasi fisik untuk sub-kegiatan ${payload.kode_sub_kegiatan} dengan capaian ${payload.persentase}%. Log audit dicatat.`);
+      alert(`[NOTIFIKASI DATA BERUBAH]\nBerhasil menyimpan belanja pihak ketiga untuk sub-kegiatan ${payload.kode_sub_kegiatan}. Log audit dicatat.`);
 
       setShowForm(false);
       setEditItem(null);
     } catch (err) {
-      alert("Gagal memproses monitoring: " + (err instanceof Error ? err.message : String(err)));
+      alert("Gagal memproses belanja pihak ketiga: " + (err instanceof Error ? err.message : String(err)));
     } finally {
       setIsSaving(false);
     }
   };
 
   // Handle row deletion
-  const handleDelete = async (item: MonitoringFisik) => {
-    const isConfirmed = window.confirm(`Hapus monitoring fisik untuk Sub-Kegiatan: ${item.kode_sub_kegiatan}?`);
+  const handleDelete = async (item: BelanjaPihakKetiga) => {
+    const isConfirmed = window.confirm(`Hapus belanja pihak ketiga untuk Sub-Kegiatan: ${item.kode_sub_kegiatan}?`);
     if (!isConfirmed) return;
 
     try {
@@ -221,26 +229,26 @@ export default function MonitoringView({
         }
       }
 
-      await deleteDoc(doc(db, COLL_MONITORING_FISIK, item.id)).catch(err => handleFirestoreError(err, OperationType.DELETE, `${COLL_MONITORING_FISIK}/${item.id}`));
+      await deleteDoc(doc(db, COLL_BELANJA_PIHAK_KETIGA, item.id)).catch(err => handleFirestoreError(err, OperationType.DELETE, `${COLL_BELANJA_PIHAK_KETIGA}/${item.id}`));
       
       await createAuditLog(
         currentUserEmail,
         currentUserRole,
-        "HAPUS MONITORING FISIK",
-        "MONITORING_FISIK",
+        "HAPUS BELANJA PIHAK KETIGA",
+        "BELANJA_PIHAK_KETIGA",
         item,
         null
       );
 
-      alert(`[NOTIFIKASI DATA BERUBAH]\nPencatatan monitoring fisik sub-kegiatan ${item.kode_sub_kegiatan} berhasil dipindahkan secara permanen.`);
+      alert(`[NOTIFIKASI DATA BERUBAH]\nPencatatan belanja pihak ketiga sub-kegiatan ${item.kode_sub_kegiatan} berhasil dihapus.`);
     } catch (err) {
       alert("Gagal menghapus: " + (err instanceof Error ? err.message : String(err)));
     }
   };
 
   const handleExportCSV = () => {
-    const exportHeaders = ['id', 'tanggal', 'kode_program', 'kode_kegiatan', 'kode_sub_kegiatan', 'target_fisik', 'realisasi_fisik', 'persentase', 'kendala', 'tindak_lanjut'];
-    exportToCSV(filteredMonitorings, exportHeaders, 'Laporan_Monitoring_Ganti_Rugi_Bima_2026');
+    const exportHeaders = ['id', 'tanggal', 'kode_program', 'kode_kegiatan', 'kode_sub_kegiatan', 'uraian_belanja', 'nama_pelaksana', 'nomor_kontrak', 'realisasi', 'catatan'];
+    exportToCSV(filteredPihakKetigas, exportHeaders, 'Laporan_Belanja_Pihak_Ketiga_2026');
   };
 
   return (
@@ -251,9 +259,9 @@ export default function MonitoringView({
         <div>
           <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2 font-display">
             <Activity className="text-[#1e3a8a]" size={20} />
-            Pemantauan Kinerja Fisik & Batas Sengketa
+            Pelaksanaan Belanja Barang dan Jasa Pihak Ketiga
           </h2>
-          <p className="text-xs text-slate-500 mt-1">Sistem informasi kemajuan fisik pengukuran batas ganti rugi, kendala lapangan, tindak lanjut hukum, dan arsip foto.</p>
+          <p className="text-xs text-slate-500 mt-1">Belanja jasa pihak ketiga untuk penyediaan tenaga pendukung teknis dan administratif guna menunjang pelaksanaan program dan kegiatan.</p>
         </div>
         <div className="flex gap-2 shrink-0">
           <button 
@@ -270,7 +278,7 @@ export default function MonitoringView({
               id="btn-add-monitoring"
             >
               <Plus size={15} />
-              Input Laporan Kemajuan Fisik
+              Input Belanja
             </button>
           )}
         </div>
@@ -300,19 +308,19 @@ export default function MonitoringView({
       {/* Main Table Layout */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden" id="mon-table-panel">
         <div className="grid grid-cols-1 divide-y divide-slate-100" id="mon-cards-container">
-          {filteredMonitorings.length === 0 ? (
-            <div className="p-12 text-center text-slate-500 font-semibold">Tabel monitoring fisik kosong. Harap tambahkan data baru.</div>
+          {filteredPihakKetigas.length === 0 ? (
+            <div className="p-12 text-center text-slate-500 font-semibold">Tabel belanja pihak ketiga kosong. Harap tambahkan data baru.</div>
           ) : (
-            filteredMonitorings.map((m, i) => (
-              <div key={i} className="p-5 flex flex-col md:flex-row gap-5 items-start hover:bg-slate-50/30 transition duration-150" id={`mon-row-${i}`}>
+            filteredPihakKetigas.map((m, i) => (
+              <div key={m.id} onClick={() => setSelectedItem(m)} className="p-5 flex flex-col md:flex-row gap-5 items-start hover:bg-slate-50/30 transition duration-150 cursor-pointer" id={`mon-row-${i}`}>
                 {/* Photo or Placeholder */}
-                <div className="w-full md:w-44 h-28 bg-slate-100 border rounded-lg hover:border-blue-500 transition overflow-hidden flex items-center justify-center flex-shrink-0 relative">
+                <div className="w-full md:w-32 h-32 bg-slate-100 border rounded-lg hover:border-blue-500 transition overflow-hidden flex items-center justify-center flex-shrink-0 relative">
                   {m.foto_kegiatan ? (
-                    <img src={m.foto_kegiatan} alt="Foto_Kegiatan" className="object-cover w-full h-full" referrerPolicy="no-referrer" />
+                    <img src={m.foto_kegiatan} alt="Foto_Belanja" className="object-cover w-full h-full" referrerPolicy="no-referrer" />
                   ) : (
                     <div className="text-center text-slate-400 p-2">
                       <Camera className="mx-auto mb-1 text-slate-400" size={24} />
-                      <span className="text-[10px] font-semibold">Bebas Foto Mediasi</span>
+                      <span className="text-[10px] font-semibold">Tanpa Foto</span>
                     </div>
                   )}
                 </div>
@@ -321,58 +329,51 @@ export default function MonitoringView({
                 <div className="flex-1 space-y-2.5">
                   <div className="flex flex-wrap items-center justify-between gap-2 border-b border-dashed border-slate-100 pb-2">
                     <div>
-                      <span className="text-[10px] bg-blue-100 text-blue-900 font-black px-2 py-0.5 rounded-full font-mono">{m.kode_sub_kegiatan}</span>
+                      <span className="text-[10px] bg-indigo-100 text-indigo-900 font-black px-2 py-0.5 rounded-full font-mono">{m.kode_sub_kegiatan}</span>
                       <h4 className="font-bold text-slate-900 mt-1 text-xs">{subKegiatans.find(s => s.kode_sub_kegiatan === m.kode_sub_kegiatan)?.nama_sub_kegiatan || 'Sub Kegiatan Terdaftar'}</h4>
                     </div>
                     <span className="font-mono text-[10px] text-slate-500 font-bold flex items-center gap-1"><Calendar size={12} /> {m.tanggal}</span>
                   </div>
 
-                  {/* Progressive Achievements */}
-                  <div className="grid grid-cols-3 gap-4 text-center">
-                    <div className="bg-slate-50 p-1.5 rounded-lg border border-slate-100">
-                      <p className="text-[9px] text-slate-500 font-bold uppercase tracking-wider">Target Fisik</p>
-                      <p className="font-black text-slate-800 text-sm mt-0.5">{m.target_fisik}%</p>
-                    </div>
-                    <div className="bg-slate-50 p-1.5 rounded-lg border border-slate-100">
-                      <p className="text-[9px] text-slate-500 font-bold uppercase tracking-wider">Realisasi Fisik</p>
-                      <p className="font-black text-emerald-800 text-sm mt-0.5">{m.realisasi_fisik}%</p>
-                    </div>
-                    <div className="bg-slate-50 p-1.5 rounded-lg border border-slate-100">
-                      <p className="text-[9px] text-slate-500 font-bold uppercase tracking-wider">Efisiensi Capaian</p>
-                      <p className="font-black text-slate-900 text-sm mt-0.5 flex justify-center items-center gap-0.5">
-                        <ArrowUpRight size={13} className="text-emerald-700" />
-                        {m.persentase}%
-                      </p>
-                    </div>
+                  {/* Belanja Info */}
+                  <div className="space-y-1 text-xs">
+                    <p className="font-bold text-slate-900">{m.uraian_belanja}</p>
+                    <p className="text-slate-600">Pelaksana: <span className="font-semibold text-slate-800">{m.nama_pelaksana}</span></p>
+                    <p className="text-slate-600">Kontrak: <span className="font-mono text-slate-800">{m.nomor_kontrak || '-'}</span></p>
                   </div>
 
-                  {/* Constraints or Action Logs text */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-medium">
-                    <div className="bg-amber-50/50 p-2.5 rounded-lg border border-amber-100 text-amber-900 space-y-0.5">
-                      <span className="font-bold text-[9px] uppercase tracking-wider text-amber-800 flex items-center gap-1">
-                        <AlertTriangle size={11} />
-                        Hambatan & Kendala Lapangan
-                      </span>
-                      <p className="text-[11px] leading-relaxed italic">{m.kendala || 'Tidak ditemukan kendala krusial.'}</p>
-                    </div>
+                  <div className="flex gap-4">
+                     <div className="bg-slate-100 p-2 rounded text-[10px]">
+                        <p className="font-bold text-slate-600">Realisasi</p>
+                        <p className="font-black text-blue-900">{formatRupiah(m.realisasi)}</p>
+                     </div>
+                     <div className="bg-slate-100 p-2 rounded text-[10px]">
+                        <p className="font-bold text-slate-600">Masa Kerja</p>
+                        <p className="font-mono text-slate-700">{m.masa_kerja_mulai || '-'} s/d {m.masa_kerja_selesai || '-'}</p>
+                     </div>
+                  </div>
 
-                    <div className="bg-blue-50/50 p-2.5 rounded-lg border border-blue-100 text-blue-900 space-y-0.5">
-                      <span className="font-bold text-[9px] uppercase tracking-wider text-blue-800 flex items-center gap-1">
-                        <ShieldCheck size={11} />
-                        Intervensi & Tindak Lanjut Pemda
-                      </span>
-                      <p className="text-[11px] leading-relaxed">{m.tindak_lanjut || 'Pemantauan berkala kemajuan lapangan.'}</p>
-                    </div>
+                  <div className="bg-slate-50 p-2 rounded border border-slate-100 text-xs">
+                      <span className="font-bold text-slate-500 block">Catatan:</span>
+                      <p className="italic text-slate-700">{m.catatan || '-'}</p>
                   </div>
                 </div>
 
                 {/* Crud Actions right aligned */}
-                {canEdit && (
-                  <div className="flex md:flex-col items-center gap-1 text-center justify-end self-stretch md:border-l border-slate-100 md:pl-4">
-                    <button onClick={() => openEditModal(m)} className="p-2 hover:bg-amber-100 text-amber-700 rounded-lg transition" title="Edit"><Edit2 size={14} /></button>
-                    <button onClick={() => handleDelete(m)} className="p-2 hover:bg-red-100 text-red-700 rounded-lg transition" title="Hapus"><Trash2 size={14} /></button>
-                  </div>
-                )}
+                <div className="flex md:flex-col items-center gap-1 text-center justify-end self-stretch md:border-l border-slate-100 md:pl-4">
+                  <button onClick={() => setSelectedItem(m)} className="p-2 hover:bg-emerald-100 text-emerald-700 rounded-lg transition" title="Lihat">
+                    <div className="flex items-center gap-1">
+                      <Eye size={14} />
+                      <span className="text-[10px] font-black uppercase">Lihat</span>
+                    </div>
+                  </button>
+                  {canEdit && (
+                    <>
+                      <button onClick={() => openEditModal(m)} className="p-2 hover:bg-amber-100 text-amber-700 rounded-lg transition" title="Edit"><Edit2 size={14} /></button>
+                      <button onClick={() => handleDelete(m)} className="p-2 hover:bg-red-100 text-red-700 rounded-lg transition" title="Hapus"><Trash2 size={14} /></button>
+                    </>
+                  )}
+                </div>
               </div>
             ))
           )}
@@ -386,7 +387,7 @@ export default function MonitoringView({
             <div className="p-4 bg-gradient-to-r from-blue-900 to-indigo-950 text-white flex items-center justify-between">
               <h3 className="font-bold flex items-center gap-1.5 text-sm">
                 <Activity size={16} />
-                {editItem ? 'Edit Laporan Fisik' : 'Tambah Kemajuan Fisik & Ganti Rugi'}
+                {editItem ? 'Edit Belanja Pihak Ketiga' : 'Tambah Belanja Pihak Ketiga'}
               </h3>
               <button onClick={() => setShowForm(false)} className="text-white hover:text-white/80 font-bold text-lg">&times;</button>
             </div>
@@ -395,7 +396,7 @@ export default function MonitoringView({
               
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-slate-700 font-bold mb-1">Tanggal Pantauan *</label>
+                  <label className="block text-slate-700 font-bold mb-1">Tanggal *</label>
                   <input 
                     type="date"
                     value={formTanggal}
@@ -420,55 +421,82 @@ export default function MonitoringView({
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded-lg border border-slate-100">
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">Detail Belanja (E-RKA) *</label>
+                <select
+                  value={formDetailBelanja}
+                  onChange={(e) => setFormDetailBelanja(e.target.value)}
+                  required
+                  className="w-full p-2.5 border border-slate-200 rounded-lg focus:outline-blue-600"
+                >
+                  <option value="">-- Pilih Detail Belanja E-RKA --</option>
+                  {rkaList
+                    .filter(r => !formSubKeg || r.kode_sub_kegiatan === formSubKeg)
+                    .map((r, idx) => (
+                      <option key={idx} value={r.uraian_belanja}>{r.uraian_belanja} - {formatRupiah(r.jumlah)}</option>
+                    ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-slate-700 font-bold mb-1">Target Fisik (%) *</label>
+                  <label className="block text-slate-700 font-bold mb-1">Nama Pelaksana *</label>
                   <input 
-                    type="number"
-                    value={formTarget}
-                    onChange={(e) => setFormTarget(Number(e.target.value))}
-                    min={1}
-                    max={100}
+                    type="text"
+                    value={formNamaPelaksana}
+                    onChange={(e) => setFormNamaPelaksana(e.target.value)}
                     required
-                    className="w-full p-2.5 border border-slate-200 bg-white rounded-lg focus:outline-blue-600 font-bold"
+                    className="w-full p-2.5 border border-slate-200 rounded-lg focus:outline-blue-600"
                   />
                 </div>
                 <div>
-                  <label className="block text-slate-700 font-bold mb-1">Realisasi Fisik (%) *</label>
+                  <label className="block text-slate-700 font-bold mb-1">Nomor Kontrak</label>
                   <input 
-                    type="number"
-                    value={formRealisasiFisik}
-                    onChange={(e) => setFormRealisasiFisik(Number(e.target.value))}
-                    min={0}
-                    max={100}
-                    required
-                    className="w-full p-2.5 border border-slate-200 bg-white rounded-lg focus:outline-blue-600 font-bold text-emerald-800"
+                    type="text"
+                    value={formNomorKontrak}
+                    onChange={(e) => setFormNomorKontrak(e.target.value)}
+                    className="w-full p-2.5 border border-slate-200 rounded-lg focus:outline-blue-600"
                   />
                 </div>
               </div>
 
-              <div className="bg-emerald-50 text-emerald-900 border border-emerald-100 p-2.5 rounded-lg flex justify-between font-bold">
-                <span>Rasio Capaian Target:</span>
-                <span>{computedPercent}%</span>
+               <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">Masa Kerja Mulai</label>
+                  <input 
+                    type="date"
+                    value={formMasaKerjaMulai}
+                    onChange={(e) => setFormMasaKerjaMulai(e.target.value)}
+                    className="w-full p-2.5 border border-slate-200 rounded-lg outline-blue-600 font-mono text-[11px]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">Masa Kerja Selesai</label>
+                  <input 
+                    type="date"
+                    value={formMasaKerjaSelesai}
+                    onChange={(e) => setFormMasaKerjaSelesai(e.target.value)}
+                    className="w-full p-2.5 border border-slate-200 rounded-lg outline-blue-600 font-mono text-[11px]"
+                  />
+                </div>
               </div>
 
               <div>
-                <label className="block text-slate-700 font-bold mb-1">Hambatan / Kendala Utama Lapangan</label>
-                <textarea 
-                  placeholder="Ketik hambatan seperti kontur sengketa batas ulayat bima, sengketa hak pakai, dll."
-                  value={formKendala}
-                  onChange={(e) => setFormKendala(e.target.value)}
-                  rows={2}
-                  className="w-full p-2.5 border border-slate-200 rounded-lg focus:outline-blue-600"
+                <label className="block text-slate-700 font-bold mb-1">Nilai Realisasi (Rp) *</label>
+                <input 
+                  type="number"
+                  value={formRealisasi}
+                  onChange={(e) => setFormRealisasi(Number(e.target.value))}
+                  required
+                  className="w-full p-2.5 border border-slate-200 rounded-lg focus:outline-blue-600 font-bold text-blue-900"
                 />
               </div>
 
               <div>
-                <label className="block text-slate-700 font-bold mb-1">Tindak Lanjut / Intervensi Pemda</label>
+                <label className="block text-slate-700 font-bold mb-1">Catatan</label>
                 <textarea 
-                  placeholder="Ketik langkah advokasi, pengukuhan sertifikat, dll."
-                  value={formTindakLanjut}
-                  onChange={(e) => setFormTindakLanjut(e.target.value)}
+                  value={formCatatan}
+                  onChange={(e) => setFormCatatan(e.target.value)}
                   rows={2}
                   className="w-full p-2.5 border border-slate-200 rounded-lg focus:outline-blue-600"
                 />
@@ -476,11 +504,11 @@ export default function MonitoringView({
 
               {/* Photo Upload for photographic evidence */}
               <div>
-                <label className="block text-slate-700 font-bold mb-1">Ganti/Unggah Foto Lapangan (*Hanya Foto saja)</label>
+                <label className="block text-slate-700 font-bold mb-1">Unggah Foto (*Hanya Foto saja)</label>
                 <div className="flex flex-wrap items-center gap-3">
                   <div className="relative overflow-hidden bg-slate-50 border border-slate-200 px-3 py-2 rounded-lg cursor-pointer hover:bg-slate-100 flex items-center gap-2">
                     <Camera size={14} className="text-slate-500" />
-                    <span>Upload Citra Satelit / Medias</span>
+                    <span>Klik unggah foto</span>
                     <input 
                       type="file" 
                       accept="image/*"
@@ -523,12 +551,57 @@ export default function MonitoringView({
                       Menyimpan...
                     </>
                   ) : (
-                    "Simpan & Sync Capaian"
+                    "Simpan Data"
                   )}
                 </button>
               </div>
 
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Detail Overlay Dialog */}
+      {selectedItem && (
+        <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in" id="detail-overlay">
+          <div className="bg-white rounded-xl shadow-xl border border-slate-100 max-w-md w-full overflow-hidden" id="detail-modal">
+            <div className="p-4 bg-slate-800 text-white flex items-center justify-between">
+              <h3 className="font-bold flex items-center gap-1.5 text-sm">
+                <Eye size={16} />
+                Detail Belanja Pihak Ketiga
+              </h3>
+              <button onClick={() => setSelectedItem(null)} className="text-white hover:text-white/80 font-bold text-lg">&times;</button>
+            </div>
+
+            <div className="p-5 space-y-4 text-xs max-h-[78vh] overflow-y-auto">
+              <div className="relative w-full h-48 bg-slate-100 rounded-lg overflow-hidden flex items-center justify-center">
+                {selectedItem.foto_kegiatan ? (
+                  <img src={selectedItem.foto_kegiatan} alt="Foto_Belanja" className="object-cover w-full h-full" referrerPolicy="no-referrer" />
+                ) : (
+                  <div className="text-center text-slate-400">
+                    <Camera size={32} className="mx-auto mb-2" />
+                    <span className="font-semibold">Tanpa Foto</span>
+                  </div>
+                )}
+              </div>
+              <div className="space-y-2">
+                <p><span className="font-bold text-slate-500">Tanggal:</span> {selectedItem.tanggal}</p>
+                <p><span className="font-bold text-slate-500">Sub-Kegiatan:</span> 
+                  <span className="ml-1 bg-indigo-100 text-indigo-900 font-black px-2 py-0.5 rounded-full font-mono text-[10px]">
+                    {selectedItem.kode_sub_kegiatan}
+                  </span>
+                </p>
+                <p className="font-bold text-sm text-slate-900">{selectedItem.uraian_belanja}</p>
+                <p><span className="font-bold text-slate-500">Pelaksana:</span> {selectedItem.nama_pelaksana}</p>
+                <p><span className="font-bold text-slate-500">Nomor Kontrak:</span> {selectedItem.nomor_kontrak || '-'}</p>
+                <p><span className="font-bold text-slate-500">Masa Kerja:</span> {selectedItem.masa_kerja_mulai || '-'} s/d {selectedItem.masa_kerja_selesai || '-'}</p>
+                <p><span className="font-bold text-slate-500">Realisasi:</span> {formatRupiah(selectedItem.realisasi)}</p>
+                <p className="border-t pt-2"><span className="font-bold text-slate-500">Catatan:</span><br/> {selectedItem.catatan || '-'}</p>
+              </div>
+            </div>
+            <div className="p-4 border-t text-right">
+              <button onClick={() => setSelectedItem(null)} className="px-4 py-2 font-semibold text-slate-700 border border-slate-200 rounded-lg">Tutup</button>
+            </div>
           </div>
         </div>
       )}

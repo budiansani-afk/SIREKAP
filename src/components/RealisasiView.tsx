@@ -616,42 +616,73 @@ export default function RealisasiView({
         </div>
       </div>
 
-            {/* Detail Modal */}
+      {/* Detail Modal */}
       {showDetail && detailItem && (
-        <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div className="bg-white rounded-xl shadow-xl border border-slate-100 max-w-sm w-full overflow-hidden">
+        <div 
+          className="fixed inset-0 bg-slate-950/40 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in"
+          onClick={() => setShowDetail(false)}
+        >
+          <div 
+            className="bg-white rounded-xl shadow-2xl border border-slate-100 max-w-2xl w-full overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="p-4 bg-gradient-to-r from-blue-900 to-indigo-950 text-white flex items-center justify-between">
               <h3 className="font-bold text-sm">Detail Realisasi SP2D</h3>
-              <button onClick={() => setShowDetail(false)} className="text-white hover:text-white/80 font-bold text-lg">&times;</button>
+              <button 
+                onClick={() => setShowDetail(false)} 
+                className="text-white hover:text-white/80 font-bold text-lg"
+              >&times;</button>
             </div>
-            <div className="p-5 space-y-3 text-xs">
-              <div className="grid grid-cols-2 gap-2 text-slate-600">
-                <span className="font-bold">Program:</span>
-                <span>{programs.find(p => p.kode_program === detailItem.kode_program)?.nama_program || detailItem.kode_program}</span>
-                <span className="font-bold">Kegiatan:</span>
-                <span>{kegiatans.find(k => k.kode_kegiatan === detailItem.kode_kegiatan)?.nama_kegiatan || detailItem.kode_kegiatan}</span>
-                <span className="font-bold">Sub-Kegiatan:</span>
-                <span>{subKegiatans.find(s => s.kode_sub_kegiatan === detailItem.kode_sub_kegiatan)?.nama_sub_kegiatan || detailItem.kode_sub_kegiatan}</span>
-                <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 mb-2">
-                  <p className="font-bold text-orange-900 text-[10px] uppercase mb-1">Pagu & Sisa Uraian Belanja Terpilih (E-RKA):</p>
-                  <div className="grid grid-cols-2 gap-1 text-slate-700">
-                    <span className="font-medium">Pagu RKA Detail:</span>
-                    <span className="font-bold">{formatRupiah(detailItem.pagu_anggaran_terpantau || 0)}</span>
-                    <span className="font-medium">Sisa Anggaran Uraian Ini:</span>
-                    <span className="font-bold">{formatRupiah(detailItem.sisa_anggaran || 0)}</span>
-                  </div>
+            
+            <div className="p-6 space-y-6">
+              {/* Bagian Atas: Info Utama */}
+              <div className="space-y-4 text-xs">
+                <div className="grid grid-cols-[1fr,2fr] gap-3 text-slate-700">
+                  <span className="font-bold text-slate-500">Program:</span>
+                  <span>{programs.find(p => p.kode_program === detailItem.kode_program)?.nama_program || detailItem.kode_program}</span>
+                  
+                  <span className="font-bold text-slate-500">Kegiatan:</span>
+                  <span>{kegiatans.find(k => k.kode_kegiatan === detailItem.kode_kegiatan)?.nama_kegiatan || detailItem.kode_kegiatan}</span>
+                  
+                  <span className="font-bold text-slate-500">Sub-Kegiatan:</span>
+                  <span>{subKegiatans.find(s => s.kode_sub_kegiatan === detailItem.kode_sub_kegiatan)?.nama_sub_kegiatan || detailItem.kode_sub_kegiatan}</span>
+                  
+                  <span className="font-bold text-slate-500">Uraian/Detail:</span>
+                  <span className="font-bold">{detailItem.uraian_belanja}</span>
+                  
+                  <span className="font-bold text-slate-500">Catatan:</span>
+                  <span className="italic text-slate-700">{detailItem.keterangan || '-'}</span>
                 </div>
-                <span className="font-bold text-slate-600 block mt-2">Nilai Realisasi:</span>
-                <span className="font-black text-blue-950 text-base">{formatRupiah(detailItem.nominal_realisasi)}</span>
-                <span className="font-bold text-slate-600 block mt-2">Catatan:</span>
-                <span className="italic text-slate-700">{detailItem.keterangan || '-'}</span>
               </div>
-              {detailItem.bukti_transaksi && (
-                <div className="mt-4">
-                  <span className="font-bold text-slate-600 block mb-2">Preview Bukti SPJ:</span>
-                  <img src={detailItem.bukti_transaksi} alt="Bukti SPJ" className="w-full aspect-square object-contain rounded-lg border-2 border-slate-200" />
+
+              {/* Bagian Bawah: Anggaran & Gambar */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start border-t pt-6">
+                <div className="bg-slate-50 border border-slate-100 rounded-lg p-4 space-y-2 text-xs">
+                    <div className="grid grid-cols-[1fr,1fr] gap-2 text-slate-700">
+                        <span className="font-medium text-slate-500">Nilai Anggaran:</span>
+                        <span className="font-bold">{formatRupiah(detailItem.pagu_anggaran_terpantau || 0)}</span>
+                        
+                        <span className="font-medium text-slate-500">Nilai Realisasi:</span>
+                        <span className="font-black text-blue-950">{formatRupiah(detailItem.nominal_realisasi)}</span>
+                        
+                        <span className="font-medium text-slate-500">Sisa Anggaran:</span>
+                        <span className="font-bold text-slate-900">{formatRupiah(detailItem.sisa_anggaran || 0)}</span>
+                    </div>
                 </div>
-              )}
+
+                {detailItem.bukti_transaksi && (
+                  <div className="flex flex-col items-center">
+                    <span className="font-bold text-slate-500 block mb-2 w-full text-left">Preview Bukti SPJ:</span>
+                    <div className="max-w-[120px] w-full">
+                      <img 
+                        src={detailItem.bukti_transaksi} 
+                        alt="Bukti SPJ" 
+                        className="w-full aspect-square object-contain rounded-lg border border-slate-200 shadow-sm" 
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>

@@ -17,7 +17,7 @@ import {
   SubKegiatan, 
   RKA, 
   Realisasi, 
-  MonitoringFisik, 
+  BelanjaPihakKetiga, 
   DokumenArsip, 
   LogAktivitas, 
   Pengguna, 
@@ -31,7 +31,7 @@ export const COLL_KEGIATAN = 'sibiru_kegiatan';
 export const COLL_SUB_KEGIATAN = 'sibiru_sub_kegiatan';
 export const COLL_RKA = 'sibiru_rka';
 export const COLL_REALISASI = 'sibiru_realisasi';
-export const COLL_MONITORING_FISIK = 'sibiru_monitoring_fisik';
+export const COLL_BELANJA_PIHAK_KETIGA = 'sibiru_belanja_pihak_ketiga';
 export const COLL_DOKUMEN = 'sibiru_dokumen';
 export const COLL_LOG_AKTIVITAS = 'sibiru_log_aktivitas';
 export const COLL_PENGGUNA = 'sibiru_pengguna';
@@ -200,7 +200,7 @@ export async function clearDatabase() {
     COLL_SUB_KEGIATAN,
     COLL_RKA,
     COLL_REALISASI,
-    COLL_MONITORING_FISIK,
+    COLL_BELANJA_PIHAK_KETIGA,
     COLL_DOKUMEN,
     COLL_PENGGUNA,
     COLL_PENGATURAN,
@@ -223,7 +223,7 @@ export async function backupDatabaseToJSON() {
       COLL_SUB_KEGIATAN,
       COLL_RKA,
       COLL_REALISASI,
-      COLL_MONITORING_FISIK,
+      COLL_BELANJA_PIHAK_KETIGA,
       COLL_DOKUMEN,
       COLL_PENGGUNA,
       COLL_PENGATURAN
@@ -251,7 +251,7 @@ export async function restoreDatabaseFromJSON(backupData: Record<string, any[]>,
       COLL_SUB_KEGIATAN,
       COLL_RKA,
       COLL_REALISASI,
-      COLL_MONITORING_FISIK,
+      COLL_BELANJA_PIHAK_KETIGA,
       COLL_DOKUMEN,
       COLL_PENGGUNA,
       COLL_PENGATURAN
@@ -690,19 +690,21 @@ export async function seedInitialDataIfEmpty() {
         await setDoc(doc(db, COLL_REALISASI, rx.id), rx);
       }
 
-      // Monitoring Fisik Seed
-      const sampleMonitoringFisik: MonitoringFisik[] = [
+      // Belanja Pihak Ketiga Seed (Replaces MonitoringFisik)
+      const sampleBelanjaPK: BelanjaPihakKetiga[] = [
         {
           id: "mon_seed_1",
           tanggal: "2026-03-31",
           kode_program: "2.10.01",
           kode_kegiatan: "2.10.01.2.01",
           kode_sub_kegiatan: "2.10.01.2.01.01",
-          target_fisik: 25,
-          realisasi_fisik: 25,
-          persentase: 100,
-          kendala: "Tidak Ada",
-          tindak_lanjut: "Pemantauan rutin pembayaran gaji berkala"
+          uraian_belanja: "Pengadaan Tenaga Pendukung Teknis",
+          nama_pelaksana: "CV. Jasa Konstruksi",
+          nomor_kontrak: "KON/001/2026",
+          masa_kerja_mulai: "2026-01-01",
+          masa_kerja_selesai: "2026-12-31",
+          realisasi: 25000000,
+          catatan: "Tidak Ada"
         },
         {
           id: "mon_seed_2",
@@ -710,16 +712,18 @@ export async function seedInitialDataIfEmpty() {
           kode_program: "2.10.02",
           kode_kegiatan: "2.10.02.2.01",
           kode_sub_kegiatan: "2.10.02.2.01.01",
-          target_fisik: 40,
-          realisasi_fisik: 32,
-          persentase: 80,
-          kendala: "Cuaca hujan lebat menghambat koordinasi di beberapa titik koordinat",
-          tindak_lanjut: "Menunda pengukuran selama 3 hari dan melanjutkan saat cuaca cerah"
+          uraian_belanja: "Konsultan Pengukuran Lapangan",
+          nama_pelaksana: "PT. Surveyor Tanah",
+          nomor_kontrak: "KON/002/2026",
+          masa_kerja_mulai: "2026-02-01",
+          masa_kerja_selesai: "2026-06-30",
+          realisasi: 32000000,
+          catatan: "Cuaca hujan lebat menghambat koordinasi di beberapa titik koordinat"
         }
       ];
 
-      for (const mf of sampleMonitoringFisik) {
-        await setDoc(doc(db, COLL_MONITORING_FISIK, mf.id), mf);
+      for (const bpk of sampleBelanjaPK) {
+        await setDoc(doc(db, COLL_BELANJA_PIHAK_KETIGA, bpk.id), bpk);
       }
 
       // Settings Seed

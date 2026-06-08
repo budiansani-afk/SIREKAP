@@ -72,17 +72,19 @@ export interface Realisasi {
   bukti_transaksi_public_id?: string; // Cloudinary public_id for real-time deletion
 }
 
-export interface MonitoringFisik {
+export interface BelanjaPihakKetiga {
   id: string;
   tanggal: string;
   kode_program: string;
   kode_kegiatan: string;
   kode_sub_kegiatan: string;
-  target_fisik: number; // e.g. 80 (%)
-  realisasi_fisik: number; // e.g. 75 (%)
-  persentase: number; // e.g. 93.75 (%)
-  kendala: string;
-  tindak_lanjut: string;
+  uraian_belanja: string;
+  nama_pelaksana: string;
+  nomor_kontrak: string;
+  masa_kerja_mulai: string;
+  masa_kerja_selesai: string;
+  realisasi: number;
+  catatan: string;
   foto_kegiatan?: string; // Base64 or Cloudinary secure URL
   foto_kegiatan_public_id?: string; // Cloudinary public_id
 }
