@@ -439,7 +439,7 @@ export default function PengaturanView({
                 <label className="block text-slate-700 font-bold mb-1">Nama Lengkap Pejabat</label>
                 <input 
                   type="text"
-                  placeholder="e.g. Drs. H. Budiansani, M.Si"
+                  placeholder="cth: Nama Lengkap, ST"
                   value={namaPejabatTtd}
                   onChange={(e) => setNamaPejabatTtd(e.target.value)}
                   disabled={!canEdit || isSaving}
@@ -452,7 +452,7 @@ export default function PengaturanView({
                   <label className="block text-slate-700 font-bold mb-1">Jabatan Resmi</label>
                   <input 
                     type="text"
-                    placeholder="e.g. Kepala Bidang Sektor Pertanahan"
+                    placeholder="cth: Kepala Bidang Pertanahan"
                     value={jabatanPejabatTtd}
                     onChange={(e) => setJabatanPejabatTtd(e.target.value)}
                     disabled={!canEdit || isSaving}
@@ -463,7 +463,7 @@ export default function PengaturanView({
                   <label className="block text-slate-700 font-bold mb-1">NIP Pejabat</label>
                   <input 
                     type="text"
-                    placeholder="e.g. 19780512 200501 1 002"
+                    placeholder="cth: 19780512 200501 1 002"
                     value={nipPejabatTtd}
                     onChange={(e) => setNipPejabatTtd(e.target.value)}
                     disabled={!canEdit || isSaving}
@@ -481,7 +481,7 @@ export default function PengaturanView({
                 <label className="block text-slate-700 font-bold mb-1">Nama Lengkap Bendahara</label>
                 <input 
                   type="text"
-                  placeholder="e.g. Rohana, S.E."
+                  placeholder="cth: Nama Lengkap, S.E."
                   value={namaBendahara}
                   onChange={(e) => setNamaBendahara(e.target.value)}
                   disabled={!canEdit || isSaving}
@@ -494,7 +494,7 @@ export default function PengaturanView({
                   <label className="block text-slate-700 font-bold mb-1">Jabatan Bendahara</label>
                   <input 
                     type="text"
-                    placeholder="e.g. Bendahara Pengeluaran"
+                    placeholder="cth: Bendahara Pengeluaran"
                     value={jabatanBendahara}
                     onChange={(e) => setJabatanBendahara(e.target.value)}
                     disabled={!canEdit || isSaving}
@@ -505,7 +505,7 @@ export default function PengaturanView({
                   <label className="block text-slate-700 font-bold mb-1">NIP Bendahara</label>
                   <input 
                     type="text"
-                    placeholder="e.g. 19850614 201101 2 004"
+                    placeholder="cth: 19850614 201101 2 004"
                     value={nipBendahara}
                     onChange={(e) => setNipBendahara(e.target.value)}
                     disabled={!canEdit || isSaving}
@@ -683,7 +683,7 @@ export default function PengaturanView({
                 <label className="block text-slate-700 font-extrabold mb-1">Nama Anggota / Deskripsi Akun (Bebas)</label>
                 <input 
                   type="text"
-                  placeholder="e.g. Budi Santoso, S.Kom"
+                  placeholder="cth: Nama"
                   value={namaState}
                   onChange={(e) => setNamaState(e.target.value)}
                   className="w-full p-2 border border-slate-200 rounded-lg bg-white outline-blue-600 font-bold text-slate-900"

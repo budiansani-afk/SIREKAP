@@ -66,6 +66,7 @@ export interface Realisasi {
   nominal_realisasi: number;
   persentase_realisasi: number;
   sisa_anggaran: number;
+  pagu_anggaran_terpantau?: number;
   keterangan: string;
   bukti_transaksi?: string; // Base64 data url or name
   bukti_transaksi_public_id?: string; // Cloudinary public_id for real-time deletion

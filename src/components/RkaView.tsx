@@ -47,6 +47,8 @@ export default function RkaView({
 
   // Modals state
   const [showForm, setShowForm] = useState(false);
+  const [showDetail, setShowDetail] = useState(false);
+  const [detailItem, setDetailItem] = useState<RKA | null>(null);
   const [editItem, setEditItem] = useState<RKA | null>(null);
   const [showImportModal, setShowImportModal] = useState(false);
 
@@ -581,7 +583,15 @@ export default function RkaView({
                       <p className="font-bold text-slate-900 font-mono text-[11px] whitespace-normal break-all">{r.kode_sub_kegiatan}</p>
                       <span className="text-[10px] text-slate-500 font-mono font-medium whitespace-normal break-all">{r.kode_rekening || '-'}</span>
                     </td>
-                    <td className="p-3 font-semibold text-slate-900 break-words whitespace-normal min-w-[220px] max-w-sm">{r.uraian_belanja}</td>
+                    <td 
+                      className="p-3 font-semibold text-slate-900 break-words whitespace-normal min-w-[220px] max-w-sm cursor-pointer hover:text-blue-700 hover:underline"
+                      onClick={() => {
+                        setDetailItem(r);
+                        setShowDetail(true);
+                      }}
+                    >
+                      {r.uraian_belanja}
+                    </td>
                     <td className="p-3 text-center font-bold">{r.volume}</td>
                     <td className="p-3 text-center text-slate-600 font-medium">{r.satuan}</td>
                     <td className="p-3 text-right font-medium">{formatRupiah(r.harga_satuan)}</td>
@@ -722,6 +732,32 @@ export default function RkaView({
               </div>
 
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* RKA Detail Modal */}
+      {showDetail && detailItem && (
+        <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white rounded-xl shadow-xl border border-slate-100 max-w-lg w-full overflow-hidden">
+            <div className="p-4 bg-gradient-to-r from-blue-900 to-indigo-950 text-white flex items-center justify-between">
+              <h3 className="font-bold text-sm">Informasi Rincian Belanja</h3>
+              <button onClick={() => setShowDetail(false)} className="text-white hover:text-white/80 font-bold text-lg">&times;</button>
+            </div>
+            <div className="p-5 space-y-3 text-xs">
+              <div className="grid grid-cols-2 gap-2 text-slate-600">
+                <span className="font-bold">Program:</span>
+                <span>{programs.find(p => p.kode_program === detailItem.kode_program)?.nama_program || detailItem.kode_program}</span>
+                <span className="font-bold">Kegiatan:</span>
+                <span>{kegiatans.find(k => k.kode_kegiatan === detailItem.kode_kegiatan)?.nama_kegiatan || detailItem.kode_kegiatan}</span>
+                <span className="font-bold">Sub-Kegiatan:</span>
+                <span>{subKegiatans.find(s => s.kode_sub_kegiatan === detailItem.kode_sub_kegiatan)?.nama_sub_kegiatan || detailItem.kode_sub_kegiatan}</span>
+                <span className="font-bold">Besaran:</span>
+                <span>{detailItem.volume} {detailItem.satuan}</span>
+                <span className="font-bold">Alokasi Anggaran:</span>
+                <span className="font-black text-blue-950 text-sm">{formatRupiah(detailItem.jumlah)}</span>
+              </div>
+            </div>
           </div>
         </div>
       )}

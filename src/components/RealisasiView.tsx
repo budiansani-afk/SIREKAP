@@ -46,6 +46,8 @@ export default function RealisasiView({
 
   // Modals
   const [showForm, setShowForm] = useState(false);
+  const [showDetail, setShowDetail] = useState(false);
+  const [detailItem, setDetailItem] = useState<Realisasi | null>(null);
   const [editItem, setEditItem] = useState<Realisasi | null>(null);
 
   // Form Fields
@@ -243,8 +245,8 @@ export default function RealisasiView({
     // Budget check guard based on RKA specific sisa
     const maxAvailableSpecific = rkaSpecificBudgetStatus ? rkaSpecificBudgetStatus.sisa_tersedia + (editItem ? editItem.nominal_realisasi : 0) : 9999999999;
     if (rkaSpecificBudgetStatus && formNominal > maxAvailableSpecific) {
-      const proceed = window.confirm(`Peringatan Defisit Uraian RKA: Nominal pengeluaran ${formatRupiah(formNominal)} melebihi kuota Sisa Anggaran khusus untuk rincian belanja terpilih (${formatRupiah(maxAvailableSpecific)}). Apakah Anda yakin ingin tetap memproses transaksi ini?`);
-      if (!proceed) return;
+      alert(`VALIDASI GAGAL: Nominal pengeluaran ${formatRupiah(formNominal)} melebihi kuota Sisa Anggaran khusus untuk rincian belanja terpilih (${formatRupiah(maxAvailableSpecific)}). Silakan sesuaikan kembali nominal input.`);
+      return;
     }
 
     // Budget check guard to notify but let user decide
@@ -292,6 +294,10 @@ export default function RealisasiView({
       const computedPersentaseOfSub = linkedSub.pagu > 0 ? (formNominal / linkedSub.pagu) * 100 : 0;
       const computedSisaValue = Math.max(0, maxAvailable - formNominal);
 
+      // Define paguAmt for payload usage
+      const matchedRka = rkaList.find(item => item.kode_sub_kegiatan === formSubKeg && item.uraian_belanja === formUraian.trim());
+      const paguAmt = matchedRka ? matchedRka.jumlah : linkedSub.pagu;
+      
       const payload: Realisasi = {
         id: docId,
         tanggal: formTanggal,
@@ -303,6 +309,7 @@ export default function RealisasiView({
         nominal_realisasi: formNominal,
         persentase_realisasi: parseFloat(computedPersentaseOfSub.toFixed(2)),
         sisa_anggaran: computedSisaValue,
+        pagu_anggaran_terpantau: paguAmt,
         keterangan: formKeterangan.trim(),
         bukti_transaksi: cloudinaryUrl || undefined,
         bukti_transaksi_public_id: cloudinaryPublicId || undefined
@@ -557,14 +564,19 @@ export default function RealisasiView({
                         <span className="text-[10px] text-slate-500 font-semibold uppercase">{r.bulan}</span>
                       </td>
                       <td className="p-3.5 font-mono text-[11px] font-bold text-slate-900" title={r.kode_sub_kegiatan}>{r.kode_sub_kegiatan}</td>
-                      <td className="p-3.5">
-                        <button 
-                          onClick={() => setSelectedUraianFilter(r.uraian_belanja)}
-                          className={`hover:underline text-left cursor-pointer transition font-bold block text-wrap ${selectedUraianFilter === r.uraian_belanja ? 'text-orange-600 font-black decoration-orange-605' : 'text-slate-950 hover:text-blue-800'}`}
-                          title="Klik untuk menyaring khusus uraian/keterangan ini pada rekap kas bulanan"
+                      <td 
+                        className="p-3.5 cursor-pointer"
+                        onClick={() => {
+                          setDetailItem(r);
+                          setShowDetail(true);
+                        }}
+                      >
+                        <div
+                          className={`text-left transition font-bold block text-wrap text-slate-950`}
+                          title="Klik baris ini untuk melihat detail lengkap realisasi"
                         >
                           {r.uraian_belanja} {matchedRka && <span className="text-[9px] bg-blue-50 text-blue-800 border border-blue-200 px-1 py-0.5 rounded ml-1 tracking-wider uppercase font-extrabold">E-RKA Detail</span>}
-                        </button>
+                        </div>
                         <span className="text-[10px] text-slate-600 italic block mt-0.5" title={r.keterangan}>{r.keterangan || 'Tidak ada kuintor SPJ adendum.'}</span>
                       </td>
                       <td className="p-3.5 text-right font-black text-slate-900 font-mono">{formatRupiah(paguAmt)}</td>
@@ -604,6 +616,46 @@ export default function RealisasiView({
         </div>
       </div>
 
+            {/* Detail Modal */}
+      {showDetail && detailItem && (
+        <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white rounded-xl shadow-xl border border-slate-100 max-w-sm w-full overflow-hidden">
+            <div className="p-4 bg-gradient-to-r from-blue-900 to-indigo-950 text-white flex items-center justify-between">
+              <h3 className="font-bold text-sm">Detail Realisasi SP2D</h3>
+              <button onClick={() => setShowDetail(false)} className="text-white hover:text-white/80 font-bold text-lg">&times;</button>
+            </div>
+            <div className="p-5 space-y-3 text-xs">
+              <div className="grid grid-cols-2 gap-2 text-slate-600">
+                <span className="font-bold">Program:</span>
+                <span>{programs.find(p => p.kode_program === detailItem.kode_program)?.nama_program || detailItem.kode_program}</span>
+                <span className="font-bold">Kegiatan:</span>
+                <span>{kegiatans.find(k => k.kode_kegiatan === detailItem.kode_kegiatan)?.nama_kegiatan || detailItem.kode_kegiatan}</span>
+                <span className="font-bold">Sub-Kegiatan:</span>
+                <span>{subKegiatans.find(s => s.kode_sub_kegiatan === detailItem.kode_sub_kegiatan)?.nama_sub_kegiatan || detailItem.kode_sub_kegiatan}</span>
+                <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 mb-2">
+                  <p className="font-bold text-orange-900 text-[10px] uppercase mb-1">Pagu & Sisa Uraian Belanja Terpilih (E-RKA):</p>
+                  <div className="grid grid-cols-2 gap-1 text-slate-700">
+                    <span className="font-medium">Pagu RKA Detail:</span>
+                    <span className="font-bold">{formatRupiah(detailItem.pagu_anggaran_terpantau || 0)}</span>
+                    <span className="font-medium">Sisa Anggaran Uraian Ini:</span>
+                    <span className="font-bold">{formatRupiah(detailItem.sisa_anggaran || 0)}</span>
+                  </div>
+                </div>
+                <span className="font-bold text-slate-600 block mt-2">Nilai Realisasi:</span>
+                <span className="font-black text-blue-950 text-base">{formatRupiah(detailItem.nominal_realisasi)}</span>
+                <span className="font-bold text-slate-600 block mt-2">Catatan:</span>
+                <span className="italic text-slate-700">{detailItem.keterangan || '-'}</span>
+              </div>
+              {detailItem.bukti_transaksi && (
+                <div className="mt-4">
+                  <span className="font-bold text-slate-600 block mb-2">Preview Bukti SPJ:</span>
+                  <img src={detailItem.bukti_transaksi} alt="Bukti SPJ" className="w-full aspect-square object-contain rounded-lg border-2 border-slate-200" />
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
       {/* Add / Edit Form Dialog */}
       {showForm && (
         <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in" id="real-form-overlay">
@@ -779,8 +831,14 @@ export default function RealisasiView({
                   onChange={(e) => setFormNominal(Number(e.target.value))}
                   min={1}
                   required
-                  className="w-full p-2.5 rounded-lg border border-slate-200 outline-blue-600 font-bold text-indigo-900"
+                  className={`w-full p-2.5 rounded-lg border ${rkaSpecificBudgetStatus && formNominal > (rkaSpecificBudgetStatus.sisa_tersedia + (editItem ? editItem.nominal_realisasi : 0)) ? 'border-rose-500 bg-rose-50' : 'border-slate-200'} outline-blue-600 font-bold text-indigo-900`}
                 />
+                {rkaSpecificBudgetStatus && formNominal > (rkaSpecificBudgetStatus.sisa_tersedia + (editItem ? editItem.nominal_realisasi : 0)) && (
+                  <p className="text-[10px] text-rose-600 font-bold mt-1 flex items-center gap-1">
+                    <AlertTriangle size={12} />
+                    Melebihi sisa pagu uraian! (Sisa: {formatRupiah(rkaSpecificBudgetStatus.sisa_tersedia + (editItem ? editItem.nominal_realisasi : 0))})
+                  </p>
+                )}
               </div>
 
               <div>
