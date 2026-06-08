@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import * as XLSX from 'xlsx';
 import { 
   Printer, 
   FileSpreadsheet, 
@@ -303,20 +304,17 @@ export default function LaporanView({
   const totalSisaSum = useMemo(() => reportRows.reduce((s, r) => s + r.sisa, 0), [reportRows]);
   const avgPersenSum = useMemo(() => totalPaguSum > 0 ? (totalRealisasiSum / totalPaguSum) * 100 : 0, [totalPaguSum, totalRealisasiSum]);
 
-  // Simulated export Excel
-  const handleExportExcelSim = () => {
-    const csvContent = "data:text/csv;charset=utf-8,\uFEFF"
-      + ["KODE/TANGGAL,URAIAN KEGIATAN,PAGU / TARGET,REALISASI KAS/FISIK,SISA PLAFON,PERSENTASE SERAPAN"].join(",") + "\n"
-      + reportRows.map(r => `"${r.kode}","${r.nama}",${r.pagu},${r.realisasi},${r.sisa},"${r.persen}%"`).join("\n") + "\n"
-      + `TOTAL,,${totalPaguSum},${totalRealisasiSum},${totalSisaSum},"${avgPersenSum.toFixed(2)}%"`;
-
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `SIREKAP_Laporan_${selectedLaporan}_2026.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  // Export to Excel
+  const handleExportExcel = () => {
+    const wsData = [
+      ['KODE/TANGGAL', 'URAIAN KEGIATAN', 'PAGU (Rp)', 'REALISASI (Rp)', 'SISA (Rp)', 'PERSENTASE'],
+      ...reportRows.map(r => [r.kode, r.nama, r.pagu, r.realisasi, r.sisa, `${r.persen}%`]),
+      ['TOTAL', '', totalPaguSum, totalRealisasiSum, totalSisaSum, `${avgPersenSum.toFixed(2)}%`]
+    ];
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+    XLSX.utils.book_append_sheet(wb, ws, "Laporan");
+    XLSX.writeFile(wb, `SIREKAP_Laporan_${selectedLaporan}_2026.xlsx`);
   };
 
   return (
@@ -358,11 +356,11 @@ export default function LaporanView({
         {/* Exporter triggers */}
         <div className="flex gap-2.5 flex-wrap shrink-0 self-end md:self-auto">
           <button 
-            onClick={handleExportExcelSim}
+            onClick={handleExportExcel}
             className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-[#15803d] bg-emerald-50 hover:bg-emerald-100 rounded-lg border border-emerald-200 transition cursor-pointer"
           >
             <FileSpreadsheet size={14} />
-            Simulasi Excel
+            Ekspor Excel (.xlsx)
           </button>
 
           <button 

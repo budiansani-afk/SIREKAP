@@ -160,6 +160,8 @@ export async function synchronizeCalculations() {
     // C. Program level calculations
     for (const prog of programs) {
       const childKegs = kegiatans.filter(k => k.kode_program === prog.kode_program);
+      if (childKegs.length === 0) continue;
+
       const computedPagu = childKegs.reduce((sum, item) => sum + (item.pagu || 0), 0);
       const computedRealisasi = childKegs.reduce((sum, item) => sum + (item.realisasi || 0), 0);
       const sisa = computedPagu - computedRealisasi;

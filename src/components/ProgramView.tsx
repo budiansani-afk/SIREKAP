@@ -130,8 +130,13 @@ export default function ProgramView({
   // Handle Form Submission
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const codeRegex = /^[a-zA-Z0-9_\-\.]+$/;
     if (!formKode.trim() || !formNama.trim()) {
       alert("Kode dan Nama wajib diisi.");
+      return;
+    }
+    if (!codeRegex.test(formKode.trim())) {
+      alert("Kode hanya boleh berisi huruf, angka, titik, underscore, atau tanda hubung. Tanpa spasi.");
       return;
     }
 
@@ -144,15 +149,13 @@ export default function ProgramView({
       if (activeTab === 'program') {
         collectionName = COLL_PROGRAM;
         logModule = "PROGRAM";
-        payload = {
-          id: docId,
-          kode_program: docId,
-          nama_program: formNama.trim(),
-          pagu: editItem ? editItem.pagu : formManualPagu,
-          realisasi: editItem ? editItem.realisasi : 0,
-          sisa: editItem ? editItem.sisa : formManualPagu,
-          persentase: editItem ? editItem.persentase : 0
-        };
+        payload = { ...editItem, id: docId, kode_program: docId, nama_program: formNama.trim() };
+        if (!editItem) {
+          payload.pagu = formManualPagu;
+          payload.realisasi = 0;
+          payload.sisa = formManualPagu;
+          payload.persentase = 0;
+        }
       } else if (activeTab === 'kegiatan') {
         collectionName = COLL_KEGIATAN;
         logModule = "KEGIATAN";
@@ -160,16 +163,13 @@ export default function ProgramView({
           alert("Harap pilih Program Atasan.");
           return;
         }
-        payload = {
-          id: docId,
-          kode_kegiatan: docId,
-          nama_kegiatan: formNama.trim(),
-          kode_program: formParentProgram,
-          pagu: editItem ? editItem.pagu : formManualPagu,
-          realisasi: editItem ? editItem.realisasi : 0,
-          sisa: editItem ? editItem.sisa : formManualPagu,
-          persentase: editItem ? editItem.persentase : 0
-        };
+        payload = { ...editItem, id: docId, kode_kegiatan: docId, nama_kegiatan: formNama.trim(), kode_program: formParentProgram };
+        if (!editItem) {
+          payload.pagu = formManualPagu;
+          payload.realisasi = 0;
+          payload.sisa = formManualPagu;
+          payload.persentase = 0;
+        }
       } else {
         collectionName = COLL_SUB_KEGIATAN;
         logModule = "SUB_KEGIATAN";
@@ -177,25 +177,32 @@ export default function ProgramView({
           alert("Harap lengkapi Program dan Kegiatan Atasan.");
           return;
         }
-        payload = {
-          id: docId,
-          kode_sub_kegiatan: docId,
-          nama_sub_kegiatan: formNama.trim(),
-          kode_program: formParentProgram,
-          kode_kegiatan: formParentKegiatan,
-          pagu: editItem ? editItem.pagu : formManualPagu,
-          realisasi: editItem ? editItem.realisasi : 0,
-          sisa: editItem ? editItem.sisa : formManualPagu,
-          persentase: editItem ? editItem.persentase : 0
-        };
+        payload = { ...editItem, id: docId, kode_sub_kegiatan: docId, nama_sub_kegiatan: formNama.trim(), kode_program: formParentProgram, kode_kegiatan: formParentKegiatan };
+        if (!editItem) {
+          payload.pagu = formManualPagu;
+          payload.realisasi = 0;
+          payload.sisa = formManualPagu;
+          payload.persentase = 0;
+        }
       }
 
       const docRef = doc(db, collectionName, docId);
-      await setDoc(docRef, payload).catch(err => handleFirestoreError(err, OperationType.WRITE, `${collectionName}/${docId}`));
-
+      
+      try {
+        await setDoc(docRef, payload, { merge: true });
+      } catch (err) {
+        console.error('Firestore setDoc failed:', err);
+        handleFirestoreError(err, OperationType.WRITE, `${collectionName}/${docId}`);
+        throw err;
+      }
+      
       // If code was changed during editing, delete the old document
-      if (editItem && editItem.id !== docId) {
-        await deleteDoc(doc(db, collectionName, editItem.id)).catch(err => console.warn("Failed to delete old master doc:", err));
+      if (editItem && editItem.id && editItem.id !== docId) {
+        try {
+          await deleteDoc(doc(db, collectionName, editItem.id));
+        } catch (err) {
+          console.error("Failed to delete old master doc:", err);
+        }
       }
 
       // Log the changes

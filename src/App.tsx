@@ -218,7 +218,8 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
-  // Automatic Clean-up for zero-budget programs (unwanted 4th program)
+  // Automatic Clean-up for zero-budget programs (disabled: now allowed to persist even with zero budget/not yet defined)
+  /*
   useEffect(() => {
     if (!user || programs.length === 0) return;
 
@@ -247,6 +248,7 @@ export default function App() {
 
     runCleanup();
   }, [programs, user, userRole]);
+  */
 
   // Auto seed on boot
   useEffect(() => {
