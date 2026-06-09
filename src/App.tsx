@@ -92,9 +92,15 @@ type ViewPage =
 
 export default function App() {
   const [activePage, setActivePage] = useState<ViewPage>("dashboard");
+  const [toast, setToast] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
   const [programActiveTab, setProgramActiveTab] = useState<'program' | 'kegiatan' | 'sub_kegiatan'>('program');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [selectedInfo, setSelectedInfo] = useState<{ title: string; content: string; type: 'guide' | 'alert' } | null>(null);
+
+  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3000);
+  };
 
   // States for DB synced collections
   const [programs, setPrograms] = useState<Program[]>([]);
@@ -736,6 +742,7 @@ export default function App() {
             subKegiatans={subKegiatans} 
             currentUserRole={userRole} 
             currentUserEmail={user.email} 
+            onShowToast={showToast}
           />
         );
       case "pihakKetiga":
@@ -1025,6 +1032,12 @@ export default function App() {
           {renderViewContent()}
         </main>
 
+        {/* Toast notification */}
+        {toast && (
+          <div className={`fixed bottom-6 right-6 z-[100] p-4 rounded-xl shadow-2xl border ${toast.type === 'success' ? 'bg-emerald-600 text-white border-emerald-400' : 'bg-rose-600 text-white border-rose-400'} animate-fade-in`}>
+            <p className="text-xs font-bold">{toast.message}</p>
+          </div>
+        )}
       </div>
 
       {/* Informational Lightbox Overlay Modal */}
