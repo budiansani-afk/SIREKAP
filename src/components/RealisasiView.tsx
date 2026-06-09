@@ -3,8 +3,7 @@ import {
   Plus, 
   Edit2, 
   Trash2, 
-  TrendingUp, 
-  Search, 
+  TrendingUp,
   Camera, 
   Calendar, 
   ShieldCheck, 
@@ -40,10 +39,10 @@ export default function RealisasiView({
   currentUserRole,
   currentUserEmail
 }: RealisasiViewProps) {
-  const [searchTerm, setSearchTerm] = useState('');
   const [selectedMonth, setSelectedMonth] = useState('');
   const [selectedSubKeg, setSelectedSubKeg] = useState('');
-  const [selectedUraianFilter, setSelectedUraianFilter] = useState('');
+  const [selectedErikaFilter, setSelectedErikaFilter] = useState('');
+  const [selectedRealisasiStatus, setSelectedRealisasiStatus] = useState('');
 
   // Modals
   const [showForm, setShowForm] = useState(false);
@@ -101,18 +100,23 @@ export default function RealisasiView({
     setFormBuktiFile(file);
   };
 
+  // Compute unique Erika options for filter
+  const uniqueErikaOptions = useMemo(() => {
+    const filtered = rkaList.filter(r => !selectedSubKeg || r.kode_sub_kegiatan === selectedSubKeg);
+    const uniqueUraians = Array.from(new Set(filtered.map(r => r.uraian_belanja)));
+    return uniqueUraians.sort();
+  }, [rkaList, selectedSubKeg]);
+
   // Filter calculations list
   const filteredRealisasis = useMemo(() => {
     return realisasis.filter(r => {
-      const matchSearch = (r && r.uraian_belanja ? String(r.uraian_belanja).toLowerCase().includes(searchTerm.toLowerCase()) : false) ||
-                          (r && r.kode_sub_kegiatan ? String(r.kode_sub_kegiatan).toLowerCase().includes(searchTerm.toLowerCase()) : false);
       const matchMonth = selectedMonth === '' || (r && r.bulan === selectedMonth);
       const matchSub = selectedSubKeg === '' || (r && r.kode_sub_kegiatan === selectedSubKeg);
-      const matchUraian = selectedUraianFilter === '' || (r && r.uraian_belanja === selectedUraianFilter);
+      const matchErika = !selectedErikaFilter || (r.uraian_belanja === selectedErikaFilter);
 
-      return matchSearch && matchMonth && matchSub && matchUraian;
+      return matchMonth && matchSub && matchErika;
     });
-  }, [realisasis, searchTerm, selectedMonth, selectedSubKeg, selectedUraianFilter]);
+  }, [realisasis, selectedMonth, selectedSubKeg, selectedErikaFilter]);
 
   // Compute monthly recap indicators filtered by selected sub-kegiatan and description
   const rekapBulanan = useMemo(() => {
@@ -121,11 +125,13 @@ export default function RealisasiView({
       return acc;
     }, {} as Record<string, number>);
 
+    const erikaUraian = selectedErikaFilter;
+
     realisasis.forEach(r => {
       if (selectedSubKeg && r.kode_sub_kegiatan !== selectedSubKeg) {
         return;
       }
-      if (selectedUraianFilter && r.uraian_belanja !== selectedUraianFilter) {
+      if (erikaUraian && r.uraian_belanja !== erikaUraian) {
         return;
       }
       if (recaps[r.bulan] !== undefined) {
@@ -134,32 +140,75 @@ export default function RealisasiView({
     });
 
     return recaps;
-  }, [realisasis, selectedSubKeg, selectedUraianFilter]);
+  }, [realisasis, selectedSubKeg, selectedErikaFilter]);
 
-  // Compute total sum of matched/filtered realisasis
-  const totalBelanjaFiltered = useMemo(() => {
-    let sum = 0;
-    realisasis.forEach(r => {
-      if (selectedSubKeg && r.kode_sub_kegiatan !== selectedSubKeg) {
-        return;
-      }
-      if (selectedUraianFilter && r.uraian_belanja !== selectedUraianFilter) {
-        return;
-      }
-      sum += r.nominal_realisasi;
+  // Aggregate table data based on RKA and Realisasi
+  const tableData = useMemo(() => {
+    const data: any[] = [];
+    rkaList
+      .filter(rka => !selectedSubKeg || rka.kode_sub_kegiatan === selectedSubKeg)
+      .filter(rka => !selectedErikaFilter || rka.uraian_belanja === selectedErikaFilter)
+      .forEach(rka => {
+        const matches = filteredRealisasis.filter(real => real.kode_sub_kegiatan === rka.kode_sub_kegiatan && real.uraian_belanja === rka.uraian_belanja);
+        
+        const showUnrealized = !selectedRealisasiStatus || selectedRealisasiStatus === 'belum';
+        const showRealized = !selectedRealisasiStatus || selectedRealisasiStatus === 'sudah';
+
+        if (matches.length === 0) {
+          if (showUnrealized) {
+              data.push({
+                type: 'unrealized',
+                kode_sub_kegiatan: rka.kode_sub_kegiatan,
+                uraian_belanja: rka.uraian_belanja,
+                pagu: rka.jumlah,
+                nominal_realisasi: 0,
+                sisa_anggaran: rka.jumlah,
+                persentase_realisasi: 0,
+                tanggal: '-',
+                bulan: '-',
+                keterangan: 'Belum ada transaksi',
+                id: `dummy_${rka.id}`
+              });
+          }
+        } else {
+          if (showRealized) {
+              matches.forEach(real => {
+                data.push({
+                  type: 'realized',
+                  ...real,
+                  pagu: rka.jumlah,
+                });
+              });
+          }
+        }
+      });
+    return data;
+  }, [rkaList, filteredRealisasis, selectedRealisasiStatus, selectedSubKeg]);
+
+  const summaryTotals = useMemo(() => {
+    let totalPagu = 0;
+    let totalReal = 0;
+    
+    filteredRealisasis.forEach(r => {
+        const subKeg = subKegiatans.find(s => s.kode_sub_kegiatan === r.kode_sub_kegiatan);
+        const matchedRka = rkaList.find(item => item.kode_sub_kegiatan === r.kode_sub_kegiatan && item.uraian_belanja === r.uraian_belanja);
+        const paguAmt = matchedRka ? matchedRka.jumlah : (subKeg ? subKeg.pagu : 0);
+        
+        totalPagu += paguAmt;
+        totalReal += r.nominal_realisasi;
     });
-    return sum;
-  }, [realisasis, selectedSubKeg, selectedUraianFilter]);
 
-  // Get unique list of inputted descriptions (uraian_belanja) for filtering
-  const uniqueUraianList = useMemo(() => {
-    const list = realisasis
-      .filter(r => r && r.uraian_belanja)
-      .filter(r => !selectedSubKeg || r.kode_sub_kegiatan === selectedSubKeg)
-      .map(r => r.uraian_belanja)
-      .filter((val, index, self) => val && self.indexOf(val) === index);
-    return list;
-  }, [realisasis, selectedSubKeg]);
+    const sisa = Math.max(0, totalPagu - totalReal);
+    const persen = totalPagu > 0 ? (totalReal / totalPagu) * 100 : 0;
+    
+    return {
+        pagu: totalPagu,
+        realisasi: totalReal,
+        sisa: sisa,
+        persen: persen
+    };
+  }, [filteredRealisasis, subKegiatans, rkaList]);
+
 
   // Compute selected Sub-Kegiatan Pagu and remaining sisa for dynamic warning alert guards
   const activeSubStatus = useMemo(() => {
@@ -196,6 +245,12 @@ export default function RealisasiView({
       sisa_tersedia: sisa
     };
   }, [selectedRkaItem, realisasis, formSubKeg, editItem]);
+
+  const uniqueUraianList = useMemo(() => {
+    const filteredRka = rkaList.filter(r => !selectedSubKeg || r.kode_sub_kegiatan === selectedSubKeg);
+    const uniqueUraian = Array.from(new Set(filteredRka.map(r => r.uraian_belanja)));
+    return uniqueUraian.sort();
+  }, [rkaList, selectedSubKeg]);
 
   // Handle Form open dialogs
   const openAddModal = () => {
@@ -405,16 +460,27 @@ export default function RealisasiView({
             <Download size={14} />
             Ekspor CSV
           </button>
-          {canEdit && (
-            <button 
-              onClick={openAddModal}
-              className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-[#1e40af] hover:bg-[#1e3a8a] rounded-lg shadow-sm transition cursor-pointer"
-              id="btn-add-realisasi"
-            >
-              <Plus size={15} />
-              Input Realisasi SP2D
-            </button>
-          )}
+          {/* Remove Input button */}
+        </div>
+      </div>
+
+      {/* Filter Summary Banner */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-white rounded-xl border border-slate-200 shadow-sm" id="summary-filter">
+        <div>
+          <span className="text-[10px] text-slate-500 font-bold uppercase block">Total Pagu</span>
+          <span className="text-sm font-black text-slate-900 font-mono">{formatRupiah(summaryTotals.pagu)}</span>
+        </div>
+        <div>
+          <span className="text-[10px] text-slate-500 font-bold uppercase block">Total Realisasi</span>
+          <span className="text-sm font-black text-rose-800 font-mono">{formatRupiah(summaryTotals.realisasi)}</span>
+        </div>
+        <div>
+          <span className="text-[10px] text-slate-500 font-bold uppercase block">Sisa Anggaran</span>
+          <span className="text-sm font-black text-indigo-900 font-mono">{formatRupiah(summaryTotals.sisa)}</span>
+        </div>
+        <div>
+          <span className="text-[10px] text-slate-500 font-bold uppercase block">Persentase Serapan</span>
+          <span className={`text-sm font-black ${summaryTotals.persen >= 100 ? 'text-emerald-700' : 'text-blue-800'} font-mono`}>{summaryTotals.persen.toFixed(2)}%</span>
         </div>
       </div>
 
@@ -427,7 +493,7 @@ export default function RealisasiView({
               Rekap Belanja Kas Bulanan TA 2026
             </h4>
             <p className="text-[10px] text-slate-500 mt-0.5">
-              {selectedSubKeg || selectedUraianFilter 
+              {selectedSubKeg 
                 ? "Menampilkan rekapitulasi realisasi belanja kas yang disaring khusus." 
                 : "Menampilkan akumulasi seluruh realisasi belanja kas bulanan."}
             </p>
@@ -435,23 +501,15 @@ export default function RealisasiView({
           
           <div className="flex flex-wrap gap-2 items-center">
             {/* Filter status indicator badges */}
-            {(selectedSubKeg || selectedUraianFilter) && (
+            {selectedSubKeg && (
               <div className="flex flex-wrap items-center gap-1 bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-200/50">
                 <span className="text-[9px] text-[#1e3a8a] font-black uppercase tracking-wider">Aktif Saringan:</span>
-                {selectedSubKeg && (
-                  <span className="text-[10px] bg-white font-mono font-bold text-blue-900 border px-1.5 py-0.5 rounded shadow-xs">
-                    Sub-Keg: {selectedSubKeg}
-                  </span>
-                )}
-                {selectedUraianFilter && (
-                  <span className="text-[10px] bg-white text-orange-950 font-bold border border-orange-200 px-1.5 py-0.5 rounded shadow-xs" title={selectedUraianFilter}>
-                    Uraian: {selectedUraianFilter.substring(0, 18)}...
-                  </span>
-                )}
+                <span className="text-[10px] bg-white font-mono font-bold text-blue-900 border px-1.5 py-0.5 rounded shadow-xs">
+                  Sub-Keg: {selectedSubKeg}
+                </span>
                 <button 
                   onClick={() => {
                     setSelectedSubKeg('');
-                    setSelectedUraianFilter('');
                   }}
                   className="text-[9px] hover:text-red-700 text-red-500 font-extrabold ml-1.5 hover:underline cursor-pointer"
                 >
@@ -463,7 +521,7 @@ export default function RealisasiView({
             {/* SUM / TOTAL OF THE SUB-KEGIATAN EXPENSES */}
             <div className="bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-200 text-right">
               <span className="text-[9px] text-slate-500 uppercase font-black block leading-none">Jumlah Belanja Sub Kegiatan</span>
-              <span className="text-xs font-mono font-black text-emerald-900 mt-1 inline-block">{formatRupiah(totalBelanjaFiltered)}</span>
+              <span className="text-xs font-mono font-black text-emerald-900 mt-1 inline-block">{formatRupiah(summaryTotals.realisasi)}</span>
             </div>
           </div>
         </div>
@@ -484,43 +542,52 @@ export default function RealisasiView({
       </div>
 
       {/* Sorters and search filters */}
-      <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row justify-between items-stretch md:items-center gap-4 text-xs" id="real-filters">
-        <div className="flex flex-wrap gap-2.5">
-          <div>
-            <select value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="p-2 border border-slate-200 bg-white rounded-lg outline-blue-600">
-              <option value="">Semua Bulan</option>
-              {monthsList.map((m, idx) => (
-                <option key={idx} value={m}>{m}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <select value={selectedSubKeg} onChange={(e) => { setSelectedSubKeg(e.target.value); setSelectedUraianFilter(''); }} className="p-2 border border-slate-200 bg-white rounded-lg max-w-xs outline-blue-600 font-medium text-slate-800">
-              <option value="">Semua Sub-Kegiatan</option>
-              {subKegiatans.map((s, idx) => (
-                <option key={idx} value={s.kode_sub_kegiatan}>{s.kode_sub_kegiatan} - {(s.nama_sub_kegiatan || '').substring(0, 30)}...</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <select value={selectedUraianFilter} onChange={(e) => setSelectedUraianFilter(e.target.value)} className="p-2 border border-slate-200 bg-white rounded-lg max-w-xs outline-blue-600 font-medium text-slate-800 focus:border-blue-600" title="Saring berdasarkan uraian/rincian detail belanja">
-              <option value="">Semua Uraian Detail Belanja</option>
-              {uniqueUraianList.map((ur, idx) => (
-                <option key={idx} value={ur}>{ur}</option>
-              ))}
-            </select>
-          </div>
-        </div>
+      <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row justify-between items-stretch gap-4 text-xs" id="real-filters">
+        
+        <div className="flex flex-wrap gap-2.5 flex-1">
+          {/* Bulan */}
+          <select value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="p-2 border border-slate-200 bg-white rounded-lg outline-blue-600">
+            <option value="">Semua Bulan</option>
+            {monthsList.map((m, idx) => (
+              <option key={idx} value={m}>{m}</option>
+            ))}
+          </select>
+          
+          {/* Status */}
+          <select value={selectedRealisasiStatus} onChange={(e) => setSelectedRealisasiStatus(e.target.value)} className="p-2 border border-slate-200 bg-white rounded-lg outline-blue-600 font-medium text-slate-800">
+            <option value="">Semua Status</option>
+            <option value="belum">Belum</option>
+            <option value="sudah">Selesai</option> {/* Map 'sudah' to Selesai */}
+          </select>
+          
+          {/* Sub Kegiatan */}
+          <select value={selectedSubKeg} onChange={(e) => { setSelectedSubKeg(e.target.value); setSelectedErikaFilter(''); }} className="p-2 border border-slate-200 bg-white rounded-lg w-48 outline-blue-600 font-medium text-slate-800">
+            <option value="">Semua Sub Kegiatan</option>
+            {subKegiatans.map((s, idx) => (
+              <option key={idx} value={s.kode_sub_kegiatan}>{s.kode_sub_kegiatan} - {(s.nama_sub_kegiatan || '').substring(0, 20)}...</option>
+            ))}
+          </select>
 
-        <div className="relative max-w-xs w-full">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
-          <input 
-            type="text" 
-            placeholder="Cari uraian transaksi..." 
-            value={searchTerm} 
-            onChange={(e) => setSearchTerm(e.target.value)} 
-            className="w-full p-2 pl-8 border border-slate-200 rounded-lg focus:outline-blue-600 focus:ring-1 focus:ring-blue-600"
-          />
+          {/* E-RKA Filter */}
+          <select value={selectedErikaFilter} onChange={(e) => setSelectedErikaFilter(e.target.value)} className="p-2 border border-slate-200 bg-white rounded-lg w-48 outline-blue-600 font-medium text-slate-800">
+            <option value="">Semua Daftar Belanja (E-RKA)</option>
+            {uniqueErikaOptions.map((uraian, idx) => (
+              <option key={idx} value={uraian}>{uraian}</option>
+            ))}
+          </select>
+          
+          {/* Reset Button */}
+          <button
+            onClick={() => {
+              setSelectedMonth('');
+              setSelectedRealisasiStatus('');
+              setSelectedSubKeg('');
+              setSelectedErikaFilter('');
+            }}
+            className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg transition"
+          >
+            Reset
+          </button>
         </div>
       </div>
 
@@ -531,6 +598,7 @@ export default function RealisasiView({
             <thead>
               <tr className="bg-slate-50 border-b border-slate-100 font-semibold text-slate-600">
                 <th className="p-3.5 pl-4 w-32">Tanggal / Bulan</th>
+                <th className="p-3.5 w-48">Sub Kegiatan</th>
                 <th className="p-3.5">Uraian / Keterangan</th>
                 <th className="p-3.5 text-right w-36">Pagu Anggaran</th>
                 <th className="p-3.5 text-right w-36">Nominal Realisasi</th>
@@ -540,65 +608,56 @@ export default function RealisasiView({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-slate-700">
-              {filteredRealisasis.length === 0 ? (
+              {tableData.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="p-8 text-center text-slate-500 font-semibold">Tabel realisasi kosong / Atur saringan filter.</td>
+                  <td colSpan={8} className="p-8 text-center text-slate-500 font-semibold">Tabel realisasi kosong / Atur saringan filter.</td>
                 </tr>
               ) : (
-                filteredRealisasis.map((r, i) => {
+                tableData.map((r, i) => {
                   const subKeg = subKegiatans.find(s => s.kode_sub_kegiatan === r.kode_sub_kegiatan);
                   const matchedRka = rkaList.find(item => item.kode_sub_kegiatan === r.kode_sub_kegiatan && item.uraian_belanja === r.uraian_belanja);
-                  const paguAmt = matchedRka ? matchedRka.jumlah : (subKeg ? subKeg.pagu : 0);
                   
-                  // Calculate precise remaining sisa for this specific detail RKA item based on matching realisasis
-                  const rkaRealisasis = realisasis.filter(real => real.kode_sub_kegiatan === r.kode_sub_kegiatan && real.uraian_belanja === r.uraian_belanja);
-                  const spentOnThisRka = rkaRealisasis.reduce((sum, item) => sum + item.nominal_realisasi, 0);
-                  const sisaAmt = matchedRka ? Math.max(0, matchedRka.jumlah - spentOnThisRka) : (subKeg ? subKeg.sisa : r.sisa_anggaran);
-
-                  // Calculate absorption percentage against specific detail RKA pagu
-                  const matchPercent = paguAmt > 0 ? parseFloat(((r.nominal_realisasi / paguAmt) * 100).toFixed(2)) : r.persentase_realisasi;
-
                   return (
-                    <tr key={i} className="hover:bg-slate-50/50 transition antialiased">
+                    <tr 
+                      key={i} 
+                      className="hover:bg-slate-50/50 transition antialiased"
+                    >
                       <td className="p-3.5 pl-4">
                         <p className="font-bold text-slate-900 flex items-center gap-1 font-mono text-[11px]"><Calendar size={12} className="text-blue-800" />{r.tanggal}</p>
                         <span className="text-[10px] text-slate-500 font-semibold uppercase">{r.bulan}</span>
                       </td>
-                      <td 
-                        className="p-3.5 cursor-pointer"
-                        onClick={() => {
-                          setDetailItem(r);
-                          setShowDetail(true);
-                        }}
-                      >
+                      <td className="p-3.5 text-[11px] font-bold text-slate-700">
+                        {subKeg ? subKeg.nama_sub_kegiatan : r.kode_sub_kegiatan}
+                      </td>
+                      <td className="p-3.5">
                         <div
-                          className={`text-left transition font-bold block text-wrap text-slate-950`}
-                          title="Klik baris ini untuk melihat detail lengkap realisasi"
+                          className={`text-left font-bold block text-wrap text-slate-950`}
                         >
                           {r.uraian_belanja} {matchedRka && <span className="text-[9px] bg-blue-50 text-blue-800 border border-blue-200 px-1 py-0.5 rounded ml-1 tracking-wider uppercase font-extrabold">E-RKA Detail</span>}
                         </div>
-                        <span className="text-[10px] text-slate-600 italic block mt-0.5" title={r.keterangan}>{r.keterangan || 'Tidak ada kuintor SPJ adendum.'}</span>
+                        <span className="text-[10px] text-slate-600 italic block mt-0.5" title={r.keterangan}>{r.keterangan}</span>
                       </td>
-                      <td className="p-3.5 text-right font-black text-slate-900 font-mono">{formatRupiah(paguAmt)}</td>
+                      <td className="p-3.5 text-right font-black text-slate-900 font-mono">{formatRupiah(r.pagu)}</td>
                       <td className="p-3.5 text-right font-black text-rose-950 font-mono">{formatRupiah(r.nominal_realisasi)}</td>
-                      <td className="p-3.5 text-right font-black text-indigo-900 font-mono">{formatRupiah(sisaAmt)}</td>
+                      <td className="p-3.5 text-right font-black text-indigo-900 font-mono">{formatRupiah(r.sisa_anggaran)}</td>
                       <td className="p-3.5 text-center">
-                        <span className={`px-2 py-0.5 rounded-full font-black text-[10px] ${matchPercent >= 100 ? 'bg-emerald-100 text-emerald-900' : 'bg-blue-100 text-blue-900'}`}>{matchPercent}%</span>
+                        <span className={`px-2 py-0.5 rounded-full font-black text-[10px] ${r.persentase_realisasi >= 100 ? 'bg-emerald-100 text-emerald-900' : 'bg-blue-100 text-blue-900'}`}>{r.persentase_realisasi}%</span>
                       </td>
                       {canEdit && (
                         <td className="p-3.5 text-center">
                           <div className="flex items-center justify-center gap-1.5">
-                            {r.bukti_transaksi && (
+                            {r.type === 'realized' && r.bukti_transaksi && (
                               <button 
-                                onClick={() => { setSelectedPhoto(r.bukti_transaksi!); setShowPhoto(true); }}
+                                onClick={(e) => { e.stopPropagation(); setSelectedPhoto(r.bukti_transaksi!); setShowPhoto(true); }}
                                 className="p-1.5 hover:bg-emerald-100 text-emerald-700 rounded transition" 
                                 title="Lihat Bukti Foto"
                               >
                                 <Eye size={13} />
                               </button>
                             )}
-                            <button onClick={() => openEditModal(r)} className="p-1.5 hover:bg-amber-100 text-amber-700 rounded transition" title="Edit"><Edit2 size={13} /></button>
-                            <button onClick={() => handleDelete(r)} className="p-1.5 hover:bg-red-100 text-red-700 rounded transition" title="Hapus"><Trash2 size={13} /></button>
+                            {r.type === 'realized' && <button onClick={(e) => { e.stopPropagation(); openEditModal(r); }} className="p-1.5 hover:bg-amber-100 text-amber-700 rounded transition" title="Edit"><Edit2 size={13} /></button>}
+                            {r.type === 'realized' && <button onClick={(e) => { e.stopPropagation(); handleDelete(r); }} className="p-1.5 hover:bg-red-100 text-red-700 rounded transition" title="Hapus"><Trash2 size={13} /></button>}
+                            {r.type === 'unrealized' && <button onClick={(e) => { e.stopPropagation(); openAddModal(); setFormSubKeg(r.kode_sub_kegiatan); setFormUraian(r.uraian_belanja); }} className="p-1.5 hover:bg-indigo-100 text-indigo-700 rounded transition" title="Input Realisasi"><Plus size={13} /></button>}
                           </div>
                         </td>
                       )}
@@ -709,14 +768,29 @@ export default function RealisasiView({
             />
             
             <div className="flex justify-end gap-2">
-              <a 
-                href={selectedPhoto} 
-                download={`Bukti_SPJ_${Date.now()}.png`}
+              <button 
+                onClick={async () => {
+                  try {
+                    const response = await fetch(selectedPhoto!);
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `Bukti_SPJ_${Date.now()}.png`;
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
+                  } catch (error) {
+                    console.error("Gagal mengunduh file:", error);
+                    alert("Gagal mengunduh file.");
+                  }
+                }}
                 className="flex items-center gap-1.5 px-4 py-2 bg-emerald-700 text-white text-xs font-bold rounded-lg hover:bg-emerald-800 transition"
               >
                 <Download size={14} />
                 Unduh
-              </a>
+              </button>
               <button 
                 onClick={() => setShowPhoto(false)}
                 className="px-4 py-2 bg-slate-100 text-slate-800 text-xs font-bold rounded-lg hover:bg-slate-200 transition"
@@ -982,7 +1056,6 @@ export default function RealisasiView({
           </div>
         </div>
       )}
-
     </div>
   );
 }

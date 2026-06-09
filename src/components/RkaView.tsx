@@ -503,8 +503,6 @@ export default function RkaView({
             }
           </select>
         </div>
-
-        /* Search */
         <div>
           <label className="block text-slate-500 font-bold mb-1">Cari Keterangan Belanja</label>
           <div className="relative">

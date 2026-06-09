@@ -92,6 +92,12 @@ export default function AnalisisView({
     }));
   }, [programs]);
 
+  const totalPagu = useMemo(() => subKegiatans.reduce((sum, sk) => sum + sk.pagu, 0), [subKegiatans]);
+  const totalRealized = useMemo(() => subKegiatans.reduce((sum, sk) => sum + sk.realisasi, 0), [subKegiatans]);
+  const sisaAnggaran = totalPagu - totalRealized;
+  const bulanSekarang = new Date().getMonth() + 1;
+  const sisaBulan = 12 - bulanSekarang;
+
   return (
     <div className="space-y-6" id="analisis-module-root">
       
@@ -106,10 +112,14 @@ export default function AnalisisView({
 
       {/* Recommendation Header */}
       <div className="bg-amber-50 rounded-xl border border-amber-200 p-4 shadow-sm space-y-2">
-        <h4 className="font-bold text-amber-950 flex items-center gap-2">⭐ Rekomendasi Percepatan</h4>
+        <h4 className="font-bold text-amber-950 flex items-center gap-2">⭐ Rekomendasi Percepatan (Bulan ke-{bulanSekarang})</h4>
+        <p className="text-xs text-amber-900 font-bold mb-2">
+           Sisa pagu anggaran adalah {formatRupiah(sisaAnggaran)} dengan {sisaBulan} bulan tersisa.
+        </p>
         <ul className="text-xs text-amber-900 list-disc list-inside space-y-1 font-medium">
+            <li>Akselerasi realisasi segera karena sudah memasuki bulan ke-{bulanSekarang} (mendekati akhir tahun).</li>
+            <li>Evaluasi belanja rapat dan perjalanan dinas; pastikan jadwal berjalan sesuai rencana agar tidak menumpuk di akhir tahun.</li>
             <li>Tingkatkan realisasi pada Sub-Kegiatan dengan serapan terendah.</li>
-            <li>Evaluasi ulang pagu pada Sub-Kegiatan yang belum berjalan sama sekali.</li>
             <li>Pastikan bukti fisik belanja pihak ketiga sudah lengkap dan terdokumentasi dengan baik.</li>
         </ul>
       </div>
