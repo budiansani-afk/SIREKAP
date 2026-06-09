@@ -1,0 +1,120 @@
+441:    <div className="space-y-6" id="realisasi-module-root">
+444:      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-xl border border-slate-200 shadow-sm" id="real-title-card">
+445:        <div>
+452:        <div className="flex gap-2 shrink-0">
+465:      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-white rounded-xl border border-slate-200 shadow-sm" id="summary-filter">
+466:        <div>
+470:        <div>
+474:        <div>
+478:        <div>
+485:      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 space-y-4" id="recap-monthly-row">
+486:        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+487:          <div>
+499:          <div className="flex flex-wrap gap-2 items-center">
+502:              <div className="flex flex-wrap items-center gap-1 bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-200/50">
+519:            <div className="bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-200 text-right">
+526:        <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-12 gap-2" id="grid recaps box">
+530:              <div key={i} className={`p-2.5 rounded-lg border text-center transition ${amount > 0 ? 'bg-emerald-50 border-emerald-250 text-emerald-950' : 'bg-slate-50/50 border-slate-100'}`}>
+542:      <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row justify-between items-stretch gap-4 text-xs" id="real-filters">
+544:        <div className="flex flex-wrap gap-2.5 flex-1">
+576:        <div className="flex gap-2">
+578:          <div className="relative w-full md:w-64">
+606:      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden" id="real-table-panel">
+607:        <div className="overflow-x-auto w-full">
+644:                        <div
+659:                          <div className="flex items-center justify-center gap-1.5">
+686:        <div 
+690:          <div 
+694:            <div className="p-4 bg-gradient-to-r from-blue-900 to-indigo-950 text-white flex items-center justify-between">
+702:            <div className="p-6 space-y-6">
+703:              <div className="space-y-4 text-xs">
+704:                <div className="grid grid-cols-[1fr,2fr] gap-3 text-slate-700">
+725:              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start border-t pt-6">
+726:                <div className="bg-slate-50 border border-slate-100 rounded-lg p-4 space-y-2 text-xs">
+727:                    <div className="grid grid-cols-[1fr,1fr] gap-2 text-slate-700">
+740:                  <div className="flex flex-col items-center">
+742:                    <div className="max-w-[120px] w-full">
+759:        <div 
+763:          <div 
+767:            <div className="flex justify-between items-center mb-4">
+781:            <div className="flex justify-end gap-2">
+818:        <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in" id="real-form-overlay">
+819:          <div className="bg-white rounded-xl shadow-xl border border-slate-100 max-w-md w-full overflow-hidden" id="real-form-modal">
+820:            <div className="p-4 bg-gradient-to-r from-blue-900 to-indigo-950 text-white flex items-center justify-between">
+830:              <div className="grid grid-cols-2 gap-3">
+831:                <div>
+841:                <div>
+852:              <div>
+869:                <div className="space-y-2">
+871:                    <div className={`p-3 rounded-lg border text-[11px] ${rkaSpecificBudgetStatus.sisa_tersedia < formNominal ? 'bg-amber-50 border-amber-200 text-amber-900 border-dashed animate-pulse' : 'bg-orange-50/50 border-orange-100 text-slate-800'}`}>
+890:                    <div className={`p-3 rounded-lg border text-[11px] ${activeSubStatus.sisa_tersedia < formNominal ? 'bg-red-50 border-red-150 text-red-900' : 'bg-slate-50 border-slate-200 text-slate-700'}`}>
+910:              <div>
+913:                  <div>
+947:                      <div className="mt-2.5 animate-fade-in">
+964:                  <div>
+982:              <div>
+1001:              <div>
+1013:              <div>
+1015:                <div className="flex flex-wrap items-center gap-3">
+1016:                  <div className="relative overflow-hidden bg-slate-50 border border-slate-200 px-3 py-2 rounded-lg cursor-pointer hover:bg-slate-100 flex items-center gap-2">
+1048:              <div className="flex items-center gap-2 pt-4 justify-end border-t border-slate-100" id="form-actions">
+451:        </div>
+461:        </div>
+462:      </div>
+469:        </div>
+473:        </div>
+477:        </div>
+481:        </div>
+482:      </div>
+497:          </div>
+515:              </div>
+522:            </div>
+523:          </div>
+524:        </div>
+535:              </div>
+538:        </div>
+539:      </div>
+587:          </div>
+602:        </div>
+603:      </div>
+648:                        </div>
+672:                          </div>
+681:        </div>
+682:      </div>
+700:            </div>
+722:                </div>
+723:              </div>
+736:                    </div>
+737:                </div>
+748:                    </div>
+749:                  </div>
+751:              </div>
+752:            </div>
+753:          </div>
+754:        </div>
+773:            </div>
+811:            </div>
+812:          </div>
+813:        </div>
+826:            </div>
+840:                </div>
+849:                </div>
+850:              </div>
+865:              </div>
+886:                    </div>
+905:                    </div>
+907:                </div>
+960:                      </div>
+962:                  </div>
+978:                  </div>
+980:              </div>
+999:              </div>
+1010:              </div>
+1026:                  </div>
+1045:                </div>
+1046:              </div>
+1064:              </div>
+1067:          </div>
+1068:        </div>
+1070:      </div>
+1071:    </div>
