@@ -28,6 +28,7 @@ interface RealisasiViewProps {
   subKegiatans: SubKegiatan[];
   currentUserRole: UserRole;
   currentUserEmail: string;
+  onShowToast: (msg: string, type: 'success' | 'error') => void;
 }
 
 export default function RealisasiView({
@@ -37,7 +38,8 @@ export default function RealisasiView({
   kegiatans,
   subKegiatans,
   currentUserRole,
-  currentUserEmail
+  currentUserEmail,
+  onShowToast
 }: RealisasiViewProps) {
   const [selectedMonth, setSelectedMonth] = useState('');
   const [selectedSubKeg, setSelectedSubKeg] = useState('');
@@ -91,7 +93,7 @@ export default function RealisasiView({
     if (!file) return;
 
     if (!file.type.startsWith('image/')) {
-      alert("SIMPAN DITOLAK: Hanya file berupa foto/gambar bukti kuitansi (.png, .jpg, .jpeg) yang diperkenankan!");
+      onShowToast("SIMPAN DITOLAK: Hanya file berupa foto/gambar bukti kuitansi (.png, .jpg, .jpeg) yang diperkenankan!", 'error');
       e.target.value = "";
       return;
     }
@@ -290,20 +292,20 @@ export default function RealisasiView({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formSubKeg || !formUraian.trim() || formNominal <= 0) {
-      alert("Harap lengkapi semua field wajib dan nominal harus lebih besar dari Nol!");
+      onShowToast("Harap lengkapi semua field wajib dan nominal harus lebih besar dari Nol!", 'error');
       return;
     }
 
     const linkedSub = subKegiatans.find(s => s.kode_sub_kegiatan === formSubKeg);
     if (!linkedSub) {
-      alert("Kode Sub-Kegiatan tidak valid!");
+      onShowToast("Kode Sub-Kegiatan tidak valid!", 'error');
       return;
     }
 
     // Budget check guard based on RKA specific sisa
     const maxAvailableSpecific = rkaSpecificBudgetStatus ? rkaSpecificBudgetStatus.sisa_tersedia + (editItem ? editItem.nominal_realisasi : 0) : 9999999999;
     if (rkaSpecificBudgetStatus && formNominal > maxAvailableSpecific) {
-      alert(`VALIDASI GAGAL: Nominal pengeluaran ${formatRupiah(formNominal)} melebihi kuota Sisa Anggaran khusus untuk rincian belanja terpilih (${formatRupiah(maxAvailableSpecific)}). Silakan sesuaikan kembali nominal input.`);
+      onShowToast(`VALIDASI GAGAL: Nominal pengeluaran ${formatRupiah(formNominal)} melebihi kuota Sisa Anggaran khusus untuk rincian belanja terpilih (${formatRupiah(maxAvailableSpecific)}). Silakan sesuaikan kembali nominal input.`, 'error');
       return;
     }
 
@@ -388,12 +390,12 @@ export default function RealisasiView({
       // Trigger structural budgets calculations
       await synchronizeCalculations();
 
-      alert(`[NOTIFIKASI DATA BERUBAH]\nBerhasil menyimpan realisasi belanja: "${payload.uraian_belanja}" senilai ${formatRupiah(payload.nominal_realisasi)}. Log audit telah dicatat.`);
+      onShowToast(`Berhasil menyimpan realisasi belanja: "${payload.uraian_belanja}" senilai ${formatRupiah(payload.nominal_realisasi)}.`, 'success');
 
       setShowForm(false);
       setEditItem(null);
     } catch (err) {
-      alert("Gagal memproses realisasi: " + (err instanceof Error ? err.message : String(err)));
+      onShowToast("Gagal memproses realisasi: " + (err instanceof Error ? err.message : String(err)), 'error');
     } finally {
       setIsSaving(false);
     }
@@ -429,9 +431,9 @@ export default function RealisasiView({
       // Re-calculate structural cascades
       await synchronizeCalculations();
 
-      alert(`[NOTIFIKASI DATA BERUBAH]\nBerhasil menghapus pencatatan realisasi "${item.uraian_belanja}" dari basis data & Cloudinary. Anggaran dikoordinasikan ulang.`);
+      onShowToast(`Berhasil menghapus pencatatan realisasi "${item.uraian_belanja}".`, 'success');
     } catch (err) {
-      alert("Gagal menghapus realisasi: " + (err instanceof Error ? err.message : String(err)));
+      onShowToast("Gagal menghapus realisasi: " + (err instanceof Error ? err.message : String(err)), 'error');
     }
   };
 
