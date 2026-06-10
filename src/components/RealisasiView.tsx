@@ -174,11 +174,17 @@ export default function RealisasiView({
           }
         } else {
           if (showRealized) {
-              matches.forEach(real => {
+              // Sort realizations by date to calculate running remaining budget
+              const sortedMatches = [...matches].sort((a, b) => new Date(a.tanggal).getTime() - new Date(b.tanggal).getTime() || a.id.localeCompare(b.id));
+              
+              let runningSpent = 0;
+              sortedMatches.forEach(real => {
+                runningSpent += real.nominal_realisasi;
                 data.push({
                   type: 'realized',
                   ...real,
                   pagu: rka.jumlah,
+                  sisa_anggaran: Math.max(0, rka.jumlah - runningSpent),
                 });
               });
           }
@@ -188,28 +194,29 @@ export default function RealisasiView({
   }, [rkaList, filteredRealisasis, selectedRealisasiStatus, selectedSubKeg]);
 
   const summaryTotals = useMemo(() => {
-    let totalPagu = 0;
     let totalReal = 0;
     
     filteredRealisasis.forEach(r => {
-        const subKeg = subKegiatans.find(s => s.kode_sub_kegiatan === r.kode_sub_kegiatan);
-        const matchedRka = rkaList.find(item => item.kode_sub_kegiatan === r.kode_sub_kegiatan && item.uraian_belanja === r.uraian_belanja);
-        const paguAmt = matchedRka ? matchedRka.jumlah : (subKeg ? subKeg.pagu : 0);
-        
-        totalPagu += paguAmt;
         totalReal += r.nominal_realisasi;
     });
 
-    const sisa = Math.max(0, totalPagu - totalReal);
-    const persen = totalPagu > 0 ? (totalReal / totalPagu) * 100 : 0;
+    // Pagu: sum of RKA matching selected filters
+    const pagu = rkaList
+      .filter(rka => (!selectedSubKeg || rka.kode_sub_kegiatan === selectedSubKeg) && (!selectedErikaFilter || rka.uraian_belanja === selectedErikaFilter))
+      .reduce((sum, rka) => sum + rka.jumlah, 0);
+
+    // Sisa Anggaran
+    const sisa = Math.max(0, pagu - totalReal);
+    
+    const persen = pagu > 0 ? (totalReal / pagu) * 100 : 0;
     
     return {
-        pagu: totalPagu,
+        pagu_subkegiatan: pagu,
         realisasi: totalReal,
         sisa: sisa,
         persen: persen
     };
-  }, [filteredRealisasis, subKegiatans, rkaList]);
+  }, [filteredRealisasis, rkaList, selectedSubKeg, selectedErikaFilter]);
 
 
   // Compute selected Sub-Kegiatan Pagu and remaining sisa for dynamic warning alert guards
@@ -231,22 +238,25 @@ export default function RealisasiView({
   }, [formSubKeg, rkaList]);
 
   // Find currently selected RKA item to display its pagu and sisa
-  const selectedRkaItem = useMemo(() => {
-    if (!formSubKeg || !formUraian) return null;
-    return rkaList.find(r => r.kode_sub_kegiatan === formSubKeg && r.uraian_belanja === formUraian);
+  const totalPagu = useMemo(() => {
+    if (!formSubKeg || !formUraian) return 0;
+    return rkaList
+      .filter(r => r.kode_sub_kegiatan === formSubKeg && r.uraian_belanja === formUraian)
+      .reduce((sum, r) => sum + r.jumlah, 0);
   }, [formSubKeg, formUraian, rkaList]);
 
   const rkaSpecificBudgetStatus = useMemo(() => {
-    if (!selectedRkaItem) return null;
-    const itemRealisasis = realisasis.filter(r => r.kode_sub_kegiatan === formSubKeg && r.uraian_belanja === selectedRkaItem.uraian_belanja && r.id !== editItem?.id);
+    if (totalPagu === 0) return null;
+    const itemRealisasis = realisasis.filter(r => r.kode_sub_kegiatan === formSubKeg && r.uraian_belanja === formUraian && r.id !== editItem?.id);
     const spent = itemRealisasis.reduce((sum, r) => sum + r.nominal_realisasi, 0);
-    const sisa = Math.max(0, selectedRkaItem.jumlah - spent);
+    const sisa = Math.max(0, totalPagu - spent);
     return {
-      pagu: selectedRkaItem.jumlah,
+      pagu: totalPagu,
       realisasi_lama: spent,
-      sisa_tersedia: sisa
+      sisa_tersedia: sisa,
+      sisa_setelah_input: Math.max(0, sisa - formNominal)
     };
-  }, [selectedRkaItem, realisasis, formSubKeg, editItem]);
+  }, [totalPagu, realisasis, formSubKeg, formUraian, editItem, formNominal]);
 
   const uniqueUraianList = useMemo(() => {
     const filteredRka = rkaList.filter(r => !selectedSubKeg || r.kode_sub_kegiatan === selectedSubKeg);
@@ -477,14 +487,14 @@ export default function RealisasiView({
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-white rounded-xl border border-slate-200 shadow-sm" id="summary-filter">
         <div>
           <span className="text-[10px] text-slate-500 font-bold uppercase block">Total Pagu</span>
-          <span className="text-sm font-black text-slate-900 font-mono">{formatRupiah(summaryTotals.pagu)}</span>
+          <span className="text-sm font-black text-slate-900 font-mono">{formatRupiah(summaryTotals.pagu_subkegiatan)}</span>
         </div>
         <div>
           <span className="text-[10px] text-slate-500 font-bold uppercase block">Total Realisasi</span>
           <span className="text-sm font-black text-rose-800 font-mono">{formatRupiah(summaryTotals.realisasi)}</span>
         </div>
         <div>
-          <span className="text-[10px] text-slate-500 font-bold uppercase block">Sisa Anggaran</span>
+          <span className="text-[10px] text-slate-500 font-bold uppercase block">Total Anggaran</span>
           <span className="text-sm font-black text-indigo-900 font-mono">{formatRupiah(summaryTotals.sisa)}</span>
         </div>
         <div>
@@ -873,7 +883,7 @@ export default function RealisasiView({
                       </p>
                       <ul className="list-inside mt-1.5 pl-0.5 space-y-1 font-sans">
                         <li>Pagu RKA Detail: <b>{formatRupiah(rkaSpecificBudgetStatus.pagu)}</b></li>
-                        <li>Sisa Anggaran Uraian Ini: <b className={`font-mono ${rkaSpecificBudgetStatus.sisa_tersedia < formNominal ? 'text-rose-700 bg-rose-50 px-1 rounded font-black' : 'text-blue-900 font-black'}`}>{formatRupiah(rkaSpecificBudgetStatus.sisa_tersedia)}</b></li>
+                        <li>Sisa Anggaran Uraian Ini (Setelah Input): <b className={`font-mono ${rkaSpecificBudgetStatus.sisa_tersedia < formNominal ? 'text-rose-700 bg-rose-50 px-1 rounded font-black' : 'text-blue-900 font-black'}`}>{formatRupiah(rkaSpecificBudgetStatus.sisa_setelah_input)}</b></li>
                       </ul>
                       {rkaSpecificBudgetStatus.sisa_tersedia < formNominal && (
                         <p className="mt-1 pb-0.5 font-black text-rose-700 text-[10px] flex items-center gap-1">
