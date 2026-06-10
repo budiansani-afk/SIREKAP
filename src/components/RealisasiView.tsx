@@ -456,6 +456,13 @@ export default function RealisasiView({
         </div>
         <div className="flex gap-2 shrink-0">
           <button 
+            onClick={openAddModal}
+            className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-white bg-blue-900 hover:bg-blue-800 rounded-lg border border-blue-950 transition cursor-pointer"
+          >
+            <Plus size={14} />
+            Input Realisasi
+          </button>
+          <button 
             onClick={handleExportRealisasi}
             className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 rounded-lg border border-slate-200 transition cursor-pointer"
           >
