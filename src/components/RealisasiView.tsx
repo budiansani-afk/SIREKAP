@@ -361,12 +361,12 @@ export default function RealisasiView({
 
       const docId = editItem ? editItem.id : `realisasi_${Date.now()}`;
       
-      const computedPersentaseOfSub = linkedSub.pagu > 0 ? (formNominal / linkedSub.pagu) * 100 : 0;
-      const computedSisaValue = Math.max(0, maxAvailable - formNominal);
-
-      // Define paguAmt for payload usage
+      // Define paguAmt for payload usage and percentage calculation
       const matchedRka = rkaList.find(item => item.kode_sub_kegiatan === formSubKeg && item.uraian_belanja === formUraian.trim());
       const paguAmt = matchedRka ? matchedRka.jumlah : linkedSub.pagu;
+      
+      const computedPersentaseOfSub = paguAmt > 0 ? (formNominal / paguAmt) * 100 : 0;
+      const computedSisaValue = Math.max(0, maxAvailable - formNominal);
       
       const payload: Realisasi = {
         id: docId,
@@ -494,7 +494,7 @@ export default function RealisasiView({
           <span className="text-sm font-black text-rose-800 font-mono">{formatRupiah(summaryTotals.realisasi)}</span>
         </div>
         <div>
-          <span className="text-[10px] text-slate-500 font-bold uppercase block">Total Anggaran</span>
+          <span className="text-[10px] text-slate-500 font-bold uppercase block">Total Sisa Anggaran</span>
           <span className="text-sm font-black text-indigo-900 font-mono">{formatRupiah(summaryTotals.sisa)}</span>
         </div>
         <div>
@@ -622,14 +622,13 @@ export default function RealisasiView({
                 <th className="p-3.5 text-right w-36">Pagu Anggaran</th>
                 <th className="p-3.5 text-right w-36">Nominal Realisasi</th>
                 <th className="p-3.5 text-right w-36">Sisa Anggaran</th>
-                <th className="p-3.5 text-center w-28">Persen Serapan</th>
                 {canEdit && <th className="p-3.5 text-center w-24">Aksi</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-slate-700">
               {tableData.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="p-8 text-center text-slate-500 font-semibold">Tabel realisasi kosong / Atur saringan filter.</td>
+                  <td colSpan={7} className="p-8 text-center text-slate-500 font-semibold">Tabel realisasi kosong / Atur saringan filter.</td>
                 </tr>
               ) : (
                 tableData.map((r, i) => {
@@ -659,9 +658,6 @@ export default function RealisasiView({
                       <td className="p-3.5 text-right font-black text-slate-900 font-mono">{formatRupiah(r.pagu)}</td>
                       <td className="p-3.5 text-right font-black text-rose-950 font-mono">{formatRupiah(r.nominal_realisasi)}</td>
                       <td className="p-3.5 text-right font-black text-indigo-900 font-mono">{formatRupiah(r.sisa_anggaran)}</td>
-                      <td className="p-3.5 text-center">
-                        <span className={`px-2 py-0.5 rounded-full font-black text-[10px] ${r.persentase_realisasi >= 100 ? 'bg-emerald-100 text-emerald-900' : 'bg-blue-100 text-blue-900'}`}>{r.persentase_realisasi}%</span>
-                      </td>
                       {canEdit && (
                         <td className="p-3.5 text-center">
                           <div className="flex items-center justify-center gap-1.5">
