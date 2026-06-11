@@ -342,10 +342,8 @@ export default function RealisasiView({
           }
         }
 
-        // Upload the new image to Cloudinary with dynamic name based on expense description
-        const originalExtension = formBuktiFile.name.split('.').pop() || 'png';
-        const customFileName = `Bukti_Realisasi_${formUraian.trim()}.${originalExtension}`;
-        const uploadRes = await uploadFile(formBuktiFile, "sirekap", customFileName);
+        // Upload the new image to Cloudinary using original filename
+        const uploadRes = await uploadFile(formBuktiFile, "sirekap", formBuktiFile.name);
         cloudinaryUrl = uploadRes.secure_url;
         cloudinaryPublicId = uploadRes.public_id;
       } else if (!existingBuktiUrl && editItem?.bukti_transaksi_public_id) {
