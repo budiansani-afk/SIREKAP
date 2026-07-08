@@ -1,6 +1,7 @@
 import { 
   collection, 
   getDocs, 
+  getDoc,
   setDoc, 
   doc, 
   addDoc, 
@@ -296,437 +297,75 @@ export async function restoreDatabaseFromJSON(backupData: Record<string, any[]>,
   }
 }
 
-// 4. Seeding Initial Static Data for 2026 Admin & Operator Demo
-// When the app starts first time with empty tables, we seed
+// 4. Clean up any previously seeded dummy/sample data and set up system configurations
 export async function seedInitialDataIfEmpty() {
   try {
-    const qProg = await getDocs(collection(db, COLL_PROGRAM)).catch(err => handleFirestoreError(err, OperationType.LIST, COLL_PROGRAM)) as any;
-    if (qProg.empty) {
-      console.log("Seeding initial data for SIREKAP Bidang Pertanahan 2026...");
-      
-      // Program Seed
-      const samplePrograms: Program[] = [
-        {
-          id: "2.10.01",
-          kode_program: "2.10.01",
-          nama_program: "PROGRAM PENUNJANG URUSAN PEMERINTAHAN DAERAH KABUPATEN/KOTA",
-          pagu: 750000000,
-          realisasi: 0,
-          sisa: 750000000,
-          persentase: 0
-        },
-        {
-          id: "2.10.02",
-          kode_program: "2.10.02",
-          nama_program: "PROGRAM PENYELESAIAN MASALAH GANTI KERUGIAN DAN SANTUNAN TANAH UNTUK PEMBANGUNAN",
-          pagu: 1200000000,
-          realisasi: 0,
-          sisa: 1200000000,
-          persentase: 0
-        },
-        {
-          id: "2.10.03",
-          kode_program: "2.10.03",
-          nama_program: "PROGRAM PENATAAN, PENGUASAAN, PEMILIKAN, PENGGUNAAN DAN PEMANFAATAN TANAH",
-          pagu: 450000000,
-          realisasi: 0,
-          sisa: 450000000,
-          persentase: 0
-        }
-      ];
+    const dummyProgramIds = ["2.10.01", "2.10.02", "2.10.03"];
+    const dummyKegiatanIds = ["2.10.01.2.01", "2.10.01.2.06", "2.10.02.2.01", "2.10.02.2.02", "2.10.03.2.01"];
+    const dummySubKegiatansIds = ["2.10.01.2.01.01", "2.10.01.2.06.01", "2.10.01.2.06.02", "2.10.02.2.01.01", "2.10.02.2.01.02", "2.10.02.2.02.01", "2.10.03.2.01.01"];
+    const dummyRkaIds = ["rka_seed_1", "rka_seed_2", "rka_seed_3", "rka_seed_4", "rka_seed_5", "rka_seed_6", "rka_seed_7", "rka_seed_8", "rka_seed_9"];
+    const dummyRealisasiIds = ["real_seed_1", "real_seed_2", "real_seed_3"];
+    const dummyPihakKetigaIds = ["mon_seed_1", "mon_seed_2"];
 
-      for (const p of samplePrograms) {
-        await setDoc(doc(db, COLL_PROGRAM, p.id), p);
+    let deletedAny = false;
+
+    for (const id of dummyProgramIds) {
+      const docRef = doc(db, COLL_PROGRAM, id);
+      const snap = await getDoc(docRef).catch(() => null);
+      if (snap && snap.exists()) {
+        await deleteDoc(docRef).catch(() => null);
+        deletedAny = true;
       }
-
-      // Kegiatan Seed
-      const sampleKegiatans: Kegiatan[] = [
-        {
-          id: "2.10.01.2.01",
-          kode_kegiatan: "2.10.01.2.01",
-          nama_kegiatan: "Penyediaan Gaji dan Tunjangan ASN Bidang Pertanahan",
-          kode_program: "2.10.01",
-          pagu: 400000000,
-          realisasi: 0,
-          sisa: 400000000,
-          persentase: 0
-        },
-        {
-          id: "2.10.01.2.06",
-          kode_kegiatan: "2.10.01.2.06",
-          nama_kegiatan: "Administrasi Keuangan dan Operasional Kantor",
-          kode_program: "2.10.01",
-          pagu: 350000000,
-          realisasi: 0,
-          sisa: 350000000,
-          persentase: 0
-        },
-        {
-          id: "2.10.02.2.01",
-          kode_kegiatan: "2.10.02.2.01",
-          nama_kegiatan: "Identifikasi, Inventarisasi, dan Sertifikasi Tanah Pemda Kabupaten Bima",
-          kode_program: "2.10.02",
-          pagu: 800000000,
-          realisasi: 0,
-          sisa: 800000000,
-          persentase: 0
-        },
-        {
-          id: "2.10.02.2.02",
-          kode_kegiatan: "2.10.02.2.02",
-          nama_kegiatan: "Penyelesaian Sengketa Tanah Fasilitas Umum Daerah Bima",
-          kode_program: "2.10.02",
-          pagu: 400000000,
-          realisasi: 0,
-          sisa: 400000000,
-          persentase: 0
-        },
-        {
-          id: "2.10.03.2.01",
-          kode_kegiatan: "2.10.03.2.01",
-          nama_kegiatan: "Penyusunan Rencana Detail Tata Guna Tanah Sektoral",
-          kode_program: "2.10.03",
-          pagu: 450000000,
-          realisasi: 0,
-          sisa: 450000000,
-          persentase: 0
-        }
-      ];
-
-      for (const k of sampleKegiatans) {
-        await setDoc(doc(db, COLL_KEGIATAN, k.id), k);
+    }
+    for (const id of dummyKegiatanIds) {
+      const docRef = doc(db, COLL_KEGIATAN, id);
+      const snap = await getDoc(docRef).catch(() => null);
+      if (snap && snap.exists()) {
+        await deleteDoc(docRef).catch(() => null);
+        deletedAny = true;
       }
-
-      // Sub-Kegiatan Seed
-      const sampleSubKegiatans: SubKegiatan[] = [
-        {
-          id: "2.10.01.2.01.01",
-          kode_sub_kegiatan: "2.10.01.2.01.01",
-          nama_sub_kegiatan: "Pembayaran Gaji Pokok dan Tunjangan Melekat ASN Pertanahan",
-          kode_program: "2.10.01",
-          kode_kegiatan: "2.10.01.2.01",
-          pagu: 400000000,
-          realisasi: 0,
-          sisa: 400000000,
-          persentase: 0
-        },
-        {
-          id: "2.10.01.2.06.01",
-          kode_sub_kegiatan: "2.10.01.2.06.01",
-          nama_sub_kegiatan: "Penyediaan Alat Tulis Kantor, Konsumsi, dan Rapat Koordinasi",
-          kode_program: "2.10.01",
-          kode_kegiatan: "2.10.01.2.06",
-          pagu: 150000000,
-          realisasi: 0,
-          sisa: 150000000,
-          persentase: 0
-        },
-        {
-          id: "2.10.01.2.06.02",
-          kode_sub_kegiatan: "2.10.01.2.06.02",
-          nama_sub_kegiatan: "Perjalanan Dinas Koordinasi Pertanahan lintas Provinsi/Kabupaten",
-          kode_program: "2.10.01",
-          kode_kegiatan: "2.10.01.2.06",
-          pagu: 200000000,
-          realisasi: 0,
-          sisa: 200000000,
-          persentase: 0
-        },
-        {
-          id: "2.10.02.2.01.01",
-          kode_sub_kegiatan: "2.10.02.2.01.01",
-          nama_sub_kegiatan: "Pengukuran Fisik dan Penerbitan Sertifikat Hak Pakai Tanah Pemda",
-          kode_program: "2.10.02",
-          kode_kegiatan: "2.10.02.2.01",
-          pagu: 500000000,
-          realisasi: 0,
-          sisa: 500000000,
-          persentase: 0
-        },
-        {
-          id: "2.10.02.2.01.02",
-          kode_sub_kegiatan: "2.10.02.2.01.02",
-          nama_sub_kegiatan: "Honorarium Tim Inventarisasi dan Pembebasan Lahan Daerah",
-          kode_program: "2.10.02",
-          kode_kegiatan: "2.10.02.2.01",
-          pagu: 300000000,
-          realisasi: 0,
-          sisa: 300000000,
-          persentase: 0
-        },
-        {
-          id: "2.10.02.2.02.01",
-          kode_sub_kegiatan: "2.10.02.2.02.01",
-          nama_sub_kegiatan: "Mediasi dan Advokasi Hukum Sengketa Batas Tanah Fasum",
-          kode_program: "2.10.02",
-          kode_kegiatan: "2.10.02.2.02",
-          pagu: 400000000,
-          realisasi: 0,
-          sisa: 400000000,
-          persentase: 0
-        },
-        {
-          id: "2.10.03.2.01.01",
-          kode_sub_kegiatan: "2.10.03.2.01.01",
-          nama_sub_kegiatan: "Penyusunan Peta Digital Penggunaan Lahan Wilayah Kabupaten Bima",
-          kode_program: "2.10.03",
-          kode_kegiatan: "2.10.03.2.01",
-          pagu: 450000000,
-          realisasi: 0,
-          sisa: 450000000,
-          persentase: 0
-        }
-      ];
-
-      for (const s of sampleSubKegiatans) {
-        await setDoc(doc(db, COLL_SUB_KEGIATAN, s.id), s);
+    }
+    for (const id of dummySubKegiatansIds) {
+      const docRef = doc(db, COLL_SUB_KEGIATAN, id);
+      const snap = await getDoc(docRef).catch(() => null);
+      if (snap && snap.exists()) {
+        await deleteDoc(docRef).catch(() => null);
+        deletedAny = true;
       }
-
-      // RKA Seed - Default items to help calculate Pagu perfectly
-      const sampleRKAList: RKA[] = [
-        {
-          id: "rka_seed_1",
-          tahun: 2026,
-          kode_program: "2.10.01",
-          kode_kegiatan: "2.10.01.2.01",
-          kode_sub_kegiatan: "2.10.01.2.01.01",
-          kode_rekening: "5.1.01.01.0001",
-          uraian_belanja: "Belanja Gaji Pokok PNS Bidang Pertanahan (12 Bulan)",
-          volume: 12,
-          satuan: "Bulan",
-          harga_satuan: 25000000,
-          jumlah: 300000000,
-          tw1: 75000000,
-          tw2: 75000000,
-          tw3: 75000000,
-          tw4: 75000000
-        },
-        {
-          id: "rka_seed_2",
-          tahun: 2026,
-          kode_program: "2.10.01",
-          kode_kegiatan: "2.10.01.2.01",
-          kode_sub_kegiatan: "2.10.01.2.01.01",
-          kode_rekening: "5.1.01.02.0002",
-          uraian_belanja: "Tunjangan Tambahan Penghasilan PNS Pertanahan (12 Bulan)",
-          volume: 12,
-          satuan: "Bulan",
-          harga_satuan: 8333333,
-          jumlah: 100000000,
-          tw1: 25000000,
-          tw2: 25000000,
-          tw3: 25000000,
-          tw4: 25000000
-        },
-        {
-          id: "rka_seed_3",
-          tahun: 2026,
-          kode_program: "2.10.01",
-          kode_kegiatan: "2.10.01.2.06",
-          kode_sub_kegiatan: "2.10.01.2.06.01",
-          kode_rekening: "5.1.02.01.0004",
-          uraian_belanja: "Belanja Alat Tulis Kantor (ATK) Operasional Bidang",
-          volume: 1,
-          satuan: "Paket",
-          harga_satuan: 50000000,
-          jumlah: 50000000,
-          tw1: 15000000,
-          tw2: 15000000,
-          tw3: 10000000,
-          tw4: 10000000
-        },
-        {
-          id: "rka_seed_4",
-          tahun: 2026,
-          kode_program: "2.10.01",
-          kode_kegiatan: "2.10.01.2.06",
-          kode_sub_kegiatan: "2.10.01.2.06.01",
-          kode_rekening: "5.1.02.01.0035",
-          uraian_belanja: "Belanja Jamuan Konsumsi dan Rapat Koordinasi internal",
-          volume: 100,
-          satuan: "Kotak",
-          harga_satuan: 1000000,
-          jumlah: 100000000,
-          tw1: 25000000,
-          tw2: 25000000,
-          tw3: 25000000,
-          tw4: 25000000
-        },
-        {
-          id: "rka_seed_5",
-          tahun: 2026,
-          kode_program: "2.10.01",
-          kode_kegiatan: "2.10.01.2.06",
-          kode_sub_kegiatan: "2.10.01.2.06.02",
-          kode_rekening: "5.1.02.04.0012",
-          uraian_belanja: "Perjalanan Dinas Koordinasi Pengukuran Jalan ke Mataram/Jakarta",
-          volume: 4,
-          satuan: "Kali",
-          harga_satuan: 50000000,
-          jumlah: 200000000,
-          tw1: 50000000,
-          tw2: 50000000,
-          tw3: 50000000,
-          tw4: 50000000
-        },
-        {
-          id: "rka_seed_6",
-          tahun: 2026,
-          kode_program: "2.10.02",
-          kode_kegiatan: "2.10.02.2.01",
-          kode_sub_kegiatan: "2.10.02.2.01.01",
-          kode_rekening: "5.2.04.01.0001",
-          uraian_belanja: "Biaya Pengukuran dan Pembuatan Peta Batas Kawasan Pemda Bima",
-          volume: 1,
-          satuan: "Paket",
-          harga_satuan: 500000000,
-          jumlah: 500000000,
-          tw1: 100000000,
-          tw2: 200000000,
-          tw3: 150000000,
-          tw4: 50000000
-        },
-        {
-          id: "rka_seed_7",
-          tahun: 2026,
-          kode_program: "2.10.02",
-          kode_kegiatan: "2.10.02.2.01",
-          kode_sub_kegiatan: "2.10.02.2.01.02",
-          kode_rekening: "5.1.02.02.0001",
-          uraian_belanja: "Honorarium Tim Satgas Inventarisasi Sengketa Tanah Huntap",
-          volume: 12,
-          satuan: "Bulan",
-          harga_satuan: 25000000,
-          jumlah: 300000000,
-          tw1: 75000000,
-          tw2: 75000000,
-          tw3: 75000000,
-          tw4: 75000000
-        },
-        {
-          id: "rka_seed_8",
-          tahun: 2026,
-          kode_program: "2.10.02",
-          kode_kegiatan: "2.10.02.2.02",
-          kode_sub_kegiatan: "2.10.02.2.02.01",
-          kode_rekening: "5.1.02.03.0044",
-          uraian_belanja: "Belanja Konsultasi dan Advokat Hukum Sengketa Lahan Fasum Bima",
-          volume: 1,
-          satuan: "Paket",
-          harga_satuan: 400000000,
-          jumlah: 400000000,
-          tw1: 100000000,
-          tw2: 100000000,
-          tw3: 100000000,
-          tw4: 100000000
-        },
-        {
-          id: "rka_seed_9",
-          tahun: 2026,
-          kode_program: "2.10.03",
-          kode_kegiatan: "2.10.03.2.01",
-          kode_sub_kegiatan: "2.10.03.2.01.01",
-          kode_rekening: "5.2.05.01.0023",
-          uraian_belanja: "Desain Sistem Peta Digital Pertanahan Geospasial Kabupaten Bima",
-          volume: 1,
-          satuan: "Paket",
-          harga_satuan: 450000000,
-          jumlah: 450000000,
-          tw1: 100000000,
-          tw2: 150000000,
-          tw3: 150000000,
-          tw4: 50000000
-        }
-      ];
-
-      for (const r of sampleRKAList) {
-        await setDoc(doc(db, COLL_RKA, r.id), r);
+    }
+    for (const id of dummyRkaIds) {
+      const docRef = doc(db, COLL_RKA, id);
+      const snap = await getDoc(docRef).catch(() => null);
+      if (snap && snap.exists()) {
+        await deleteDoc(docRef).catch(() => null);
+        deletedAny = true;
       }
-
-      // Realisasi Seed
-      const sampleRealisasis: Realisasi[] = [
-        {
-          id: "real_seed_1",
-          tanggal: "2026-03-31",
-          bulan: "Maret",
-          kode_program: "2.10.01",
-          kode_kegiatan: "2.10.01.2.01",
-          kode_sub_kegiatan: "2.10.01.2.01.01",
-          uraian_belanja: "Realisasi Gaji & Tunjangan Melekat Triwulan I",
-          nominal_realisasi: 75000000,
-          persentase_realisasi: 18.75,
-          sisa_anggaran: 325000000,
-          keterangan: "SP2D Cair Sesuai Pengajuan TW I"
-        },
-        {
-          id: "real_seed_2",
-          tanggal: "2026-04-15",
-          bulan: "April",
-          kode_program: "2.10.01",
-          kode_kegiatan: "2.10.01.2.06",
-          kode_sub_kegiatan: "2.10.01.2.06.01",
-          uraian_belanja: "Pengadaan Kertas, Tinta Printer & ATK Pokok",
-          nominal_realisasi: 15000000,
-          persentase_realisasi: 10.00,
-          sisa_anggaran: 135000000,
-          keterangan: "Sesuai Kwitansi No. ATK-04"
-        },
-        {
-          id: "real_seed_3",
-          tanggal: "2026-05-10",
-          bulan: "Mei",
-          kode_program: "2.10.02",
-          kode_kegiatan: "2.10.02.2.01",
-          kode_sub_kegiatan: "2.10.02.2.01.01",
-          uraian_belanja: "Pembayaran DP Tim Pengukuran BPN untuk 15 Bidang Lahan",
-          nominal_realisasi: 80000000,
-          persentase_realisasi: 16.00,
-          sisa_anggaran: 420000000,
-          keterangan: "Uang Muka Kerja Pengukuran Lapangan"
-        }
-      ];
-
-      for (const rx of sampleRealisasis) {
-        await setDoc(doc(db, COLL_REALISASI, rx.id), rx);
+    }
+    for (const id of dummyRealisasiIds) {
+      const docRef = doc(db, COLL_REALISASI, id);
+      const snap = await getDoc(docRef).catch(() => null);
+      if (snap && snap.exists()) {
+        await deleteDoc(docRef).catch(() => null);
+        deletedAny = true;
       }
-
-      // Belanja Pihak Ketiga Seed (Replaces MonitoringFisik)
-      const sampleBelanjaPK: BelanjaPihakKetiga[] = [
-        {
-          id: "mon_seed_1",
-          tanggal: "2026-03-31",
-          kode_program: "2.10.01",
-          kode_kegiatan: "2.10.01.2.01",
-          kode_sub_kegiatan: "2.10.01.2.01.01",
-          uraian_belanja: "Pengadaan Tenaga Pendukung Teknis",
-          nama_pelaksana: "CV. Jasa Konstruksi",
-          nomor_kontrak: "KON/001/2026",
-          masa_kerja_mulai: "2026-01-01",
-          masa_kerja_selesai: "2026-12-31",
-          realisasi: 25000000,
-          catatan: "Tidak Ada"
-        },
-        {
-          id: "mon_seed_2",
-          tanggal: "2026-05-15",
-          kode_program: "2.10.02",
-          kode_kegiatan: "2.10.02.2.01",
-          kode_sub_kegiatan: "2.10.02.2.01.01",
-          uraian_belanja: "Konsultan Pengukuran Lapangan",
-          nama_pelaksana: "PT. Surveyor Tanah",
-          nomor_kontrak: "KON/002/2026",
-          masa_kerja_mulai: "2026-02-01",
-          masa_kerja_selesai: "2026-06-30",
-          realisasi: 32000000,
-          catatan: "Cuaca hujan lebat menghambat koordinasi di beberapa titik koordinat"
-        }
-      ];
-
-      for (const bpk of sampleBelanjaPK) {
-        await setDoc(doc(db, COLL_BELANJA_PIHAK_KETIGA, bpk.id), bpk);
+    }
+    for (const id of dummyPihakKetigaIds) {
+      const docRef = doc(db, COLL_BELANJA_PIHAK_KETIGA, id);
+      const snap = await getDoc(docRef).catch(() => null);
+      if (snap && snap.exists()) {
+        await deleteDoc(docRef).catch(() => null);
+        deletedAny = true;
       }
+    }
 
-      // Settings Seed
+    if (deletedAny) {
+      console.log("Existing dummy/seeded data successfully cleaned up from Firestore!");
+      await synchronizeCalculations();
+    }
+
+    // 2. Only seed settings & users if they are completely missing, so system functions normally
+    const qSettings = await getDocs(collection(db, COLL_PENGATURAN)).catch(() => null) as any;
+    if (!qSettings || qSettings.empty) {
       const initSettings: PengaturanSistem = {
         id: "aktif",
         tahun_anggaran_aktif: 2026,
@@ -734,8 +373,10 @@ export async function seedInitialDataIfEmpty() {
         logo_instansi: ""
       };
       await setDoc(doc(db, COLL_PENGATURAN, initSettings.id), initSettings);
+    }
 
-      // Seed Users
+    const qUsers = await getDocs(collection(db, COLL_PENGGUNA)).catch(() => null) as any;
+    if (!qUsers || qUsers.empty) {
       const sampleUsers: Pengguna[] = [
         {
           id: "admin@sirekap.com",
@@ -766,12 +407,8 @@ export async function seedInitialDataIfEmpty() {
       for (const u of sampleUsers) {
         await setDoc(doc(db, COLL_PENGGUNA, u.id), u);
       }
-
-      console.log("Seed data created. Recalculating everything bottom-up...");
-      await synchronizeCalculations();
-      console.log("Initial seed & synchronization successfully built!");
     }
   } catch (error) {
-    console.error("Error seeding initial data:", error);
+    console.error("Error during initial data check/cleanup:", error);
   }
 }

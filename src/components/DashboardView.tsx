@@ -96,15 +96,18 @@ export default function DashboardView({
 }: DashboardProps) {
 
   // Calculate totals
-  const totalPaguAll = useMemo(() => rkaList.reduce((sum, r) => sum + (r.jumlah || 0), 0), [rkaList]);
-  const totalRealisasiAll = useMemo(() => realisasis.reduce((sum, r) => sum + (r.nominal_realisasi || 0), 0), [realisasis]);
+  const totalPaguAll = useMemo(() => subKegiatans.reduce((sum, s) => sum + (s.pagu || 0), 0), [subKegiatans]);
+  const totalRealisasiAll = useMemo(() => subKegiatans.reduce((sum, s) => sum + (s.realisasi || 0), 0), [subKegiatans]);
   
-  const pkUraians = useMemo(() => new Set(pihakKetigas.map(p => p.uraian_belanja)), [pihakKetigas]);
+  const pkSubKegCodes = useMemo(() => new Set(pihakKetigas.map(p => p.kode_sub_kegiatan)), [pihakKetigas]);
   const totalPaguPK = useMemo(() => 
-    rkaList.reduce((sum, r) => pkUraians.has(r.uraian_belanja) ? sum + (r.jumlah || 0) : sum, 0),
-    [rkaList, pkUraians]
+    subKegiatans.filter(s => pkSubKegCodes.has(s.kode_sub_kegiatan)).reduce((sum, s) => sum + (s.pagu || 0), 0),
+    [subKegiatans, pkSubKegCodes]
   );
-  const totalRealisasiPK = useMemo(() => (pihakKetigas || []).reduce((sum, m) => sum + (m.realisasi || 0), 0), [pihakKetigas]);
+  const totalRealisasiPK = useMemo(() => 
+    subKegiatans.filter(s => pkSubKegCodes.has(s.kode_sub_kegiatan)).reduce((sum, s) => sum + (s.realisasi || 0), 0),
+    [subKegiatans, pkSubKegCodes]
+  );
   
   const totalPaguNonPK = Math.max(0, totalPaguAll - totalPaguPK);
   const totalRealisasiNonPK = Math.max(0, totalRealisasiAll - totalRealisasiPK);
