@@ -26,8 +26,12 @@ interface RkaViewProps {
   programs: Program[];
   kegiatans: Kegiatan[];
   subKegiatans: SubKegiatan[];
+  allPrograms?: Program[];
+  allKegiatans?: Kegiatan[];
+  allSubKegiatans?: SubKegiatan[];
   currentUserRole: UserRole;
   currentUserEmail: string;
+  selectedYear: number;
 }
 
 export default function RkaView({
@@ -35,12 +39,16 @@ export default function RkaView({
   programs,
   kegiatans,
   subKegiatans,
+  allPrograms,
+  allKegiatans,
+  allSubKegiatans,
   currentUserRole,
-  currentUserEmail
+  currentUserEmail,
+  selectedYear
 }: RkaViewProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterUraian, setFilterUraian] = useState('');
-  const [filterTahun, setFilterTahun] = useState<string>('2026');
+  const [filterTahun, setFilterTahun] = useState<string>(String(selectedYear));
   const [filterProgram, setFilterProgram] = useState('');
   const [filterKegiatan, setFilterKegiatan] = useState('');
   const [filterSubKegiatan, setFilterSubKegiatan] = useState('');
@@ -53,7 +61,12 @@ export default function RkaView({
   const [showImportModal, setShowImportModal] = useState(false);
 
   // Form Fields
-  const [formTahun, setFormTahun] = useState<number>(2026);
+  const [formTahun, setFormTahun] = useState<number>(selectedYear);
+
+  React.useEffect(() => {
+    setFilterTahun(String(selectedYear));
+    setFormTahun(selectedYear);
+  }, [selectedYear]);
   const [formSubKegiatan, setFormSubKegiatan] = useState('');
   const [formRekening, setFormRekening] = useState('');
   const [formUraian, setFormUraian] = useState('');
@@ -127,7 +140,7 @@ export default function RkaView({
   // Open Form modal
   const openAddModal = () => {
     setEditItem(null);
-    setFormTahun(2026);
+    setFormTahun(selectedYear);
     setFormSubKegiatan('');
     setFormRekening('');
     setFormUraian('');
@@ -316,10 +329,11 @@ export default function RkaView({
 
     let successCount = 0;
     let failedCount = 0;
+    const clonedSubCodes = new Set<string>();
 
     for (const row of excelPreviewData) {
       try {
-        const rkaTahun = Number(row[columnMapping.tahun]) || 2026;
+        const rkaTahun = selectedYear; // Force the imported RKA year to follow the active year
         const rkaSub = String(row[columnMapping.kode_sub_kegiatan] || '').trim();
         const rkaRekening = String(row[columnMapping.kode_rekening] || '').trim();
         const rkaUraian = String(row[columnMapping.uraian_belanja] || '').trim();
@@ -339,7 +353,49 @@ export default function RkaView({
         }
 
         // Must relate to an existing sub kegiatan
-        const linkedSub = subKegiatans.find(s => s.kode_sub_kegiatan === rkaSub);
+        let linkedSub = subKegiatans.find(s => s.kode_sub_kegiatan === rkaSub);
+        
+        if (!linkedSub && allSubKegiatans) {
+          const globalSub = allSubKegiatans.find(s => s.kode_sub_kegiatan === rkaSub);
+          if (globalSub) {
+            if (!clonedSubCodes.has(rkaSub)) {
+              // 1. Copy parent Program to target year if it doesn't exist yet
+              const parentProgram = allPrograms?.find(p => p.kode_program === globalSub.kode_program);
+              if (parentProgram) {
+                const programDocRef = doc(db, 'sibiru_program', parentProgram.kode_program);
+                await setDoc(programDocRef, {
+                  ...parentProgram,
+                  tahun: selectedYear
+                }, { merge: true });
+              }
+              
+              // 2. Copy parent Kegiatan to target year
+              const parentKegiatan = allKegiatans?.find(k => k.kode_kegiatan === globalSub.kode_kegiatan);
+              if (parentKegiatan) {
+                const kegiatanDocRef = doc(db, 'sibiru_kegiatan', parentKegiatan.kode_kegiatan);
+                await setDoc(kegiatanDocRef, {
+                  ...parentKegiatan,
+                  tahun: selectedYear
+                }, { merge: true });
+              }
+              
+              // 3. Copy Sub-Kegiatan to target year
+              const subDocRef = doc(db, 'sibiru_sub_kegiatan', globalSub.kode_sub_kegiatan);
+              await setDoc(subDocRef, {
+                ...globalSub,
+                tahun: selectedYear
+              }, { merge: true });
+              
+              clonedSubCodes.add(rkaSub);
+            }
+            
+            linkedSub = {
+              ...globalSub,
+              tahun: selectedYear
+            };
+          }
+        }
+
         if (!linkedSub) {
           failedCount++;
           continue;
@@ -812,18 +868,22 @@ export default function RkaView({
                     <h4 className="font-bold text-slate-700 mb-2">Pratinjau Data (Preview Top 3 Sheets Rows)</h4>
                     <div className="overflow-x-auto rounded border border-slate-200">
                       <table className="w-full text-left text-[10px] border-collapse bg-white">
-                        <tr className="bg-slate-50 border-b border-slate-100 font-semibold text-slate-600">
-                          {Object.keys(excelPreviewData[0]).slice(0, 7).map((h, i) => (
-                            <th key={i} className="p-2 whitespace-nowrap">{h}</th>
-                          ))}
-                        </tr>
-                        {excelPreviewData.slice(0, 3).map((row, rIdx) => (
-                          <tr key={rIdx} className="border-b divide-x divide-slate-100">
-                            {Object.values(row).slice(0, 7).map((val: any, vIdx) => (
-                              <td key={vIdx} className="p-2 whitespace-nowrap max-w-[120px] truncate">{String(val)}</td>
+                        <thead>
+                          <tr className="bg-slate-50 border-b border-slate-100 font-semibold text-slate-600">
+                            {Object.keys(excelPreviewData[0]).slice(0, 7).map((h, i) => (
+                              <th key={i} className="p-2 whitespace-nowrap">{h}</th>
                             ))}
                           </tr>
-                        ))}
+                        </thead>
+                        <tbody>
+                          {excelPreviewData.slice(0, 3).map((row, rIdx) => (
+                            <tr key={rIdx} className="border-b divide-x divide-slate-100">
+                              {Object.values(row).slice(0, 7).map((val: any, vIdx) => (
+                                <td key={vIdx} className="p-2 whitespace-nowrap max-w-[120px] truncate">{String(val)}</td>
+                              ))}
+                            </tr>
+                          ))}
+                        </tbody>
                       </table>
                     </div>
                   </div>

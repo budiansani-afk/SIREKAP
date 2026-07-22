@@ -33,6 +33,7 @@ interface DashboardProps {
   dokumens: DokumenArsip[];
   onNavigate?: (page: 'dashboard' | 'program' | 'rka' | 'realisasi' | 'pihakKetiga' | 'dokumen' | 'laporan' | 'analisis' | 'logs' | 'pengaturan', tabDetail?: string) => void;
   onShowInfo?: (info: { title: string; content: string; type: 'guide' | 'alert' }) => void;
+  selectedYear: number;
 }
 
 const CustomTooltip = ({ active, payload, label }: any) => {
@@ -42,6 +43,42 @@ const CustomTooltip = ({ active, payload, label }: any) => {
         <p className="font-extrabold uppercase tracking-wider text-slate-400 mb-1.5 border-b border-white/20 pb-1">{label}</p>
         <p className="font-mono text-emerald-400 font-black text-sm">{formatRupiah(payload[0].value)}</p>
         <p className="text-[10px] text-slate-450 mt-1 font-semibold">Realisasi Bulanan TA 2026</p>
+      </div>
+    );
+  }
+  return null;
+};
+
+const ComparisonTooltip = ({ active, payload, label }: any) => {
+  if (active && payload && payload.length) {
+    const paguVal = payload[0]?.value || 0;
+    const realisasiVal = payload[1]?.value || 0;
+    const sisaVal = Math.max(0, paguVal - realisasiVal);
+    const percentage = paguVal > 0 ? (realisasiVal / paguVal) * 100 : 0;
+    
+    return (
+      <div className="bg-slate-900 border border-slate-800 text-white p-3.5 rounded-xl shadow-xl text-xs flex flex-col font-sans select-none z-50 max-w-sm">
+        <p className="font-extrabold uppercase tracking-wider text-slate-300 mb-2 border-b border-white/10 pb-1.5 truncate">
+          {payload[0]?.payload?.fullName || label}
+        </p>
+        <div className="space-y-1 font-mono">
+          <div className="flex justify-between gap-6">
+            <span className="text-slate-400">Pagu:</span>
+            <span className="font-bold text-blue-400">{formatRupiah(paguVal)}</span>
+          </div>
+          <div className="flex justify-between gap-6">
+            <span className="text-slate-400">Realisasi:</span>
+            <span className="font-bold text-emerald-400">{formatRupiah(realisasiVal)}</span>
+          </div>
+          <div className="flex justify-between gap-6 pt-1 border-t border-white/5">
+            <span className="text-slate-400">Sisa:</span>
+            <span className="font-bold text-amber-400">{formatRupiah(sisaVal)}</span>
+          </div>
+          <div className="flex justify-between gap-6">
+            <span className="text-slate-400">Penyerapan:</span>
+            <span className="font-bold text-blue-300">{percentage.toFixed(2)}%</span>
+          </div>
+        </div>
       </div>
     );
   }
@@ -92,12 +129,22 @@ export default function DashboardView({
   dokumens,
   rkaList,
   onNavigate,
-  onShowInfo
+  onShowInfo,
+  selectedYear
 }: DashboardProps) {
 
   // Calculate totals
   const totalPaguAll = useMemo(() => subKegiatans.reduce((sum, s) => sum + (s.pagu || 0), 0), [subKegiatans]);
   const totalRealisasiAll = useMemo(() => subKegiatans.reduce((sum, s) => sum + (s.realisasi || 0), 0), [subKegiatans]);
+
+  const programChartData = useMemo(() => {
+    return programs.map(p => ({
+      name: p.kode_program,
+      fullName: p.nama_program,
+      Pagu: p.pagu || 0,
+      Realisasi: p.realisasi || 0
+    }));
+  }, [programs]);
   
   const pkSubKegCodes = useMemo(() => new Set(pihakKetigas.map(p => p.kode_sub_kegiatan)), [pihakKetigas]);
   const totalPaguPK = useMemo(() => 
@@ -269,7 +316,7 @@ export default function DashboardView({
               <div>
                 <h3 className="font-bold text-slate-800 flex items-center gap-2">
                   <FolderLock size={18} className="text-blue-750" />
-                  Tren Realisasi Bulanan TA 2026
+                  Tren Realisasi Bulanan TA {selectedYear}
                 </h3>
                 <p className="text-slate-600 text-xs mt-1 font-medium">Grafik nominal realisasi penyerapan keuangan per bulan berjalan</p>
               </div>
@@ -387,6 +434,77 @@ export default function DashboardView({
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Perbandingan Pagu vs Realisasi per Program (Bar Chart) */}
+      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm animate-fade-in" id="chart-comparison-container">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+          <div>
+            <h3 className="font-bold text-slate-800 flex items-center gap-2">
+              <TrendingUp size={18} className="text-blue-700" />
+              Perbandingan Pagu vs Realisasi Keuangan per Program (TA {selectedYear})
+            </h3>
+            <p className="text-slate-600 text-xs mt-1 font-medium">
+              Analisis perbandingan antara ketetapan Pagu anggaran belanja dengan capaian Realisasi keuangan masing-masing program
+            </p>
+          </div>
+          {/* Quick legend and summary badges */}
+          <div className="flex items-center gap-3 text-xs">
+            <div className="flex items-center gap-1.5 px-2.5 py-1 bg-blue-50 text-blue-800 rounded-lg border border-blue-100 font-bold">
+              <span className="w-2.5 h-2.5 rounded bg-blue-600 shrink-0"></span>
+              Pagu
+            </div>
+            <div className="flex items-center gap-1.5 px-2.5 py-1 bg-emerald-50 text-emerald-800 rounded-lg border border-emerald-100 font-bold">
+              <span className="w-2.5 h-2.5 rounded bg-emerald-500 shrink-0"></span>
+              Realisasi
+            </div>
+          </div>
+        </div>
+
+        {programChartData.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-12 text-center border-2 border-dashed border-slate-200 rounded-xl">
+            <Layers size={32} className="text-slate-400 mb-2" />
+            <p className="text-slate-600 font-bold text-sm">Belum Ada Program Terdaftar untuk Tahun Anggaran {selectedYear}</p>
+            <p className="text-slate-400 text-xs mt-1">Silakan tambahkan data Program di menu Program atau sesuaikan tahun anggaran di kanan atas.</p>
+          </div>
+        ) : (
+          <div className="h-72 w-full text-[10px]" id="chart-comparison-recharts">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart
+                data={programChartData}
+                margin={{ top: 10, right: 10, left: -5, bottom: 5 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" opacity={0.5} />
+                <XAxis 
+                  dataKey="name" 
+                  tick={{ fill: '#475569', fontSize: 10, fontWeight: 700 }}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <YAxis 
+                  tickFormatter={formatYAxis} 
+                  tick={{ fill: '#475569', fontSize: 9, fontWeight: 600 }}
+                  axisLine={false}
+                  tickLine={false}
+                  width={42}
+                />
+                <RechartsTooltip content={<ComparisonTooltip />} cursor={{ fill: '#f1f5f9', opacity: 0.4 }} />
+                <Bar 
+                  dataKey="Pagu" 
+                  fill="#3b82f6" 
+                  radius={[4, 4, 0, 0]}
+                  maxBarSize={32}
+                />
+                <Bar 
+                  dataKey="Realisasi" 
+                  fill="#10b981" 
+                  radius={[4, 4, 0, 0]}
+                  maxBarSize={32}
+                />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        )}
       </div>
 
       {/* 3. Program & Kegiatan Progress Bars */}

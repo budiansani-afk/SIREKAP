@@ -35,6 +35,7 @@ import {
   Building,
   RotateCcw,
   AlertCircle,
+  AlertTriangle,
   Clock
 } from 'lucide-react';
 import { auth, db } from './firebase';
@@ -112,6 +113,23 @@ export default function App() {
   const [dokumens, setDokumens] = useState<DokumenArsip[]>([]);
   const [logs, setLogs] = useState<ActivityLog[]>([]);
   const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
+  const [selectedYear, setSelectedYear] = useState<number>(() => {
+    const saved = localStorage.getItem('sibiru_selected_year');
+    return saved ? Number(saved) : 2026;
+  });
+
+  useEffect(() => {
+    if (appSettings && !localStorage.getItem('sibiru_selected_year')) {
+      setSelectedYear(appSettings.tahun_anggaran_aktif || 2026);
+    }
+  }, [appSettings]);
+
+  const handleSelectYear = (year: number) => {
+    setSelectedYear(year);
+    localStorage.setItem('sibiru_selected_year', String(year));
+    showToast(`Tahun Anggaran aktif dialihkan ke ${year}`, 'success');
+  };
+
   const [seenLogsCount, setSeenLogsCount] = useState<number>(() => {
     return Number(localStorage.getItem('seen_logs_count') || 0);
   });
@@ -422,6 +440,48 @@ export default function App() {
     }
   }, [activePage, logs.length]);
 
+  const filteredPrograms = useMemo(() => {
+    return programs.filter(p => (p.tahun || 2026) === selectedYear);
+  }, [programs, selectedYear]);
+
+  const filteredKegiatans = useMemo(() => {
+    return kegiatans.filter(k => (k.tahun || 2026) === selectedYear);
+  }, [kegiatans, selectedYear]);
+
+  const filteredSubKegiatans = useMemo(() => {
+    return subKegiatans.filter(s => (s.tahun || 2026) === selectedYear);
+  }, [subKegiatans, selectedYear]);
+
+  const filteredRkaList = useMemo(() => {
+    return rkaList.filter(r => (r.tahun || 2026) === selectedYear);
+  }, [rkaList, selectedYear]);
+
+  const filteredRealisasis = useMemo(() => {
+    return realisasis.filter(r => {
+      if (r.tahun !== undefined) return r.tahun === selectedYear;
+      if (r.tanggal) {
+        try {
+          const y = new Date(r.tanggal).getFullYear();
+          if (!isNaN(y)) return y === selectedYear;
+        } catch (e) {}
+      }
+      return 2026 === selectedYear;
+    });
+  }, [realisasis, selectedYear]);
+
+  const filteredPihakKetigas = useMemo(() => {
+    return pihakKetigas.filter(p => {
+      if (p.tahun !== undefined) return p.tahun === selectedYear;
+      if (p.tanggal) {
+        try {
+          const y = new Date(p.tanggal).getFullYear();
+          if (!isNaN(y)) return y === selectedYear;
+        } catch (e) {}
+      }
+      return 2026 === selectedYear;
+    });
+  }, [pihakKetigas, selectedYear]);
+
   // Handle Authentication attempts
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -693,12 +753,12 @@ export default function App() {
       case "dashboard":
         return (
           <DashboardView 
-            programs={programs} 
-            kegiatans={kegiatans} 
-            subKegiatans={subKegiatans} 
-            rkaList={rkaList}
-            realisasis={realisasis} 
-            pihakKetigas={pihakKetigas}
+            programs={filteredPrograms} 
+            kegiatans={filteredKegiatans} 
+            subKegiatans={filteredSubKegiatans} 
+            rkaList={filteredRkaList}
+            realisasis={filteredRealisasis} 
+            pihakKetigas={filteredPihakKetigas}
             dokumens={dokumens}
             onNavigate={(page, tabDetail) => {
               setActivePage(page as any);
@@ -706,55 +766,63 @@ export default function App() {
                 setProgramActiveTab(tabDetail as any);
               }
             }}
+            selectedYear={selectedYear}
           />
         );
       case "program":
         return (
           <ProgramView 
-            programs={programs} 
-            kegiatans={kegiatans} 
-            subKegiatans={subKegiatans} 
-            rkaList={rkaList}
+            programs={filteredPrograms} 
+            kegiatans={filteredKegiatans} 
+            subKegiatans={filteredSubKegiatans} 
+            rkaList={filteredRkaList}
             currentUserRole={userRole} 
             currentUserEmail={user.email} 
             activeTab={programActiveTab}
             onChangeTab={setProgramActiveTab}
+            selectedYear={selectedYear}
           />
         );
       case "rka":
         return (
           <RkaView 
-            rkaList={rkaList} 
-            programs={programs} 
-            kegiatans={kegiatans} 
-            subKegiatans={subKegiatans} 
+            rkaList={filteredRkaList} 
+            programs={filteredPrograms} 
+            kegiatans={filteredKegiatans} 
+            subKegiatans={filteredSubKegiatans} 
+            allPrograms={programs}
+            allKegiatans={kegiatans}
+            allSubKegiatans={subKegiatans}
             currentUserRole={userRole} 
             currentUserEmail={user.email} 
+            selectedYear={selectedYear}
           />
         );
       case "realisasi":
         return (
           <RealisasiView 
-            realisasis={realisasis} 
-            rkaList={rkaList} 
-            programs={programs} 
-            kegiatans={kegiatans} 
-            subKegiatans={subKegiatans} 
+            realisasis={filteredRealisasis} 
+            rkaList={filteredRkaList} 
+            programs={filteredPrograms} 
+            kegiatans={filteredKegiatans} 
+            subKegiatans={filteredSubKegiatans} 
             currentUserRole={userRole} 
             currentUserEmail={user.email} 
             onShowToast={showToast}
+            selectedYear={selectedYear}
           />
         );
       case "pihakKetiga":
         return (
           <BelanjaPihakKetigaView 
-            pihakKetigas={pihakKetigas} 
-            programs={programs} 
-            kegiatans={kegiatans} 
-            subKegiatans={subKegiatans} 
-            rkaList={rkaList}
+            pihakKetigas={filteredPihakKetigas} 
+            programs={filteredPrograms} 
+            kegiatans={filteredKegiatans} 
+            subKegiatans={filteredSubKegiatans} 
+            rkaList={filteredRkaList}
             currentUserRole={userRole} 
             currentUserEmail={user.email} 
+            selectedYear={selectedYear}
           />
         );
       case "dokumen":
@@ -768,26 +836,27 @@ export default function App() {
       case "laporan":
         return (
           <LaporanView 
-            programs={programs} 
-            kegiatans={kegiatans} 
-            subKegiatans={subKegiatans} 
-            realisasis={realisasis} 
-            pihakKetigas={pihakKetigas} 
-            rkaList={rkaList}
+            programs={filteredPrograms} 
+            kegiatans={filteredKegiatans} 
+            subKegiatans={filteredSubKegiatans} 
+            realisasis={filteredRealisasis} 
+            pihakKetigas={filteredPihakKetigas} 
+            rkaList={filteredRkaList}
             settings={appSettings}
             currentUserEmail={user?.email || ''}
             currentUserRole={userRole}
             logs={logs}
+            selectedYear={selectedYear}
           />
         );
       case "analisis":
         return (
           <AnalisisView 
-            programs={programs} 
-            kegiatans={kegiatans} 
-            subKegiatans={subKegiatans} 
-            realisasis={realisasis} 
-            pihakKetigas={pihakKetigas}
+            programs={filteredPrograms} 
+            kegiatans={filteredKegiatans} 
+            subKegiatans={filteredSubKegiatans} 
+            realisasis={filteredRealisasis} 
+            pihakKetigas={filteredPihakKetigas}
           />
         );
       case "logs":
@@ -860,7 +929,7 @@ export default function App() {
             
             <div className="flex flex-col justify-center border-l border-slate-200 pl-3">
               <h1 className="text-sm sm:text-base md:text-md lg:text-[17px] font-black tracking-tight text-blue-900 uppercase">
-                SIREKAP TAHUN ANGGARAN 2026 - BIDANG PERTANAHAN
+                SIREKAP TAHUN ANGGARAN {selectedYear} - BIDANG PERTANAHAN
               </h1>
               <p className="text-[10px] sm:text-[11px] font-extrabold font-sans text-slate-500 tracking-wider uppercase mt-0.5">
                 Sistem Informasi Rekapitulasi, Evaluasi, dan Kinerja Anggaran Pertanahan
@@ -871,6 +940,22 @@ export default function App() {
 
         {/* Active Profile context and status indicators */}
         <div className="flex items-center gap-5">
+          {/* High-contrast Fiscal Year Dropdown Selector */}
+          <div className="flex items-center gap-1.5 px-3 py-1 bg-orange-50 border border-orange-200 rounded-lg shadow-3xs text-[11px] font-bold text-orange-950">
+            <span className="text-orange-800 uppercase tracking-wider text-[9px] font-black">Tahun Anggaran:</span>
+            <select
+              value={selectedYear}
+              onChange={(e) => handleSelectYear(Number(e.target.value))}
+              className="bg-transparent border-none font-black text-orange-900 outline-none cursor-pointer p-0.5 focus:ring-0 text-xs font-mono"
+            >
+              <option value="2024">2024</option>
+              <option value="2025">2025</option>
+              <option value="2026">2026</option>
+              <option value="2027">2027</option>
+              <option value="2028">2028</option>
+            </select>
+          </div>
+
           {currentDateTime && (
             <div className="hidden md:flex items-center gap-1.5 px-3 py-1 bg-slate-50 border border-slate-200/80 rounded-lg text-[11px] font-bold text-slate-600 font-mono select-none shadow-3xs hover:bg-slate-100/50 transition-colors">
               <Clock size={12} className="text-blue-600 animate-pulse shrink-0 animate-duration-1000" />

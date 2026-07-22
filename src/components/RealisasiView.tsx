@@ -29,6 +29,7 @@ interface RealisasiViewProps {
   currentUserRole: UserRole;
   currentUserEmail: string;
   onShowToast: (msg: string, type: 'success' | 'error') => void;
+  selectedYear: number;
 }
 
 export default function RealisasiView({
@@ -39,7 +40,8 @@ export default function RealisasiView({
   subKegiatans,
   currentUserRole,
   currentUserEmail,
-  onShowToast
+  onShowToast,
+  selectedYear
 }: RealisasiViewProps) {
   const [selectedMonth, setSelectedMonth] = useState('');
   const [selectedSubKeg, setSelectedSubKeg] = useState('');
@@ -370,6 +372,7 @@ export default function RealisasiView({
         id: docId,
         tanggal: formTanggal,
         bulan: formBulan,
+        tahun: editItem?.tahun || selectedYear,
         kode_program: linkedSub.kode_program,
         kode_kegiatan: linkedSub.kode_kegiatan,
         kode_sub_kegiatan: formSubKeg,

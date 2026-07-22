@@ -29,6 +29,7 @@ interface BelanjaPihakKetigaProps {
   rkaList: RKA[];
   currentUserRole: UserRole;
   currentUserEmail: string;
+  selectedYear: number;
 }
 
 export default function BelanjaPihakKetigaView({
@@ -38,7 +39,8 @@ export default function BelanjaPihakKetigaView({
   subKegiatans,
   rkaList,
   currentUserRole,
-  currentUserEmail
+  currentUserEmail,
+  selectedYear
 }: BelanjaPihakKetigaProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedSubKeg, setSelectedSubKeg] = useState('');
@@ -196,6 +198,7 @@ export default function BelanjaPihakKetigaView({
       const payload: BelanjaPihakKetiga = {
         id: docId,
         tanggal: formTanggal,
+        tahun: editItem?.tahun || selectedYear,
         kode_program: linkedSub.kode_program,
         kode_kegiatan: linkedSub.kode_kegiatan,
         kode_sub_kegiatan: formSubKeg,

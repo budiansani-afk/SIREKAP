@@ -27,6 +27,7 @@ interface LaporanViewProps {
   currentUserEmail: string;
   currentUserRole: UserRole;
   logs: ActivityLog[];
+  selectedYear: number;
 }
 
 type LaporanType = 
@@ -49,7 +50,8 @@ export default function LaporanView({
   settings,
   currentUserEmail,
   currentUserRole,
-  logs
+  logs,
+  selectedYear
 }: LaporanViewProps) {
   const [selectedLaporan, setSelectedLaporan] = useState<LaporanType>("rekap_anggaran");
   const [selectedMonth, setSelectedMonth] = useState<string>("Semua");
@@ -79,8 +81,8 @@ export default function LaporanView({
   }, []);
 
   const currentYearCode = useMemo(() => {
-    return String(new Date().getFullYear());
-  }, []);
+    return String(selectedYear);
+  }, [selectedYear]);
 
   // Official signature details derived from settings
   const namaPejabat = settings?.nama_pejabat_ttd || "Drs. H. BUDIAN SANI, M.Si";

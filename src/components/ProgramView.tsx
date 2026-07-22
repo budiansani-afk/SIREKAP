@@ -38,6 +38,7 @@ interface ProgramViewProps {
   currentUserEmail: string;
   activeTab: 'program' | 'kegiatan' | 'sub_kegiatan';
   onChangeTab: (tab: 'program' | 'kegiatan' | 'sub_kegiatan') => void;
+  selectedYear: number;
 }
 
 type ActiveTabType = 'program' | 'kegiatan' | 'sub_kegiatan';
@@ -50,7 +51,8 @@ export default function ProgramView({
   currentUserRole,
   currentUserEmail,
   activeTab,
-  onChangeTab
+  onChangeTab,
+  selectedYear
 }: ProgramViewProps) {
   const setActiveTab = onChangeTab;
   const [searchTerm, setSearchTerm] = useState('');
@@ -150,7 +152,7 @@ export default function ProgramView({
       if (activeTab === 'program') {
         collectionName = COLL_PROGRAM;
         logModule = "PROGRAM";
-        payload = { ...editItem, id: docId, kode_program: docId, nama_program: formNama.trim() };
+        payload = { ...editItem, id: docId, kode_program: docId, nama_program: formNama.trim(), tahun: editItem?.tahun || selectedYear };
         if (!editItem) {
           payload.pagu = formManualPagu;
           payload.realisasi = 0;
@@ -164,7 +166,7 @@ export default function ProgramView({
           alert("Harap pilih Program Atasan.");
           return;
         }
-        payload = { ...editItem, id: docId, kode_kegiatan: docId, nama_kegiatan: formNama.trim(), kode_program: formParentProgram };
+        payload = { ...editItem, id: docId, kode_kegiatan: docId, nama_kegiatan: formNama.trim(), kode_program: formParentProgram, tahun: editItem?.tahun || selectedYear };
         if (!editItem) {
           payload.pagu = formManualPagu;
           payload.realisasi = 0;
@@ -178,7 +180,7 @@ export default function ProgramView({
           alert("Harap lengkapi Program dan Kegiatan Atasan.");
           return;
         }
-        payload = { ...editItem, id: docId, kode_sub_kegiatan: docId, nama_sub_kegiatan: formNama.trim(), kode_program: formParentProgram, kode_kegiatan: formParentKegiatan };
+        payload = { ...editItem, id: docId, kode_sub_kegiatan: docId, nama_sub_kegiatan: formNama.trim(), kode_program: formParentProgram, kode_kegiatan: formParentKegiatan, tahun: editItem?.tahun || selectedYear };
         if (!editItem) {
           payload.pagu = formManualPagu;
           payload.realisasi = 0;

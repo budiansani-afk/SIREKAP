@@ -94,14 +94,15 @@ export async function synchronizeCalculations() {
     // Maps for faster loop aggregations
     // Sub-Kegiatan level calculations
     for (const sub of subKegiatans) {
+      const subYear = sub.tahun || 2026;
       // Find related RKA items
-      const subRka = rkaList.filter(r => r.kode_sub_kegiatan === sub.kode_sub_kegiatan);
+      const subRka = rkaList.filter(r => r.kode_sub_kegiatan === sub.kode_sub_kegiatan && (r.tahun || 2026) === subYear);
       // If there are RKA items, Pagu is the sum. Otherwise, keep the set pagu (or 0)
       const computedPagu = subRka.length > 0 ? subRka.reduce((sum, item) => sum + (item.jumlah || 0), 0) : (sub.pagu || 0);
 
       // Sum of related Realisasis
       const subRealisasi = realisasiList
-        .filter(r => r.kode_sub_kegiatan === sub.kode_sub_kegiatan)
+        .filter(r => r.kode_sub_kegiatan === sub.kode_sub_kegiatan && (r.tahun || 2026) === subYear)
         .reduce((sum, item) => sum + (item.nominal_realisasi || 0), 0);
 
       const sisa = computedPagu - subRealisasi;
@@ -131,7 +132,8 @@ export async function synchronizeCalculations() {
 
     // B. Kegiatan level calculations
     for (const keg of kegiatans) {
-      const childSubs = subKegiatans.filter(s => s.kode_kegiatan === keg.kode_kegiatan);
+      const kegYear = keg.tahun || 2026;
+      const childSubs = subKegiatans.filter(s => s.kode_kegiatan === keg.kode_kegiatan && (s.tahun || 2026) === kegYear);
       const computedPagu = childSubs.reduce((sum, item) => sum + (item.pagu || 0), 0);
       const computedRealisasi = childSubs.reduce((sum, item) => sum + (item.realisasi || 0), 0);
       const sisa = computedPagu - computedRealisasi;
@@ -160,7 +162,8 @@ export async function synchronizeCalculations() {
 
     // C. Program level calculations
     for (const prog of programs) {
-      const childKegs = kegiatans.filter(k => k.kode_program === prog.kode_program);
+      const progYear = prog.tahun || 2026;
+      const childKegs = kegiatans.filter(k => k.kode_program === prog.kode_program && (k.tahun || 2026) === progYear);
       if (childKegs.length === 0) continue;
 
       const computedPagu = childKegs.reduce((sum, item) => sum + (item.pagu || 0), 0);

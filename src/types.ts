@@ -12,6 +12,7 @@ export interface Program {
   realisasi: number;
   sisa: number;
   persentase: number;
+  tahun?: number;
 }
 
 export interface Kegiatan {
@@ -23,6 +24,7 @@ export interface Kegiatan {
   realisasi: number;
   sisa: number;
   persentase: number;
+  tahun?: number;
 }
 
 export interface SubKegiatan {
@@ -35,6 +37,7 @@ export interface SubKegiatan {
   realisasi: number;
   sisa: number;
   persentase: number;
+  tahun?: number;
 }
 
 export interface RKA {
@@ -70,6 +73,7 @@ export interface Realisasi {
   keterangan: string;
   bukti_transaksi?: string; // Base64 data url or name
   bukti_transaksi_public_id?: string; // Cloudinary public_id for real-time deletion
+  tahun?: number;
 }
 
 export interface BelanjaPihakKetiga {
@@ -87,6 +91,7 @@ export interface BelanjaPihakKetiga {
   catatan: string;
   foto_kegiatan?: string; // Base64 or Cloudinary secure URL
   foto_kegiatan_public_id?: string; // Cloudinary public_id
+  tahun?: number;
 }
 
 export interface DokumenArsip {

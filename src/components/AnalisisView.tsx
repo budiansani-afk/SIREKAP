@@ -60,7 +60,7 @@ export default function AnalisisView({
   }, [subKegiatans]);
 
   const totalRealisasi = useMemo(() => realisasis.reduce((sum, r) => sum + r.nominal_realisasi, 0), [realisasis]);
-  const totalPihakKetiga = useMemo(() => pihakKetigas.reduce((sum, p) => sum + (p.jumlah_realisasi || 0), 0), [pihakKetigas]);
+  const totalPihakKetiga = useMemo(() => pihakKetigas.reduce((sum, p) => sum + (p.realisasi || 0), 0), [pihakKetigas]);
   const rasioPihakKetiga = totalRealisasi > 0 ? (totalPihakKetiga / totalRealisasi) * 100 : 0;
 
   // Sorter progress ranking list representation
