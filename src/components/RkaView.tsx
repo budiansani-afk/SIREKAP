@@ -557,7 +557,7 @@ export default function RkaView({
             {subKegiatans
               .filter(s => filterKegiatan === '' || s.kode_kegiatan === filterKegiatan)
               .map((s, i) => (
-                <option key={i} value={s.kode_sub_kegiatan}>{s.kode_sub_kegiatan} - {(s.nama_sub_kegiatan || '').substring(0,25)}...</option>
+                <option key={i} value={s.kode_sub_kegiatan}>{s.kode_sub_kegiatan} - {s.nama_sub_kegiatan || ''}</option>
               ))
             }
           </select>
