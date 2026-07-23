@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import { 
   Plus, 
   Edit2, 
@@ -86,18 +86,25 @@ export default function ProgramView({
 
   // Copy Year states
   const [showCopyModal, setShowCopyModal] = useState(false);
-  const [copySourceYear, setCopySourceYear] = useState<number>(2026);
-  const [copyTargetYear, setCopyTargetYear] = useState<number>(2027);
+  const [copySourceYear, setCopySourceYear] = useState<number>(() => {
+    return selectedYear - 1;
+  });
   const [isCopying, setIsCopying] = useState(false);
 
-  useEffect(() => {
-    if (showCopyModal) {
-      setCopySourceYear(selectedYear);
-      setCopyTargetYear(selectedYear === 2026 ? 2027 : selectedYear + 1);
+  const availableYears = useMemo(() => {
+    const years = new Set<number>();
+    allPrograms?.forEach(p => years.add(p.tahun || 2026));
+    allKegiatans?.forEach(k => years.add(k.tahun || 2026));
+    allSubKegiatans?.forEach(s => years.add(s.tahun || 2026));
+    allRkaList?.forEach(r => years.add(r.tahun || 2026));
+    years.delete(selectedYear);
+    if (years.size === 0) {
+      [2025, 2026, 2027].forEach(y => {
+        if (y !== selectedYear) years.add(y);
+      });
     }
-  }, [showCopyModal, selectedYear]);
-
-  const listAllYears = [2025, 2026, 2027, 2028, 2029, 2030];
+    return Array.from(years).sort((a, b) => b - a);
+  }, [allPrograms, allKegiatans, allSubKegiatans, allRkaList, selectedYear]);
 
   const sourceStats = useMemo(() => {
     const progs = allPrograms?.filter(p => (p.tahun || 2026) === copySourceYear) || [];
@@ -359,22 +366,17 @@ export default function ProgramView({
   };
 
   const handleCloneYearData = async () => {
-    if (copySourceYear === copyTargetYear) {
-      alert("Tahun sumber dan tahun tujuan tidak boleh sama.");
-      return;
-    }
-
     if (sourceStats.progs === 0 && sourceStats.kegs === 0 && sourceStats.subs === 0 && sourceStats.rkas === 0) {
       const confirmSeed = window.confirm(
-        `Tahun sumber ${copySourceYear} tidak memiliki data anggaran. Apakah Anda ingin membuat Data Sampel Bidang Pertanahan ${copySourceYear} terlebih dahulu agar langsung disalin ke tahun aktif ${copyTargetYear}?`
+        `Tahun sumber ${copySourceYear} tidak memiliki data anggaran. Apakah Anda ingin membuat Data Sampel Bidang Pertanahan ${copySourceYear} terlebih dahulu agar langsung disalin ke tahun aktif ${selectedYear}?`
       );
       if (!confirmSeed) return;
 
       setIsCopying(true);
       try {
         await doSeedSourceYear(copySourceYear);
-        const stats = await doCloneYearData(copySourceYear, copyTargetYear);
-        alert(`Sukses menginisialisasi Data Sampel Pertanahan ${copySourceYear} & langsung menyalin ke tahun ${copyTargetYear}:\n- ${stats.copiedProgs} Program\n- ${stats.copiedKegs} Kegiatan\n- ${stats.copiedSubs} Sub-Kegiatan\n- ${stats.copiedRkas} Rincian RKA Belanja\n\nSemua kalkulasi pagu telah disinkronkan secara bottom-up.`);
+        const stats = await doCloneYearData(copySourceYear, selectedYear);
+        alert(`Sukses menginisialisasi Data Sampel Pertanahan ${copySourceYear} & langsung menyalin ke tahun ${selectedYear}:\n- ${stats.copiedProgs} Program\n- ${stats.copiedKegs} Kegiatan\n- ${stats.copiedSubs} Sub-Kegiatan\n- ${stats.copiedRkas} Rincian RKA Belanja\n\nSemua kalkulasi pagu telah disinkronkan secara bottom-up.`);
         setShowCopyModal(false);
       } catch (err) {
         console.error("Gagal menyalin data:", err);
@@ -386,15 +388,15 @@ export default function ProgramView({
     }
 
     const confirmClone = window.confirm(
-      `Apakah Anda yakin ingin menyalin ${sourceStats.progs} Program, ${sourceStats.kegs} Kegiatan, ${sourceStats.subs} Sub-Kegiatan, dan ${sourceStats.rkas} Rincian RKA Belanja dari tahun ${copySourceYear} ke tahun anggaran ${copyTargetYear}?`
+      `Apakah Anda yakin ingin menyalin ${sourceStats.progs} Program, ${sourceStats.kegs} Kegiatan, ${sourceStats.subs} Sub-Kegiatan, and ${sourceStats.rkas} Rincian RKA Belanja dari tahun ${copySourceYear} ke tahun anggaran aktif ${selectedYear}?`
     );
     if (!confirmClone) return;
 
     setIsCopying(true);
 
     try {
-      const stats = await doCloneYearData(copySourceYear, copyTargetYear);
-      alert(`Sukses menyalin data dari tahun ${copySourceYear} ke tahun ${copyTargetYear}:\n- ${stats.copiedProgs} Program\n- ${stats.copiedKegs} Kegiatan\n- ${stats.copiedSubs} Sub-Kegiatan\n- ${stats.copiedRkas} Rincian RKA Belanja\n\nSemua kalkulasi pagu telah disinkronkan secara bottom-up.`);
+      const stats = await doCloneYearData(copySourceYear, selectedYear);
+      alert(`Sukses menyalin data dari tahun ${copySourceYear} ke tahun ${selectedYear}:\n- ${stats.copiedProgs} Program\n- ${stats.copiedKegs} Kegiatan\n- ${stats.copiedSubs} Sub-Kegiatan\n- ${stats.copiedRkas} Rincian RKA Belanja\n\nSemua kalkulasi pagu telah disinkronkan secara bottom-up.`);
       setShowCopyModal(false);
     } catch (err) {
       console.error("Gagal menyalin data tahunan:", err);
@@ -745,39 +747,51 @@ export default function ProgramView({
                     <td colSpan={7} className="p-8 text-center text-slate-500 font-medium">Data program tidak ditemukan.</td>
                   </tr>
                 ) : (
-                  filteredPrograms.map((p, i) => (
-                    <tr key={i} className="hover:bg-slate-50/50 transition">
-                      <td className="p-3.5 pl-4 font-mono font-bold text-slate-900">{p.kode_program}</td>
-                      <td className="p-3.5 font-medium">
-                        <button 
-                          onClick={() => {
-                            setSelectedProgramFilter(p.kode_program);
-                            setActiveTab('kegiatan');
-                          }}
-                          className="hover:underline text-blue-700 hover:text-blue-800 text-left font-bold cursor-pointer transition flex items-center gap-1"
-                        >
-                          {p.nama_program}
-                          <ChevronRight size={14} className="text-blue-500 shrink-0 inline" />
-                        </button>
-                      </td>
-                      <td className="p-3.5 text-right font-bold text-slate-950">{formatRupiah(p.pagu)}</td>
-                      <td className="p-3.5 text-right text-emerald-800 font-semibold">{formatRupiah(p.realisasi)}</td>
-                      <td className="p-3.5 text-right font-medium text-slate-700">{formatRupiah(p.sisa)}</td>
-                      <td className="p-3.5 text-center">
-                        <span className={`px-2 py-0.5 rounded-full font-black text-[10px] ${p.persentase >= 80 ? 'bg-emerald-100 text-emerald-800' : p.persentase >= 50 ? 'bg-blue-100 text-blue-800' : 'bg-slate-100 text-slate-800'}`}>
-                          {p.persentase}%
-                        </span>
-                      </td>
-                      {canEdit && (
-                        <td className="p-3.5 text-center">
-                          <div className="flex items-center justify-center gap-1.5">
-                            <button onClick={() => openEditModal(p)} className="p-1.5 hover:bg-amber-100 text-amber-700 rounded transition" title="Edit"><Edit2 size={13} /></button>
-                            {canDelete && <button onClick={() => handleDelete(p)} className="p-1.5 hover:bg-red-100 text-red-700 rounded transition" title="Hapus"><Trash2 size={13} /></button>}
-                          </div>
+                  filteredPrograms.map((p, i) => {
+                    const rkaSumProg = rkaList.filter(r => 
+                      r.kode_program === p.kode_program || 
+                      subKegiatans.some(s => s.kode_program === p.kode_program && s.kode_sub_kegiatan === r.kode_sub_kegiatan)
+                    ).reduce((sum, item) => sum + (item.jumlah || 0), 0);
+
+                    const displayPagu = rkaSumProg > 0 ? rkaSumProg : (p.pagu || 0);
+                    const displayRealisasi = p.realisasi || 0;
+                    const displaySisa = Math.max(0, displayPagu - displayRealisasi);
+                    const displayPersentase = displayPagu > 0 ? parseFloat(((displayRealisasi / displayPagu) * 100).toFixed(2)) : 0;
+
+                    return (
+                      <tr key={i} className="hover:bg-slate-50/50 transition">
+                        <td className="p-3.5 pl-4 font-mono font-bold text-slate-900">{p.kode_program}</td>
+                        <td className="p-3.5 font-medium">
+                          <button 
+                            onClick={() => {
+                              setSelectedProgramFilter(p.kode_program);
+                              setActiveTab('kegiatan');
+                            }}
+                            className="hover:underline text-blue-700 hover:text-blue-800 text-left font-bold cursor-pointer transition flex items-center gap-1"
+                          >
+                            {p.nama_program}
+                            <ChevronRight size={14} className="text-blue-500 shrink-0 inline" />
+                          </button>
                         </td>
-                      )}
-                    </tr>
-                  ))
+                        <td className="p-3.5 text-right font-bold text-slate-950">{formatRupiah(displayPagu)}</td>
+                        <td className="p-3.5 text-right text-emerald-800 font-semibold">{formatRupiah(displayRealisasi)}</td>
+                        <td className="p-3.5 text-right font-medium text-slate-700">{formatRupiah(displaySisa)}</td>
+                        <td className="p-3.5 text-center">
+                          <span className={`px-2 py-0.5 rounded-full font-black text-[10px] ${displayPersentase >= 80 ? 'bg-emerald-100 text-emerald-800' : displayPersentase >= 50 ? 'bg-blue-100 text-blue-800' : 'bg-slate-100 text-slate-800'}`}>
+                            {displayPersentase}%
+                          </span>
+                        </td>
+                        {canEdit && (
+                          <td className="p-3.5 text-center">
+                            <div className="flex items-center justify-center gap-1.5">
+                              <button onClick={() => openEditModal(p)} className="p-1.5 hover:bg-amber-100 text-amber-700 rounded transition" title="Edit"><Edit2 size={13} /></button>
+                              {canDelete && <button onClick={() => handleDelete(p)} className="p-1.5 hover:bg-red-100 text-red-700 rounded transition" title="Hapus"><Trash2 size={13} /></button>}
+                            </div>
+                          </td>
+                        )}
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
@@ -803,41 +817,53 @@ export default function ProgramView({
                     <td colSpan={8} className="p-8 text-center text-slate-500 font-medium">Data kegiatan tidak ditemukan.</td>
                   </tr>
                 ) : (
-                  filteredKegiatans.map((k, i) => (
-                    <tr key={i} className="hover:bg-slate-50/50 transition">
-                      <td className="p-3.5 pl-4 font-mono font-bold text-slate-900">{k.kode_kegiatan}</td>
-                      <td className="p-3.5 font-medium">
-                        <button 
-                          onClick={() => {
-                            setSelectedProgramFilter(k.kode_program);
-                            setSearchTerm(k.kode_kegiatan);
-                            setActiveTab('sub_kegiatan');
-                          }}
-                          className="hover:underline text-blue-700 hover:text-blue-800 text-left font-bold cursor-pointer transition flex items-center gap-1"
-                        >
-                          {k.nama_kegiatan}
-                          <ChevronRight size={14} className="text-blue-500 shrink-0 inline" />
-                        </button>
-                      </td>
-                      <td className="p-3.5 font-mono text-slate-600">{k.kode_program}</td>
-                      <td className="p-3.5 text-right font-bold text-slate-950">{formatRupiah(k.pagu)}</td>
-                      <td className="p-3.5 text-right text-emerald-800 font-semibold">{formatRupiah(k.realisasi)}</td>
-                      <td className="p-3.5 text-right font-medium text-slate-700">{formatRupiah(k.sisa)}</td>
-                      <td className="p-3.5 text-center">
-                        <span className={`px-2 py-0.5 rounded-full font-black text-[10px] ${k.persentase >= 80 ? 'bg-emerald-100 text-emerald-800' : k.persentase >= 50 ? 'bg-blue-100 text-blue-800' : 'bg-slate-100 text-slate-800'}`}>
-                          {k.persentase}%
-                        </span>
-                      </td>
-                      {canEdit && (
-                        <td className="p-3.5 text-center">
-                          <div className="flex items-center justify-center gap-1.5">
-                            <button onClick={() => openEditModal(k)} className="p-1.5 hover:bg-amber-100 text-amber-700 rounded transition" title="Edit"><Edit2 size={13} /></button>
-                            {canDelete && <button onClick={() => handleDelete(k)} className="p-1.5 hover:bg-red-100 text-red-700 rounded transition" title="Hapus"><Trash2 size={13} /></button>}
-                          </div>
+                  filteredKegiatans.map((k, i) => {
+                    const rkaSumKeg = rkaList.filter(r => 
+                      r.kode_kegiatan === k.kode_kegiatan || 
+                      subKegiatans.some(s => s.kode_kegiatan === k.kode_kegiatan && s.kode_sub_kegiatan === r.kode_sub_kegiatan)
+                    ).reduce((sum, item) => sum + (item.jumlah || 0), 0);
+
+                    const displayPagu = rkaSumKeg > 0 ? rkaSumKeg : (k.pagu || 0);
+                    const displayRealisasi = k.realisasi || 0;
+                    const displaySisa = Math.max(0, displayPagu - displayRealisasi);
+                    const displayPersentase = displayPagu > 0 ? parseFloat(((displayRealisasi / displayPagu) * 100).toFixed(2)) : 0;
+
+                    return (
+                      <tr key={i} className="hover:bg-slate-50/50 transition">
+                        <td className="p-3.5 pl-4 font-mono font-bold text-slate-900">{k.kode_kegiatan}</td>
+                        <td className="p-3.5 font-medium">
+                          <button 
+                            onClick={() => {
+                              setSelectedProgramFilter(k.kode_program);
+                              setSearchTerm(k.kode_kegiatan);
+                              setActiveTab('sub_kegiatan');
+                            }}
+                            className="hover:underline text-blue-700 hover:text-blue-800 text-left font-bold cursor-pointer transition flex items-center gap-1"
+                          >
+                            {k.nama_kegiatan}
+                            <ChevronRight size={14} className="text-blue-500 shrink-0 inline" />
+                          </button>
                         </td>
-                      )}
-                    </tr>
-                  ))
+                        <td className="p-3.5 font-mono text-slate-600">{k.kode_program}</td>
+                        <td className="p-3.5 text-right font-bold text-slate-950">{formatRupiah(displayPagu)}</td>
+                        <td className="p-3.5 text-right text-emerald-800 font-semibold">{formatRupiah(displayRealisasi)}</td>
+                        <td className="p-3.5 text-right font-medium text-slate-700">{formatRupiah(displaySisa)}</td>
+                        <td className="p-3.5 text-center">
+                          <span className={`px-2 py-0.5 rounded-full font-black text-[10px] ${displayPersentase >= 80 ? 'bg-emerald-100 text-emerald-800' : displayPersentase >= 50 ? 'bg-blue-100 text-blue-800' : 'bg-slate-100 text-slate-800'}`}>
+                            {displayPersentase}%
+                          </span>
+                        </td>
+                        {canEdit && (
+                          <td className="p-3.5 text-center">
+                            <div className="flex items-center justify-center gap-1.5">
+                              <button onClick={() => openEditModal(k)} className="p-1.5 hover:bg-amber-100 text-amber-700 rounded transition" title="Edit"><Edit2 size={13} /></button>
+                              {canDelete && <button onClick={() => handleDelete(k)} className="p-1.5 hover:bg-red-100 text-red-700 rounded transition" title="Hapus"><Trash2 size={13} /></button>}
+                            </div>
+                          </td>
+                        )}
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
@@ -863,39 +889,50 @@ export default function ProgramView({
                     <td colSpan={8} className="p-8 text-center text-slate-500 font-medium">Data sub-kegiatan tidak ditemukan.</td>
                   </tr>
                 ) : (
-                  filteredSubKegiatans.map((s, i) => (
-                    <tr key={i} className="hover:bg-slate-50/50 transition">
-                      <td className="p-3.5 pl-4 font-mono font-bold text-slate-900">{s.kode_sub_kegiatan}</td>
-                      <td className="p-3.5 font-medium">
-                        <button 
-                          onClick={() => {
-                            setSelectedSubKegiatanRka(s);
-                          }}
-                          className="hover:underline text-orange-600 hover:text-orange-700 text-left font-bold cursor-pointer transition flex items-center gap-1.5"
-                        >
-                          {s.nama_sub_kegiatan}
-                          <span className="text-[9px] bg-orange-100 text-orange-800 px-1.5 py-0.5 rounded font-black tracking-wider uppercase shrink-0">Rincian RKA</span>
-                        </button>
-                      </td>
-                      <td className="p-3.5 font-mono text-slate-600">{s.kode_kegiatan}</td>
-                      <td className="p-3.5 text-right font-bold text-slate-950">{formatRupiah(s.pagu)}</td>
-                      <td className="p-3.5 text-right text-emerald-800 font-semibold">{formatRupiah(s.realisasi)}</td>
-                      <td className="p-3.5 text-right font-medium text-slate-700">{formatRupiah(s.sisa)}</td>
-                      <td className="p-3.5 text-center">
-                        <span className={`px-2 py-0.5 rounded-full font-black text-[10px] ${s.persentase >= 80 ? 'bg-emerald-100 text-emerald-800' : s.persentase >= 50 ? 'bg-blue-100 text-blue-800' : 'bg-slate-100 text-slate-800'}`}>
-                          {s.persentase}%
-                        </span>
-                      </td>
-                      {canEdit && (
-                        <td className="p-3.5 text-center">
-                          <div className="flex items-center justify-center gap-1.5">
-                            <button onClick={() => openEditModal(s)} className="p-1.5 hover:bg-amber-100 text-amber-700 rounded transition" title="Edit"><Edit2 size={13} /></button>
-                            {canDelete && <button onClick={() => handleDelete(s)} className="p-1.5 hover:bg-red-100 text-red-700 rounded transition" title="Hapus"><Trash2 size={13} /></button>}
-                          </div>
+                  filteredSubKegiatans.map((s, i) => {
+                    const rkaSumSub = rkaList.filter(r => 
+                      r.kode_sub_kegiatan === s.kode_sub_kegiatan
+                    ).reduce((sum, item) => sum + (item.jumlah || 0), 0);
+
+                    const displayPagu = rkaSumSub > 0 ? rkaSumSub : (s.pagu || 0);
+                    const displayRealisasi = s.realisasi || 0;
+                    const displaySisa = Math.max(0, displayPagu - displayRealisasi);
+                    const displayPersentase = displayPagu > 0 ? parseFloat(((displayRealisasi / displayPagu) * 100).toFixed(2)) : 0;
+
+                    return (
+                      <tr key={i} className="hover:bg-slate-50/50 transition">
+                        <td className="p-3.5 pl-4 font-mono font-bold text-slate-900">{s.kode_sub_kegiatan}</td>
+                        <td className="p-3.5 font-medium">
+                          <button 
+                            onClick={() => {
+                              setSelectedSubKegiatanRka(s);
+                            }}
+                            className="hover:underline text-orange-600 hover:text-orange-700 text-left font-bold cursor-pointer transition flex items-center gap-1.5"
+                          >
+                            {s.nama_sub_kegiatan}
+                            <span className="text-[9px] bg-orange-100 text-orange-800 px-1.5 py-0.5 rounded font-black tracking-wider uppercase shrink-0">Rincian RKA</span>
+                          </button>
                         </td>
-                      )}
-                    </tr>
-                  ))
+                        <td className="p-3.5 font-mono text-slate-600">{s.kode_kegiatan}</td>
+                        <td className="p-3.5 text-right font-bold text-slate-950">{formatRupiah(displayPagu)}</td>
+                        <td className="p-3.5 text-right text-emerald-800 font-semibold">{formatRupiah(displayRealisasi)}</td>
+                        <td className="p-3.5 text-right font-medium text-slate-700">{formatRupiah(displaySisa)}</td>
+                        <td className="p-3.5 text-center">
+                          <span className={`px-2 py-0.5 rounded-full font-black text-[10px] ${displayPersentase >= 80 ? 'bg-emerald-100 text-emerald-800' : displayPersentase >= 50 ? 'bg-blue-100 text-blue-800' : 'bg-slate-100 text-slate-800'}`}>
+                            {displayPersentase}%
+                          </span>
+                        </td>
+                        {canEdit && (
+                          <td className="p-3.5 text-center">
+                            <div className="flex items-center justify-center gap-1.5">
+                              <button onClick={() => openEditModal(s)} className="p-1.5 hover:bg-amber-100 text-amber-700 rounded transition" title="Edit"><Edit2 size={13} /></button>
+                              {canDelete && <button onClick={() => handleDelete(s)} className="p-1.5 hover:bg-red-100 text-red-700 rounded transition" title="Hapus"><Trash2 size={13} /></button>}
+                            </div>
+                          </td>
+                        )}
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
@@ -1139,41 +1176,26 @@ export default function ProgramView({
               <div className="bg-blue-50/50 p-4 rounded-xl border border-blue-100 flex gap-3">
                 <HelpCircle className="text-blue-700 shrink-0 mt-0.5" size={16} />
                 <div>
-                  <p className="font-semibold text-blue-900">Salin Data Master & Struktur Anggaran</p>
+                  <p className="font-semibold text-blue-900">Salin Data Master Tahun Sebelumnya</p>
                   <p className="text-[11px] text-slate-500 mt-1">
-                    Fitur ini akan menyalin seluruh Program, Kegiatan, Sub-Kegiatan, beserta detail Rincian RKA Belanja dari tahun sumber ke tahun anggaran tujuan pilihan Anda.
+                    Fitur ini akan menyalin seluruh Program, Kegiatan, Sub-Kegiatan, beserta detail Rincian RKA Belanja dari tahun sumber ke tahun anggaran aktif ({selectedYear}).
                   </p>
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <label className="block text-slate-700 font-bold">Tahun Sumber *</label>
-                  <select
-                    value={copySourceYear}
-                    onChange={(e) => setCopySourceYear(Number(e.target.value))}
-                    disabled={isCopying}
-                    className="w-full p-2.5 rounded-lg border border-slate-200 outline-blue-600 focus:border-blue-600 bg-slate-50 font-semibold cursor-pointer"
-                  >
-                    {listAllYears.map((yr) => (
-                      <option key={yr} value={yr}>Tahun {yr}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="space-y-2">
-                  <label className="block text-slate-700 font-bold">Tahun Tujuan *</label>
-                  <select
-                    value={copyTargetYear}
-                    onChange={(e) => setCopyTargetYear(Number(e.target.value))}
-                    disabled={isCopying}
-                    className="w-full p-2.5 rounded-lg border border-slate-200 outline-blue-600 focus:border-blue-600 bg-slate-50 font-semibold cursor-pointer"
-                  >
-                    {listAllYears.map((yr) => (
-                      <option key={yr} value={yr}>Tahun {yr}</option>
-                    ))}
-                  </select>
-                </div>
+              <div className="space-y-2">
+                <label className="block text-slate-700 font-bold">Pilih Tahun Sumber Anggaran *</label>
+                <select
+                  value={copySourceYear}
+                  onChange={(e) => setCopySourceYear(Number(e.target.value))}
+                  disabled={isCopying}
+                  className="w-full p-2.5 rounded-lg border border-slate-200 outline-blue-600 focus:border-blue-600 bg-slate-50 font-semibold"
+                >
+                  <option value="">-- Pilih Tahun Sumber --</option>
+                  {availableYears.map((yr, idx) => (
+                    <option key={idx} value={yr}>Tahun Anggaran {yr}</option>
+                  ))}
+                </select>
               </div>
 
               {/* Dynamic Stats Preview */}
@@ -1257,7 +1279,7 @@ export default function ProgramView({
                 ) : (
                   <>
                     <CheckCircle size={14} />
-                    Tempel ke {copyTargetYear}
+                    Tempel ke {selectedYear}
                   </>
                 )}
               </button>

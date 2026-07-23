@@ -327,6 +327,8 @@ export default function BelanjaPihakKetigaView({
         </div>
       </div>
 
+
+
       {/* Main Table Layout */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden" id="mon-table-panel">
         <div className="grid grid-cols-1 divide-y divide-slate-100" id="mon-cards-container">
@@ -379,15 +381,46 @@ export default function BelanjaPihakKetigaView({
                     <p className="text-slate-600">Kontrak: <span className="font-mono text-slate-800">{m.nomor_kontrak || '-'}</span></p>
                   </div>
 
-                  <div className="flex gap-4">
-                     <div className="bg-slate-100 p-2 rounded text-[10px]">
-                        <p className="font-bold text-slate-600">Realisasi</p>
-                        <p className="font-black text-blue-900">{formatRupiah(m.realisasi)}</p>
-                     </div>
-                     <div className="bg-slate-100 p-2 rounded text-[10px]">
-                        <p className="font-bold text-slate-600">Masa Kerja</p>
-                        <p className="font-mono text-slate-700">{m.masa_kerja_mulai || '-'} s/d {m.masa_kerja_selesai || '-'}</p>
-                     </div>
+                  <div className="flex flex-wrap gap-2 text-[10px]">
+                     {(() => {
+                       const rkaMatch = rkaList.find(r => 
+                         (r.kode_sub_kegiatan === m.kode_sub_kegiatan && r.uraian_belanja === m.uraian_belanja) ||
+                         r.uraian_belanja === m.uraian_belanja
+                       );
+                       
+                       const rkaSumForSub = rkaList
+                         .filter(r => r.kode_sub_kegiatan === m.kode_sub_kegiatan)
+                         .reduce((acc, curr) => acc + (curr.jumlah || 0), 0);
+
+                       const linkedSub = subKegiatans.find(s => s.kode_sub_kegiatan === m.kode_sub_kegiatan);
+                       
+                       const paguRka = rkaMatch?.jumlah 
+                         ? rkaMatch.jumlah 
+                         : (rkaSumForSub > 0 ? rkaSumForSub : (linkedSub?.pagu || 0));
+
+                       const sisaPaguSub = Math.max(0, paguRka - m.realisasi);
+
+                       return (
+                         <>
+                           <div className="bg-blue-50/80 border border-blue-100 p-2 rounded-lg min-w-[120px]">
+                              <p className="font-bold text-blue-900 uppercase">Pagu Rincian RKA</p>
+                              <p className="font-mono font-extrabold text-blue-950 text-xs mt-0.5">{formatRupiah(paguRka)}</p>
+                           </div>
+                           <div className="bg-emerald-50/80 border border-emerald-100 p-2 rounded-lg min-w-[120px]">
+                              <p className="font-bold text-emerald-900 uppercase">Nilai Realisasi</p>
+                              <p className="font-mono font-extrabold text-emerald-950 text-xs mt-0.5">{formatRupiah(m.realisasi)}</p>
+                           </div>
+                           <div className="bg-amber-50/80 border border-amber-100 p-2 rounded-lg min-w-[120px]">
+                              <p className="font-bold text-amber-900 uppercase">Sisa Pagu RKA</p>
+                              <p className="font-mono font-extrabold text-amber-950 text-xs mt-0.5">{formatRupiah(sisaPaguSub)}</p>
+                           </div>
+                           <div className="bg-slate-100 border border-slate-200 p-2 rounded-lg flex-1 min-w-[140px]">
+                              <p className="font-bold text-slate-600 uppercase">Masa Kerja</p>
+                              <p className="font-mono text-slate-800 font-semibold mt-0.5">{m.masa_kerja_mulai || '-'} s/d {m.masa_kerja_selesai || '-'}</p>
+                           </div>
+                         </>
+                       );
+                     })()}
                   </div>
 
                   <div className="bg-slate-50 p-2 rounded border border-slate-100 text-xs">

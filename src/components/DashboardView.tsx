@@ -133,8 +133,11 @@ export default function DashboardView({
   selectedYear
 }: DashboardProps) {
 
-  // Calculate totals
-  const totalPaguAll = useMemo(() => subKegiatans.reduce((sum, s) => sum + (s.pagu || 0), 0), [subKegiatans]);
+  // Calculate totals (prefer sum of RKA rincian belanja if available)
+  const totalPaguRka = useMemo(() => rkaList.reduce((sum, r) => sum + (r.jumlah || 0), 0), [rkaList]);
+  const totalPaguSub = useMemo(() => subKegiatans.reduce((sum, s) => sum + (s.pagu || 0), 0), [subKegiatans]);
+  const totalPaguAll = totalPaguRka > 0 ? totalPaguRka : totalPaguSub;
+
   const totalRealisasiAll = useMemo(() => subKegiatans.reduce((sum, s) => sum + (s.realisasi || 0), 0), [subKegiatans]);
 
   const programChartData = useMemo(() => {
@@ -146,14 +149,59 @@ export default function DashboardView({
     }));
   }, [programs]);
   
-  const pkSubKegCodes = useMemo(() => new Set(pihakKetigas.map(p => p.kode_sub_kegiatan)), [pihakKetigas]);
-  const totalPaguPK = useMemo(() => 
-    subKegiatans.filter(s => pkSubKegCodes.has(s.kode_sub_kegiatan)).reduce((sum, s) => sum + (s.pagu || 0), 0),
-    [subKegiatans, pkSubKegCodes]
-  );
+  const totalPaguPK = useMemo(() => {
+    if (!pihakKetigas || pihakKetigas.length === 0) return 0;
+
+    const matchedRkaKeys = new Set<string>();
+    const matchedSubKeys = new Set<string>();
+    let total = 0;
+
+    for (const p of pihakKetigas) {
+      const rkaMatch = rkaList.find(r => 
+        (r.kode_sub_kegiatan === p.kode_sub_kegiatan && r.uraian_belanja === p.uraian_belanja) ||
+        (p.uraian_belanja && r.uraian_belanja === p.uraian_belanja)
+      );
+
+      if (rkaMatch) {
+        const key = `${rkaMatch.kode_sub_kegiatan}_${rkaMatch.uraian_belanja}`;
+        if (!matchedRkaKeys.has(key)) {
+          matchedRkaKeys.add(key);
+          total += (rkaMatch.jumlah || 0);
+        }
+      } else if (p.kode_sub_kegiatan) {
+        const rkaSumForSub = rkaList
+          .filter(r => r.kode_sub_kegiatan === p.kode_sub_kegiatan)
+          .reduce((acc, curr) => acc + (curr.jumlah || 0), 0);
+
+        if (rkaSumForSub > 0) {
+          if (!matchedSubKeys.has(p.kode_sub_kegiatan)) {
+            matchedSubKeys.add(p.kode_sub_kegiatan);
+            total += rkaSumForSub;
+          }
+        } else {
+          if (!matchedSubKeys.has(p.kode_sub_kegiatan)) {
+            matchedSubKeys.add(p.kode_sub_kegiatan);
+            const sub = subKegiatans.find(s => s.kode_sub_kegiatan === p.kode_sub_kegiatan);
+            total += (sub?.pagu || 0);
+          }
+        }
+      }
+    }
+
+    if (total === 0) {
+      const pkSubKegCodes = new Set(pihakKetigas.map(p => p.kode_sub_kegiatan).filter(Boolean));
+      const totalPaguRkaPK = rkaList.filter(r => pkSubKegCodes.has(r.kode_sub_kegiatan)).reduce((sum, r) => sum + (r.jumlah || 0), 0);
+      const totalPaguSubPK = subKegiatans.filter(s => pkSubKegCodes.has(s.kode_sub_kegiatan)).reduce((sum, s) => sum + (s.pagu || 0), 0);
+      total = totalPaguRkaPK > 0 ? totalPaguRkaPK : totalPaguSubPK;
+    }
+
+    return total;
+  }, [pihakKetigas, rkaList, subKegiatans]);
+  
+  // Realisasi Pihak Ketiga dihitung langsung dari total belanja/kontrak pihak ketiga
   const totalRealisasiPK = useMemo(() => 
-    subKegiatans.filter(s => pkSubKegCodes.has(s.kode_sub_kegiatan)).reduce((sum, s) => sum + (s.realisasi || 0), 0),
-    [subKegiatans, pkSubKegCodes]
+    pihakKetigas.reduce((sum, p) => sum + (Number(p.realisasi) || 0), 0),
+    [pihakKetigas]
   );
   
   const totalPaguNonPK = Math.max(0, totalPaguAll - totalPaguPK);
@@ -230,6 +278,72 @@ export default function DashboardView({
           </button>
         </div>
       )}
+
+      {/* Ringkasan Utama Info Pagu Anggaran */}
+      <div className="bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 text-white p-5 rounded-2xl shadow-md border border-blue-800 space-y-4" id="dashboard-pagu-banner">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/10 pb-3">
+          <div>
+            <span className="text-[10px] uppercase font-mono font-extrabold tracking-widest text-blue-300 bg-blue-950/80 px-2.5 py-1 rounded-full border border-blue-700/50">
+              Pagu Anggaran TA {selectedYear}
+            </span>
+            <h2 className="text-xl font-black font-display mt-1 text-white flex items-center gap-2">
+              <DollarSign size={20} className="text-emerald-400" />
+              Informasi Pagu Anggaran &amp; Realisasi
+            </h2>
+          </div>
+          <div className="text-right">
+            <p className="text-[10px] text-slate-300 font-medium">Total Pagu Terdaftar DPA</p>
+            <p className="text-xl font-black font-mono text-emerald-400">{formatRupiah(totalPaguAll)}</p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+          <div className="bg-white/10 backdrop-blur-xs p-3 rounded-xl border border-white/10 space-y-1">
+            <div className="flex justify-between text-slate-300 text-[11px] font-bold">
+              <span>Keseluruhan Pagu</span>
+              <span className="text-emerald-400 font-mono">{persentaseSerapanAll.toFixed(1)}%</span>
+            </div>
+            <p className="text-base font-black font-mono text-white">{formatRupiah(totalPaguAll)}</p>
+            <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden mt-1">
+              <div className="bg-emerald-400 h-full rounded-full" style={{ width: `${Math.min(persentaseSerapanAll, 100)}%` }} />
+            </div>
+            <div className="flex justify-between text-[10px] text-slate-300 pt-1">
+              <span>Realisasi: {formatRupiah(totalRealisasiAll)}</span>
+              <span>Sisa: {formatRupiah(totalSisaAll)}</span>
+            </div>
+          </div>
+
+          <div className="bg-white/10 backdrop-blur-xs p-3 rounded-xl border border-white/10 space-y-1">
+            <div className="flex justify-between text-slate-300 text-[11px] font-bold">
+              <span>Pagu Non-Pihak Ketiga</span>
+              <span className="text-blue-300 font-mono">{persentaseSerapanNonPK.toFixed(1)}%</span>
+            </div>
+            <p className="text-base font-black font-mono text-white">{formatRupiah(totalPaguNonPK)}</p>
+            <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden mt-1">
+              <div className="bg-blue-400 h-full rounded-full" style={{ width: `${Math.min(persentaseSerapanNonPK, 100)}%` }} />
+            </div>
+            <div className="flex justify-between text-[10px] text-slate-300 pt-1">
+              <span>Realisasi: {formatRupiah(totalRealisasiNonPK)}</span>
+              <span>Sisa: {formatRupiah(totalSisaNonPK)}</span>
+            </div>
+          </div>
+
+          <div className="bg-white/10 backdrop-blur-xs p-3 rounded-xl border border-white/10 space-y-1">
+            <div className="flex justify-between text-slate-300 text-[11px] font-bold">
+              <span>Pagu Pihak Ketiga</span>
+              <span className="text-amber-300 font-mono">{persentaseSerapanPK.toFixed(1)}%</span>
+            </div>
+            <p className="text-base font-black font-mono text-white">{formatRupiah(totalPaguPK)}</p>
+            <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden mt-1">
+              <div className="bg-amber-400 h-full rounded-full" style={{ width: `${Math.min(persentaseSerapanPK, 100)}%` }} />
+            </div>
+            <div className="flex justify-between text-[10px] text-slate-300 pt-1">
+              <span>Realisasi: {formatRupiah(totalRealisasiPK)}</span>
+              <span>Sisa: {formatRupiah(totalSisaPK)}</span>
+            </div>
+          </div>
+        </div>
+      </div>
 
       {/* Stats Cards */}
       <div className="space-y-4" id="stats-grid">
