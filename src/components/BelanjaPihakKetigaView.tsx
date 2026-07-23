@@ -150,16 +150,8 @@ export default function BelanjaPihakKetigaView({
   // Submit Form
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formSubKeg || !formDetailBelanja || !formNamaPelaksana || formRealisasi < 0) {
-      alert("Harap lengkapi semua field bertanda *");
-      return;
-    }
 
     const linkedSub = subKegiatans.find(s => s.kode_sub_kegiatan === formSubKeg);
-    if (!linkedSub) {
-      alert("Kode Sub-Kegiatan tidak valid!");
-      return;
-    }
 
     setIsSaving(true);
     try {
@@ -179,7 +171,7 @@ export default function BelanjaPihakKetigaView({
 
         // Upload the new image to Cloudinary
         const originalExtension = formFotoFile.name.split('.').pop() || 'png';
-        const customFileName = `Foto_Belanja_${formSubKeg}_${Date.now()}.${originalExtension}`;
+        const customFileName = `Foto_Belanja_${formSubKeg || 'pihak_ketiga'}_${Date.now()}.${originalExtension}`;
         const uploadRes = await uploadFile(formFotoFile, "sirekap_pihak_ketiga", customFileName);
         cloudinaryUrl = uploadRes.secure_url;
         cloudinaryPublicId = uploadRes.public_id;
@@ -197,20 +189,20 @@ export default function BelanjaPihakKetigaView({
       const docId = editItem ? editItem.id : `pihak_ketiga_${Date.now()}`;
       const payload: BelanjaPihakKetiga = {
         id: docId,
-        tanggal: formTanggal,
+        tanggal: formTanggal || new Date().toISOString().substring(0, 10),
         tahun: editItem?.tahun || selectedYear,
-        kode_program: linkedSub.kode_program,
-        kode_kegiatan: linkedSub.kode_kegiatan,
-        kode_sub_kegiatan: formSubKeg,
-        uraian_belanja: formDetailBelanja.trim(),
-        nama_pelaksana: formNamaPelaksana.trim(),
-        nomor_kontrak: formNomorKontrak.trim(),
-        masa_kerja_mulai: formMasaKerjaMulai,
-        masa_kerja_selesai: formMasaKerjaSelesai,
-        realisasi: formRealisasi,
-        catatan: formCatatan.trim(),
-        foto_kegiatan: cloudinaryUrl || undefined,
-        foto_kegiatan_public_id: cloudinaryPublicId || undefined
+        kode_program: linkedSub?.kode_program || editItem?.kode_program || '',
+        kode_kegiatan: linkedSub?.kode_kegiatan || editItem?.kode_kegiatan || '',
+        kode_sub_kegiatan: formSubKeg || '',
+        uraian_belanja: formDetailBelanja ? formDetailBelanja.trim() : '',
+        nama_pelaksana: formNamaPelaksana ? formNamaPelaksana.trim() : '',
+        nomor_kontrak: formNomorKontrak ? formNomorKontrak.trim() : '',
+        masa_kerja_mulai: formMasaKerjaMulai || '',
+        masa_kerja_selesai: formMasaKerjaSelesai || '',
+        realisasi: Number(formRealisasi) || 0,
+        catatan: formCatatan ? formCatatan.trim() : '',
+        foto_kegiatan: cloudinaryUrl || '',
+        foto_kegiatan_public_id: cloudinaryPublicId || ''
       };
 
       await setDoc(doc(db, COLL_BELANJA_PIHAK_KETIGA, docId), payload).catch(err => handleFirestoreError(err, OperationType.WRITE, `${COLL_BELANJA_PIHAK_KETIGA}/${docId}`));
@@ -438,21 +430,19 @@ export default function BelanjaPihakKetigaView({
               
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-slate-700 font-bold mb-1">Tanggal *</label>
+                  <label className="block text-slate-700 font-bold mb-1">Tanggal</label>
                   <input 
                     type="date"
                     value={formTanggal}
                     onChange={(e) => setFormTanggal(e.target.value)}
-                    required
                     className="w-full p-2.5 border border-slate-200 rounded-lg outline-blue-600 font-mono text-[11px]"
                   />
                 </div>
                 <div>
-                  <label className="block text-slate-700 font-bold mb-1">Pilih Sub-Kegiatan *</label>
+                  <label className="block text-slate-700 font-bold mb-1">Pilih Sub-Kegiatan</label>
                   <select
                     value={formSubKeg}
                     onChange={(e) => setFormSubKeg(e.target.value)}
-                    required
                     className="w-full p-2.5 border border-slate-200 rounded-lg outline-blue-600 focus:border-blue-600"
                   >
                     <option value="">-- Pilih Sub-Kegiatan --</option>
@@ -464,11 +454,10 @@ export default function BelanjaPihakKetigaView({
               </div>
 
               <div>
-                <label className="block text-slate-700 font-bold mb-1">Detail Belanja (E-RKA) *</label>
+                <label className="block text-slate-700 font-bold mb-1">Detail Belanja (E-RKA)</label>
                 <select
                   value={formDetailBelanja}
                   onChange={(e) => setFormDetailBelanja(e.target.value)}
-                  required
                   className="w-full p-2.5 border border-slate-200 rounded-lg focus:outline-blue-600"
                 >
                   <option value="">-- Pilih Detail Belanja E-RKA --</option>
@@ -482,12 +471,12 @@ export default function BelanjaPihakKetigaView({
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-slate-700 font-bold mb-1">Nama Pelaksana *</label>
+                  <label className="block text-slate-700 font-bold mb-1">Nama Pelaksana</label>
                   <input 
                     type="text"
                     value={formNamaPelaksana}
                     onChange={(e) => setFormNamaPelaksana(e.target.value)}
-                    required
+                    placeholder="Contoh: PT Swadaya / CV Maju"
                     className="w-full p-2.5 border border-slate-200 rounded-lg focus:outline-blue-600"
                   />
                 </div>
@@ -524,12 +513,11 @@ export default function BelanjaPihakKetigaView({
               </div>
 
               <div>
-                <label className="block text-slate-700 font-bold mb-1">Nilai Realisasi (Rp) *</label>
+                <label className="block text-slate-700 font-bold mb-1">Nilai Realisasi (Rp)</label>
                 <input 
                   type="number"
                   value={formRealisasi}
                   onChange={(e) => setFormRealisasi(Number(e.target.value))}
-                  required
                   className="w-full p-2.5 border border-slate-200 rounded-lg focus:outline-blue-600 font-bold text-blue-900"
                 />
               </div>
