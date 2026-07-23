@@ -160,9 +160,21 @@ export default function RkaView({
   // RKA Filter Logic
   const filteredRka = useMemo(() => {
     return rkaList.filter(r => {
-      const matchSearch = (r && r.uraian_belanja ? String(r.uraian_belanja).toLowerCase().includes(searchTerm.toLowerCase()) : false) || 
-                          (r && r.kode_rekening ? String(r.kode_rekening).toLowerCase().includes(searchTerm.toLowerCase()) : false) ||
-                          (r && r.kode_sub_kegiatan ? String(r.kode_sub_kegiatan).toLowerCase().includes(searchTerm.toLowerCase()) : false);
+      const term = searchTerm.toLowerCase().trim();
+      const progObj = programs.find(p => p.kode_program === r.kode_program);
+      const kegObj = kegiatans.find(k => k.kode_kegiatan === r.kode_kegiatan);
+      const subObj = subKegiatans.find(s => s.kode_sub_kegiatan === r.kode_sub_kegiatan);
+
+      const matchSearch = !term || 
+                          (r.uraian_belanja && r.uraian_belanja.toLowerCase().includes(term)) || 
+                          (r.kode_rekening && r.kode_rekening.toLowerCase().includes(term)) ||
+                          (r.kode_sub_kegiatan && r.kode_sub_kegiatan.toLowerCase().includes(term)) ||
+                          (r.kode_kegiatan && r.kode_kegiatan.toLowerCase().includes(term)) ||
+                          (r.kode_program && r.kode_program.toLowerCase().includes(term)) ||
+                          (progObj && progObj.nama_program && progObj.nama_program.toLowerCase().includes(term)) ||
+                          (kegObj && kegObj.nama_kegiatan && kegObj.nama_kegiatan.toLowerCase().includes(term)) ||
+                          (subObj && subObj.nama_sub_kegiatan && subObj.nama_sub_kegiatan.toLowerCase().includes(term));
+
       const matchTahun = filterTahun === '' || (r && String(r.tahun) === filterTahun);
       const matchProgram = filterProgram === '' || (r && r.kode_program === filterProgram);
       const matchKegiatan = filterKegiatan === '' || (r && r.kode_kegiatan === filterKegiatan);
@@ -170,7 +182,7 @@ export default function RkaView({
 
       return matchSearch && matchTahun && matchProgram && matchKegiatan && matchSub;
     });
-  }, [rkaList, searchTerm, filterTahun, filterProgram, filterKegiatan, filterSubKegiatan]);
+  }, [rkaList, searchTerm, filterTahun, filterProgram, filterKegiatan, filterSubKegiatan, programs, kegiatans, subKegiatans]);
 
   // Total anggaran hasil filter
   const totalAnggaranFiltered = useMemo(() => {
@@ -230,7 +242,22 @@ export default function RkaView({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formSubKegiatan || !formUraian.trim()) {
-      alert("Harap lengkapi semua field bertanda *");
+      alert("Harap lengkapi semua field bertanda * (Sub-Kegiatan & Uraian Belanja wajib diisi)");
+      return;
+    }
+
+    if (isNaN(formVolume) || formVolume <= 0) {
+      alert("Volume belanja wajib diisi dan harus lebih besar dari 0!");
+      return;
+    }
+
+    if (isNaN(formHarga) || formHarga < 0) {
+      alert("Harga satuan tidak boleh bernilai negatif!");
+      return;
+    }
+
+    if (computedJumlah <= 0 || isNaN(computedJumlah)) {
+      alert("Nilai nominal anggaran total wajib lebih besar dari Rp 0 (tidak boleh 0 atau negatif)!");
       return;
     }
 
@@ -487,14 +514,74 @@ export default function RkaView({
     );
   };
 
-  // Export tables
-  const handleExportRka = () => {
+  // Export tables to Excel (.xlsx)
+  const handleExportRkaExcel = () => {
+    if (filteredRka.length === 0) {
+      alert("Tidak ada data rincian belanja yang sesuai filter untuk diekspor!");
+      return;
+    }
+
+    const formattedData = filteredRka.map((r, idx) => {
+      const progObj = programs.find(p => p.kode_program === r.kode_program);
+      const kegObj = kegiatans.find(k => k.kode_kegiatan === r.kode_kegiatan);
+      const subObj = subKegiatans.find(s => s.kode_sub_kegiatan === r.kode_sub_kegiatan);
+
+      return {
+        'No': idx + 1,
+        'Tahun Anggaran': r.tahun,
+        'Kode Program': r.kode_program || '',
+        'Nama Program': progObj?.nama_program || '',
+        'Kode Kegiatan': r.kode_kegiatan || '',
+        'Nama Kegiatan': kegObj?.nama_kegiatan || '',
+        'Kode Sub-Kegiatan': r.kode_sub_kegiatan || '',
+        'Nama Sub-Kegiatan': subObj?.nama_sub_kegiatan || '',
+        'Kode Rekening Belanja': r.kode_rekening || '',
+        'Uraian Rincian Belanja': r.uraian_belanja || '',
+        'Volume': r.volume || 0,
+        'Satuan': r.satuan || '',
+        'Harga Satuan (Rp)': r.harga_satuan || 0,
+        'Jumlah Total Anggaran (Rp)': r.jumlah || 0,
+        'Alokasi TW I (Rp)': r.tw1 || 0,
+        'Alokasi TW II (Rp)': r.tw2 || 0,
+        'Alokasi TW III (Rp)': r.tw3 || 0,
+        'Alokasi TW IV (Rp)': r.tw4 || 0,
+      };
+    });
+
+    const worksheet = XLSX.utils.json_to_sheet(formattedData);
+    worksheet['!cols'] = [
+      { wch: 5 },
+      { wch: 14 },
+      { wch: 15 },
+      { wch: 30 },
+      { wch: 18 },
+      { wch: 30 },
+      { wch: 20 },
+      { wch: 35 },
+      { wch: 22 },
+      { wch: 45 },
+      { wch: 10 },
+      { wch: 12 },
+      { wch: 18 },
+      { wch: 22 },
+      { wch: 18 },
+      { wch: 18 },
+      { wch: 18 },
+      { wch: 18 },
+    ];
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Rincian_Belanja_eRKA');
+    XLSX.writeFile(workbook, `Laporan_Rincian_Belanja_eRKA_${filterTahun || selectedYear}.xlsx`);
+  };
+
+  const handleExportRkaCSV = () => {
     const exportHeaders = [
       'tahun', 'kode_program', 'kode_kegiatan', 'kode_sub_kegiatan', 
       'kode_rekening', 'uraian_belanja', 'volume', 'satuan', 'harga_satuan', 
       'jumlah', 'tw1', 'tw2', 'tw3', 'tw4'
     ];
-    exportToCSV(filteredRka, exportHeaders, 'Rencana_Belanja_RKA_Pertanahan_2026');
+    exportToCSV(filteredRka, exportHeaders, `Rencana_Belanja_RKA_Pertanahan_${filterTahun || selectedYear}`);
   };
 
   return (
@@ -532,11 +619,20 @@ export default function RkaView({
             </button>
           )}
           <button 
-            onClick={handleExportRka}
+            onClick={handleExportRkaExcel}
+            className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 rounded-lg border border-emerald-300 transition cursor-pointer"
+            title="Ekspor ke Format Excel (.xlsx)"
+          >
+            <FileSpreadsheet size={14} className="text-emerald-700" />
+            Ekspor Excel (.xlsx)
+          </button>
+          <button 
+            onClick={handleExportRkaCSV}
             className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 rounded-lg border border-slate-200 transition cursor-pointer"
+            title="Ekspor ke Format CSV"
           >
             <Download size={14} />
-            Ekspor CSV
+            CSV
           </button>
           {canEdit && (
             <button 
@@ -805,14 +901,18 @@ export default function RkaView({
 
               <div className="grid grid-cols-3 gap-3 bg-slate-50 p-3 rounded-lg border border-slate-100">
                 <div>
-                  <label className="block text-slate-700 font-bold mb-1">Volume</label>
+                  <label className="block text-slate-700 font-bold mb-1">Volume *</label>
                   <input 
                     type="number" 
                     value={formVolume} 
-                    onChange={(e) => setFormVolume(Math.max(1, Number(e.target.value)))} 
+                    onChange={(e) => setFormVolume(Number(e.target.value))} 
                     min={1}
-                    className="w-full p-2 border border-slate-200 rounded-lg bg-white"
+                    required
+                    className={`w-full p-2 border rounded-lg bg-white ${formVolume <= 0 ? 'border-red-400 focus:outline-red-600' : 'border-slate-200'}`}
                   />
+                  {formVolume <= 0 && (
+                    <p className="text-[10px] text-red-600 font-bold mt-1">Volume harus &gt; 0</p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-slate-700 font-bold mb-1">Satuan</label>
@@ -832,14 +932,22 @@ export default function RkaView({
                     onChange={(e) => setFormHarga(Number(e.target.value))} 
                     min={0}
                     required
-                    className="w-full p-2 border border-slate-200 rounded-lg bg-white"
+                    className={`w-full p-2 border rounded-lg bg-white ${formHarga < 0 ? 'border-red-400 focus:outline-red-600' : 'border-slate-200'}`}
                   />
+                  {formHarga < 0 && (
+                    <p className="text-[10px] text-red-600 font-bold mt-1">Harga tidak boleh negatif!</p>
+                  )}
                 </div>
               </div>
 
-              <div className="p-3 bg-blue-50 text-blue-900 rounded-lg flex justify-between items-center font-bold">
-                <span>Alokasi Total:</span>
-                <span className="text-base text-blue-700">{formatRupiah(computedJumlah)}</span>
+              <div className={`p-3 rounded-lg flex justify-between items-center font-bold ${computedJumlah <= 0 ? 'bg-red-50 text-red-900 border border-red-200' : 'bg-blue-50 text-blue-900'}`}>
+                <span>Alokasi Total Anggaran:</span>
+                <div className="text-right">
+                  <span className={`text-base ${computedJumlah <= 0 ? 'text-red-700 font-mono' : 'text-blue-700 font-mono'}`}>{formatRupiah(computedJumlah)}</span>
+                  {computedJumlah <= 0 && (
+                    <p className="text-[10px] text-red-600 font-semibold">Nominal anggaran wajib diisi &amp; tidak boleh 0/negatif</p>
+                  )}
+                </div>
               </div>
 
 
