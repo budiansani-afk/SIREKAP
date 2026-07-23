@@ -744,7 +744,8 @@ export default function RkaView({
           <table className="w-full text-left border-collapse text-xs">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-100 font-semibold text-slate-600">
-                <th className="p-3 pl-4 w-12">TA</th>
+                <th className="p-3 pl-4 w-12 text-center">No.</th>
+                <th className="p-3 w-12">TA</th>
                 <th className="p-3 w-40">Sub Kegiatan / Rekening</th>
                 <th className="p-3 min-w-[220px]">Uraian Detail Belanja</th>
                 <th className="p-3 text-center w-16">Vol</th>
@@ -757,12 +758,13 @@ export default function RkaView({
             <tbody className="divide-y divide-slate-100 text-slate-700">
               {filteredRka.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="p-8 text-center text-slate-500 font-semibold">Tabel Rencana Kerja Anggaran kosong / Saring filter lain.</td>
+                  <td colSpan={canEdit ? 9 : 8} className="p-8 text-center text-slate-500 font-semibold">Tabel Rencana Kerja Anggaran kosong / Saring filter lain.</td>
                 </tr>
               ) : (
                 filteredRka.map((r, i) => (
-                  <tr key={i} className="hover:bg-slate-50/50 transition antialiased">
-                    <td className="p-3 pl-4 font-mono font-bold text-slate-900">{r.tahun}</td>
+                  <tr key={r.id || i} className="hover:bg-slate-50/50 transition antialiased">
+                    <td className="p-3 pl-4 text-center font-bold text-slate-500 font-mono text-[11px]">{i + 1}</td>
+                    <td className="p-3 font-mono font-bold text-slate-900">{r.tahun}</td>
                     <td className="p-3">
                       <p className="font-bold text-slate-900 font-mono text-[11px] whitespace-normal break-all">{r.kode_sub_kegiatan}</p>
                       <span className="text-[10px] text-slate-500 font-mono font-medium whitespace-normal break-all">{r.kode_rekening || '-'}</span>
