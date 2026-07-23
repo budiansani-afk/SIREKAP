@@ -584,7 +584,7 @@ export default function RealisasiView({
           <select value={selectedSubKeg} onChange={(e) => { setSelectedSubKeg(e.target.value); setSelectedErikaFilter(''); }} className="p-2 border border-slate-200 bg-white rounded-lg w-48 outline-blue-600 font-medium text-slate-800">
             <option value="">Semua Sub Kegiatan</option>
             {subKegiatans.map((s, idx) => (
-              <option key={idx} value={s.kode_sub_kegiatan}>{s.kode_sub_kegiatan} - {(s.nama_sub_kegiatan || '').substring(0, 20)}...</option>
+              <option key={idx} value={s.kode_sub_kegiatan}>{s.kode_sub_kegiatan} - {s.nama_sub_kegiatan || ''}</option>
             ))}
           </select>
 
@@ -864,7 +864,7 @@ export default function RealisasiView({
                 >
                   <option value="">-- Pilih Sub-Kegiatan --</option>
                   {subKegiatans.map((s, idx) => (
-                    <option key={idx} value={s.kode_sub_kegiatan}>{s.kode_sub_kegiatan} - {(s.nama_sub_kegiatan || '').substring(0,35)}...</option>
+                    <option key={idx} value={s.kode_sub_kegiatan}>{s.kode_sub_kegiatan} - {s.nama_sub_kegiatan || ''}</option>
                   ))}
                 </select>
               </div>

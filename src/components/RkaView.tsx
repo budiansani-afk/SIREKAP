@@ -12,7 +12,9 @@ import {
   CheckCircle,
   XCircle,
   AlertCircle,
-  Copy
+  Copy,
+  Database,
+  BookOpen
 } from 'lucide-react';
 import { RKA, Program, Kegiatan, SubKegiatan, UserRole } from '../types';
 import { formatRupiah, exportToCSV } from '../utils/helpers';
@@ -33,6 +35,17 @@ interface RkaViewProps {
   currentUserEmail: string;
   selectedYear: number;
 }
+
+const DEFAULT_MASTER_RINCIAN = [
+  { uraian: 'Belanja Alat/Bahan untuk Kegiatan Kantor- Bahan Cetak', kode_rekening: '5.1.02.01.01.0026', satuan: 'Paket', harga_satuan: 15000000 },
+  { uraian: 'Belanja Alat/Bahan untuk Kegiatan Kantor- Alat Tulis Kantor', kode_rekening: '5.1.02.01.01.0024', satuan: 'Paket', harga_satuan: 10000000 },
+  { uraian: 'Belanja Jasa Tenaga Admin / Operator Komputer', kode_rekening: '5.1.02.02.01.0026', satuan: 'OB', harga_satuan: 2500000 },
+  { uraian: 'Belanja Perjalanan Dinas Dalam Daerah (SPD)', kode_rekening: '5.1.02.04.01.0001', satuan: 'OH', harga_satuan: 380000 },
+  { uraian: 'Belanja Makanan dan Minuman Rapat/Tamu', kode_rekening: '5.1.02.01.01.0052', satuan: 'Porsi', harga_satuan: 45000 },
+  { uraian: 'Belanja Honorarium Tim Pelaksana Kegiatan', kode_rekening: '5.1.02.02.01.0001', satuan: 'OB', harga_satuan: 500000 },
+  { uraian: 'Belanja Jasa Pengukuran & Pemetaan Pertanahan', kode_rekening: '5.1.02.02.01.0030', satuan: 'Bidang', harga_satuan: 250000 },
+  { uraian: 'Belanja Pemeliharaan Peralatan dan Mesin', kode_rekening: '5.1.02.03.01.0010', satuan: 'Unit', harga_satuan: 5000000 },
+];
 
 export default function RkaView({
   rkaList,
@@ -59,6 +72,33 @@ export default function RkaView({
   const [detailItem, setDetailItem] = useState<RKA | null>(null);
   const [editItem, setEditItem] = useState<RKA | null>(null);
   const [showImportModal, setShowImportModal] = useState(false);
+  const [showMasterModal, setShowMasterModal] = useState(false);
+  const [searchMasterTerm, setSearchMasterTerm] = useState('');
+
+  // Master Data Detail Belanja (dikumpulkan dari e-RKA input & katalog)
+  const masterRincianList = useMemo(() => {
+    const map = new Map<string, { uraian: string; kode_rekening: string; satuan: string; harga_satuan: number }>();
+    
+    DEFAULT_MASTER_RINCIAN.forEach(item => {
+      map.set(item.uraian.trim().toLowerCase(), item);
+    });
+
+    rkaList.forEach(r => {
+      if (r.uraian_belanja && r.uraian_belanja.trim()) {
+        const key = r.uraian_belanja.trim().toLowerCase();
+        if (!map.has(key)) {
+          map.set(key, {
+            uraian: r.uraian_belanja.trim(),
+            kode_rekening: r.kode_rekening || '',
+            satuan: r.satuan || 'Paket',
+            harga_satuan: r.harga_satuan || 0
+          });
+        }
+      }
+    });
+
+    return Array.from(map.values()).sort((a, b) => a.uraian.localeCompare(b.uraian));
+  }, [rkaList]);
 
   // Form Fields
   const [formTahun, setFormTahun] = useState<number>(selectedYear);
@@ -470,6 +510,13 @@ export default function RkaView({
           <p className="text-xs text-slate-500 mt-1">Daftar pagu rincian belanja, pembagian anggaran termin Triwulan, dan import-export excel bulanan.</p>
         </div>
         <div className="flex flex-wrap gap-2 shrink-0">
+          <button
+            onClick={() => setShowMasterModal(true)}
+            className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-blue-900 bg-blue-50 hover:bg-blue-100 rounded-lg border border-blue-200 transition cursor-pointer"
+          >
+            <Database size={14} className="text-blue-700" />
+            Master Detail Belanja ({masterRincianList.length})
+          </button>
           {canEdit && (
             <button
               onClick={() => {
@@ -522,7 +569,7 @@ export default function RkaView({
           <select value={filterProgram} onChange={(e) => { setFilterProgram(e.target.value); setFilterKegiatan(''); setFilterSubKegiatan(''); }} className="w-full p-2 border border-slate-200 rounded-md">
             <option value="">Semua Program</option>
             {programs.map((p, i) => (
-              <option key={i} value={p.kode_program}>{p.kode_program} - {(p.nama_program || '').substring(0,25)}...</option>
+              <option key={i} value={p.kode_program}>{p.kode_program} - {p.nama_program || ''}</option>
             ))}
           </select>
         </div>
@@ -539,7 +586,7 @@ export default function RkaView({
             {kegiatans
               .filter(k => filterProgram === '' || k.kode_program === filterProgram)
               .map((k, i) => (
-                <option key={i} value={k.kode_kegiatan}>{k.kode_kegiatan} - {(k.nama_kegiatan || '').substring(0,25)}...</option>
+                <option key={i} value={k.kode_kegiatan}>{k.kode_kegiatan} - {k.nama_kegiatan || ''}</option>
               ))
             }
           </select>
@@ -688,10 +735,48 @@ export default function RkaView({
                   >
                     <option value="">-- Pilih Sub-Kegiatan --</option>
                     {subKegiatans.map((sk, id) => (
-                      <option key={id} value={sk.kode_sub_kegiatan}>{sk.kode_sub_kegiatan} - {(sk.nama_sub_kegiatan || '').substring(0,35)}...</option>
+                      <option key={id} value={sk.kode_sub_kegiatan}>{sk.kode_sub_kegiatan} - {sk.nama_sub_kegiatan || ''}</option>
                     ))}
                   </select>
                 </div>
+              </div>
+
+              {/* Master Data Droplist Selector */}
+              <div className="p-3 bg-blue-50/80 rounded-xl border border-blue-100 space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="block text-blue-950 font-bold flex items-center gap-1.5 text-xs">
+                    <BookOpen size={14} className="text-blue-700" />
+                    Pilih dari Droplist Master Data Detail Belanja
+                  </label>
+                  <span className="text-[10px] bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full font-semibold">
+                    {masterRincianList.length} Master Tersedia
+                  </span>
+                </div>
+                <select
+                  onChange={(e) => {
+                    const selectedVal = e.target.value;
+                    if (!selectedVal) return;
+                    const match = masterRincianList.find(m => m.uraian === selectedVal);
+                    if (match) {
+                      setFormUraian(match.uraian);
+                      if (match.kode_rekening) setFormRekening(match.kode_rekening);
+                      if (match.satuan) setFormSatuan(match.satuan);
+                      if (match.harga_satuan > 0) setFormHarga(match.harga_satuan);
+                    }
+                  }}
+                  defaultValue=""
+                  className="w-full p-2 text-xs border border-blue-200 rounded-lg bg-white font-medium text-slate-800 outline-blue-600 focus:border-blue-600 cursor-pointer"
+                >
+                  <option value="">-- Pilih Droplist Master (Otomatis Isi Uraian, Rekening, Satuan & Harga) --</option>
+                  {masterRincianList.map((m, idx) => (
+                    <option key={idx} value={m.uraian}>
+                      {m.uraian} {m.kode_rekening ? `[${m.kode_rekening}]` : ''} - {formatRupiah(m.harga_satuan)}/{m.satuan}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[10px] text-slate-500">
+                  * Memilih droplist master akan mengisi bidang otomatis. Anda juga dapat mengetik manual pada kolom di bawah.
+                </p>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -706,14 +791,14 @@ export default function RkaView({
                   />
                 </div>
                 <div>
-                  <label className="block text-slate-700 font-bold mb-1">Uraian Belanja *</label>
+                  <label className="block text-slate-700 font-bold mb-1">Uraian Belanja (Manual / Droplist) *</label>
                   <input 
                     type="text" 
-                    placeholder="Contoh: Belanja Cetak Peta Bidang Pertanahan Bima"
+                    placeholder="Input manual atau pilih dari droplist master di atas..."
                     value={formUraian} 
                     onChange={(e) => setFormUraian(e.target.value)} 
                     required 
-                    className="w-full p-2 border border-slate-200 rounded-lg outline-blue-600 focus:border-blue-600"
+                    className="w-full p-2 border border-slate-200 rounded-lg outline-blue-600 focus:border-blue-600 font-medium"
                   />
                 </div>
               </div>
@@ -920,6 +1005,93 @@ export default function RkaView({
                 </div>
               )}
 
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Master Data Catalog Modal */}
+      {showMasterModal && (
+        <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white rounded-xl shadow-xl border border-slate-100 max-w-2xl w-full overflow-hidden flex flex-col max-h-[85vh]">
+            <div className="p-4 bg-gradient-to-r from-blue-900 to-indigo-950 text-white flex items-center justify-between shrink-0">
+              <h3 className="font-bold flex items-center gap-2 text-sm">
+                <Database size={18} />
+                Master Data Detail Belanja ({masterRincianList.length} Item)
+              </h3>
+              <button onClick={() => setShowMasterModal(false)} className="text-white hover:text-white/80 font-bold text-lg">&times;</button>
+            </div>
+
+            <div className="p-4 space-y-3 overflow-y-auto flex-1 text-xs">
+              <div className="flex items-center gap-2 bg-slate-50 p-2 rounded-lg border border-slate-200">
+                <Search size={16} className="text-slate-400 shrink-0" />
+                <input
+                  type="text"
+                  placeholder="Cari uraian belanja atau kode rekening master..."
+                  value={searchMasterTerm}
+                  onChange={(e) => setSearchMasterTerm(e.target.value)}
+                  className="w-full bg-transparent text-xs text-slate-800 outline-none"
+                />
+              </div>
+
+              <div className="overflow-x-auto border border-slate-200 rounded-lg">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-slate-100 border-b border-slate-200 text-slate-700 font-bold">
+                      <th className="p-2.5">No</th>
+                      <th className="p-2.5">Kode Rekening</th>
+                      <th className="p-2.5">Uraian Belanja</th>
+                      <th className="p-2.5">Satuan</th>
+                      <th className="p-2.5 text-right">Harga Satuan</th>
+                      {canEdit && <th className="p-2.5 text-center">Aksi</th>}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {masterRincianList
+                      .filter(m => 
+                        !searchMasterTerm || 
+                        m.uraian.toLowerCase().includes(searchMasterTerm.toLowerCase()) || 
+                        m.kode_rekening.toLowerCase().includes(searchMasterTerm.toLowerCase())
+                      )
+                      .map((item, idx) => (
+                        <tr key={idx} className="hover:bg-slate-50 transition">
+                          <td className="p-2.5 text-slate-400 font-mono text-[11px]">{idx + 1}</td>
+                          <td className="p-2.5 font-mono text-blue-900 font-semibold">{item.kode_rekening || '-'}</td>
+                          <td className="p-2.5 font-medium text-slate-800">{item.uraian}</td>
+                          <td className="p-2.5 text-slate-600">{item.satuan}</td>
+                          <td className="p-2.5 text-right font-bold text-emerald-700">{formatRupiah(item.harga_satuan)}</td>
+                          {canEdit && (
+                            <td className="p-2.5 text-center">
+                              <button
+                                onClick={() => {
+                                  openAddModal();
+                                  setFormUraian(item.uraian);
+                                  if (item.kode_rekening) setFormRekening(item.kode_rekening);
+                                  if (item.satuan) setFormSatuan(item.satuan);
+                                  if (item.harga_satuan) setFormHarga(item.harga_satuan);
+                                  setShowMasterModal(false);
+                                }}
+                                className="px-2.5 py-1 text-[11px] font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-md cursor-pointer transition"
+                              >
+                                Gunakan
+                              </button>
+                            </td>
+                          )}
+                        </tr>
+                      ))
+                    }
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="p-3 bg-slate-50 border-t border-slate-200 flex justify-end shrink-0">
+              <button
+                onClick={() => setShowMasterModal(false)}
+                className="px-4 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-100"
+              >
+                Tutup
+              </button>
             </div>
           </div>
         </div>

@@ -312,7 +312,7 @@ export default function BelanjaPihakKetigaView({
         <select value={selectedSubKeg} onChange={(e) => setSelectedSubKeg(e.target.value)} className="p-2 border border-slate-200 bg-white rounded-lg flex-1 max-w-sm focus:outline-blue-600">
           <option value="">Semua Sub-Kegiatan</option>
           {subKegiatans.map((s, idx) => (
-            <option key={idx} value={s.kode_sub_kegiatan}>{s.kode_sub_kegiatan} - {(s.nama_sub_kegiatan || '').substring(0, 35)}...</option>
+            <option key={idx} value={s.kode_sub_kegiatan}>{s.kode_sub_kegiatan} - {s.nama_sub_kegiatan || ''}</option>
           ))}
         </select>
 
@@ -457,7 +457,7 @@ export default function BelanjaPihakKetigaView({
                   >
                     <option value="">-- Pilih Sub-Kegiatan --</option>
                     {subKegiatans.map((s, idx) => (
-                      <option key={idx} value={s.kode_sub_kegiatan}>{s.kode_sub_kegiatan} - {(s.nama_sub_kegiatan || '').substring(0,30)}...</option>
+                      <option key={idx} value={s.kode_sub_kegiatan}>{s.kode_sub_kegiatan} - {s.nama_sub_kegiatan || ''}</option>
                     ))}
                   </select>
                 </div>
