@@ -192,8 +192,17 @@ export default function RealisasiView({
           }
         }
       });
+    data.sort((a, b) => {
+      const timeA = a.tanggal && a.tanggal !== '-' ? new Date(a.tanggal).getTime() : Infinity;
+      const timeB = b.tanggal && b.tanggal !== '-' ? new Date(b.tanggal).getTime() : Infinity;
+      if (timeA !== timeB) {
+        return timeA - timeB;
+      }
+      return (a.id || '').localeCompare(b.id || '');
+    });
+
     return data;
-  }, [rkaList, filteredRealisasis, selectedRealisasiStatus, selectedSubKeg]);
+  }, [rkaList, filteredRealisasis, selectedRealisasiStatus, selectedSubKeg, selectedErikaFilter]);
 
   const summaryTotals = useMemo(() => {
     let totalReal = 0;
@@ -617,7 +626,8 @@ export default function RealisasiView({
           <table className="w-full text-left border-collapse text-xs">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-100 font-semibold text-slate-600">
-                <th className="p-3.5 pl-4 w-32">Tanggal / Bulan</th>
+                <th className="p-3.5 pl-4 w-12 text-center">No.</th>
+                <th className="p-3.5 w-32">Tanggal / Bulan</th>
                 <th className="p-3.5 w-48">Sub Kegiatan</th>
                 <th className="p-3.5">Uraian / Keterangan</th>
                 <th className="p-3.5 text-right w-36">Pagu Anggaran</th>
@@ -629,7 +639,7 @@ export default function RealisasiView({
             <tbody className="divide-y divide-slate-100 text-slate-700">
               {tableData.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="p-8 text-center text-slate-500 font-semibold">Tabel realisasi kosong / Atur saringan filter.</td>
+                  <td colSpan={canEdit ? 8 : 7} className="p-8 text-center text-slate-500 font-semibold">Tabel realisasi kosong / Atur saringan filter.</td>
                 </tr>
               ) : (
                 tableData.map((r, i) => {
@@ -638,10 +648,11 @@ export default function RealisasiView({
                   
                   return (
                     <tr 
-                      key={i} 
+                      key={r.id || i} 
                       className="hover:bg-slate-50/50 transition antialiased"
                     >
-                      <td className="p-3.5 pl-4">
+                      <td className="p-3.5 pl-4 text-center font-bold text-slate-500 font-mono text-[11px]">{i + 1}</td>
+                      <td className="p-3.5">
                         <p className="font-bold text-slate-900 flex items-center gap-1 font-mono text-[11px]"><Calendar size={12} className="text-blue-800" />{r.tanggal}</p>
                         <span className="text-[10px] text-slate-500 font-semibold uppercase">{r.bulan}</span>
                       </td>
