@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Plus, 
   Edit2, 
@@ -9,7 +9,10 @@ import {
   Layers, 
   FolderLock, 
   ShieldCheck,
-  Briefcase
+  Briefcase,
+  Copy,
+  CheckCircle,
+  HelpCircle
 } from 'lucide-react';
 import { Program, Kegiatan, SubKegiatan, UserRole, RKA } from '../types';
 import { formatRupiah, exportToCSV } from '../utils/helpers';
@@ -24,6 +27,7 @@ import {
   COLL_PROGRAM, 
   COLL_KEGIATAN, 
   COLL_SUB_KEGIATAN, 
+  COLL_RKA,
   createAuditLog, 
   synchronizeCalculations,
   clearDatabase 
@@ -34,6 +38,10 @@ interface ProgramViewProps {
   kegiatans: Kegiatan[];
   subKegiatans: SubKegiatan[];
   rkaList: RKA[];
+  allPrograms?: Program[];
+  allKegiatans?: Kegiatan[];
+  allSubKegiatans?: SubKegiatan[];
+  allRkaList?: RKA[];
   currentUserRole: UserRole;
   currentUserEmail: string;
   activeTab: 'program' | 'kegiatan' | 'sub_kegiatan';
@@ -48,6 +56,10 @@ export default function ProgramView({
   kegiatans,
   subKegiatans,
   rkaList = [],
+  allPrograms = [],
+  allKegiatans = [],
+  allSubKegiatans = [],
+  allRkaList = [],
   currentUserRole,
   currentUserEmail,
   activeTab,
@@ -71,6 +83,326 @@ export default function ProgramView({
   // Modal controllers
   const [showForm, setShowForm] = useState(false);
   const [editItem, setEditItem] = useState<any | null>(null);
+
+  // Copy Year states
+  const [showCopyModal, setShowCopyModal] = useState(false);
+  const [copySourceYear, setCopySourceYear] = useState<number>(2026);
+  const [copyTargetYear, setCopyTargetYear] = useState<number>(2027);
+  const [isCopying, setIsCopying] = useState(false);
+
+  useEffect(() => {
+    if (showCopyModal) {
+      setCopySourceYear(selectedYear);
+      setCopyTargetYear(selectedYear === 2026 ? 2027 : selectedYear + 1);
+    }
+  }, [showCopyModal, selectedYear]);
+
+  const listAllYears = [2025, 2026, 2027, 2028, 2029, 2030];
+
+  const sourceStats = useMemo(() => {
+    const progs = allPrograms?.filter(p => (p.tahun || 2026) === copySourceYear) || [];
+    const kegs = allKegiatans?.filter(k => (k.tahun || 2026) === copySourceYear) || [];
+    const subs = allSubKegiatans?.filter(s => (s.tahun || 2026) === copySourceYear) || [];
+    const rkas = allRkaList?.filter(r => (r.tahun || 2026) === copySourceYear) || [];
+    return {
+      progs: progs.length,
+      kegs: kegs.length,
+      subs: subs.length,
+      rkas: rkas.length
+    };
+  }, [allPrograms, allKegiatans, allSubKegiatans, allRkaList, copySourceYear]);
+
+  const doSeedSourceYear = async (sourceYear: number) => {
+    // Sample Programs
+    const p1: Program = {
+      id: `${sourceYear}_2.10.01`,
+      kode_program: "2.10.01",
+      nama_program: "Program Penataan Penguasaan, Pemilikan, Penggunaan dan Pemanfaatan Tanah",
+      pagu: 18500000,
+      realisasi: 0,
+      sisa: 18500000,
+      persentase: 0,
+      tahun: sourceYear
+    };
+    const p2: Program = {
+      id: `${sourceYear}_2.10.02`,
+      kode_program: "2.10.02",
+      nama_program: "Program Penyediaan Tanah untuk Pembangunan Kepentingan Umum",
+      pagu: 10000000,
+      realisasi: 0,
+      sisa: 10000000,
+      persentase: 0,
+      tahun: sourceYear
+    };
+
+    // Sample Kegiatan
+    const k1: Kegiatan = {
+      id: `${sourceYear}_2.10.01.2.01`,
+      kode_kegiatan: "2.10.01.2.01",
+      nama_kegiatan: "Penyelesaian Sengketa Tanah Garapan dan Tanah Ulayat",
+      kode_program: "2.10.01",
+      pagu: 18500000,
+      realisasi: 0,
+      sisa: 18500000,
+      persentase: 0,
+      tahun: sourceYear
+    };
+    const k2: Kegiatan = {
+      id: `${sourceYear}_2.10.02.2.01`,
+      kode_kegiatan: "2.10.02.2.01",
+      nama_kegiatan: "Fasilitasi Ganti Kerugian dan Penyediaan Tanah bagi Pembangunan",
+      kode_program: "2.10.02",
+      pagu: 10000000,
+      realisasi: 0,
+      sisa: 10000000,
+      persentase: 0,
+      tahun: sourceYear
+    };
+
+    // Sample Sub-Kegiatan
+    const s1: SubKegiatan = {
+      id: `${sourceYear}_2.10.01.2.01.01`,
+      kode_sub_kegiatan: "2.10.01.2.01.01",
+      nama_sub_kegiatan: "Mediasi dan Fasilitasi Penyelesaian Sengketa Pertanahan Daerah",
+      kode_program: "2.10.01",
+      kode_kegiatan: "2.10.01.2.01",
+      pagu: 18500000,
+      realisasi: 0,
+      sisa: 18500000,
+      persentase: 0,
+      tahun: sourceYear
+    };
+    const s2: SubKegiatan = {
+      id: `${sourceYear}_2.10.02.2.01.01`,
+      kode_sub_kegiatan: "2.10.02.2.01.01",
+      nama_sub_kegiatan: "Pengukuran, Pemetaan, dan Inventarisasi Lahan Bidang Tanah",
+      kode_program: "2.10.02",
+      kode_kegiatan: "2.10.02.2.01",
+      pagu: 10000000,
+      realisasi: 0,
+      sisa: 10000000,
+      persentase: 0,
+      tahun: sourceYear
+    };
+
+    // Sample RKA details
+    const r1: RKA = {
+      id: `rka_${sourceYear}_2.10.01.2.01.01_5.1.02.01`,
+      tahun: sourceYear,
+      kode_program: "2.10.01",
+      kode_kegiatan: "2.10.01.2.01",
+      kode_sub_kegiatan: "2.10.01.2.01.01",
+      kode_rekening: "5.1.02.01",
+      uraian_belanja: "Belanja ATK dan Penggandaan Dokumen Sengketa Tanah",
+      volume: 10,
+      satuan: "Paket",
+      harga_satuan: 350000,
+      jumlah: 3500000,
+      tw1: 1000000,
+      tw2: 1000000,
+      tw3: 1000000,
+      tw4: 500000
+    };
+    const r2: RKA = {
+      id: `rka_${sourceYear}_2.10.01.2.01.01_5.1.02.04`,
+      tahun: sourceYear,
+      kode_program: "2.10.01",
+      kode_kegiatan: "2.10.01.2.01",
+      kode_sub_kegiatan: "2.10.01.2.01.01",
+      kode_rekening: "5.1.02.04",
+      uraian_belanja: "Honorarium Tenaga Ahli Hukum Pertanahan & Mediasi Konflik",
+      volume: 3,
+      satuan: "OB",
+      harga_satuan: 5000000,
+      jumlah: 15000000,
+      tw1: 5000000,
+      tw2: 5000000,
+      tw3: 5000000,
+      tw4: 0
+    };
+    const r3: RKA = {
+      id: `rka_${sourceYear}_2.10.02.2.01.01_5.1.02.02`,
+      tahun: sourceYear,
+      kode_program: "2.10.02",
+      kode_kegiatan: "2.10.02.2.01",
+      kode_sub_kegiatan: "2.10.02.2.01.01",
+      kode_rekening: "5.1.02.02",
+      uraian_belanja: "Uang Harian Perjalanan Dinas Tim Pengukuran Lahan Lapangan",
+      volume: 25,
+      satuan: "OH",
+      harga_satuan: 400000,
+      jumlah: 10000000,
+      tw1: 2500000,
+      tw2: 2500000,
+      tw3: 2500000,
+      tw4: 2500000
+    };
+
+    // Write to Firestore
+    await setDoc(doc(db, COLL_PROGRAM, p1.id), p1);
+    await setDoc(doc(db, COLL_PROGRAM, p2.id), p2);
+
+    await setDoc(doc(db, COLL_KEGIATAN, k1.id), k1);
+    await setDoc(doc(db, COLL_KEGIATAN, k2.id), k2);
+
+    await setDoc(doc(db, COLL_SUB_KEGIATAN, s1.id), s1);
+    await setDoc(doc(db, COLL_SUB_KEGIATAN, s2.id), s2);
+
+    await setDoc(doc(db, COLL_RKA, r1.id), r1);
+    await setDoc(doc(db, COLL_RKA, r2.id), r2);
+    await setDoc(doc(db, COLL_RKA, r3.id), r3);
+
+    await createAuditLog(
+      currentUserEmail,
+      currentUserRole,
+      `MEMBUAT DATA SAMPEL TAHUN ${sourceYear}`,
+      "PROGRAM",
+      null,
+      {
+        seeded_year: sourceYear,
+        programs: 2,
+        kegiatans: 2,
+        subkegiatans: 2,
+        rkas: 3
+      }
+    );
+
+    await synchronizeCalculations();
+  };
+
+  const doCloneYearData = async (sourceYear: number, targetYear: number) => {
+    // Read local/live lists, filtered for sourceYear
+    const progsToCopy = allPrograms?.filter(p => (p.tahun || 2026) === sourceYear) || [];
+    const kegsToCopy = allKegiatans?.filter(k => (k.tahun || 2026) === sourceYear) || [];
+    const subsToCopy = allSubKegiatans?.filter(s => (s.tahun || 2026) === sourceYear) || [];
+    const rkasToCopy = allRkaList?.filter(r => (r.tahun || 2026) === sourceYear) || [];
+
+    let copiedProgs = 0;
+    let copiedKegs = 0;
+    let copiedSubs = 0;
+    let copiedRkas = 0;
+
+    // Copy Programs
+    for (const p of progsToCopy) {
+      const docId = `${targetYear}_${p.kode_program}`;
+      await setDoc(doc(db, COLL_PROGRAM, docId), {
+        ...p,
+        id: docId,
+        tahun: targetYear,
+        pagu: p.pagu || 0,
+        realisasi: 0,
+        sisa: p.pagu || 0,
+        persentase: 0
+      }, { merge: true });
+      copiedProgs++;
+    }
+
+    // Copy Kegiatans
+    for (const k of kegsToCopy) {
+      const docId = `${targetYear}_${k.kode_kegiatan}`;
+      await setDoc(doc(db, COLL_KEGIATAN, docId), {
+        ...k,
+        id: docId,
+        tahun: targetYear,
+        pagu: k.pagu || 0,
+        realisasi: 0,
+        sisa: k.pagu || 0,
+        persentase: 0
+      }, { merge: true });
+      copiedKegs++;
+    }
+
+    // Copy SubKegiatans
+    for (const s of subsToCopy) {
+      const docId = `${targetYear}_${s.kode_sub_kegiatan}`;
+      await setDoc(doc(db, COLL_SUB_KEGIATAN, docId), {
+        ...s,
+        id: docId,
+        tahun: targetYear,
+        pagu: s.pagu || 0,
+        realisasi: 0,
+        sisa: s.pagu || 0,
+        persentase: 0
+      }, { merge: true });
+      copiedSubs++;
+    }
+
+    // Copy RKAs
+    for (const r of rkasToCopy) {
+      const rkaId = `rka_${targetYear}_${r.kode_sub_kegiatan}_${r.kode_rekening || 'x'}_${Math.random().toString(36).substring(2, 7)}`;
+      await setDoc(doc(db, COLL_RKA, rkaId), {
+        ...r,
+        id: rkaId,
+        tahun: targetYear
+      });
+      copiedRkas++;
+    }
+
+    await createAuditLog(
+      currentUserEmail,
+      currentUserRole,
+      `SALIN ANGGARAN DARI ${sourceYear} KE ${targetYear}`,
+      "PROGRAM",
+      null,
+      {
+        source_year: sourceYear,
+        target_year: targetYear,
+        copied_programs: copiedProgs,
+        copied_kegiatans: copiedKegs,
+        copied_sub_kegiatans: copiedSubs,
+        copied_rkas: copiedRkas
+      }
+    );
+
+    await synchronizeCalculations();
+    return { copiedProgs, copiedKegs, copiedSubs, copiedRkas };
+  };
+
+  const handleCloneYearData = async () => {
+    if (copySourceYear === copyTargetYear) {
+      alert("Tahun sumber dan tahun tujuan tidak boleh sama.");
+      return;
+    }
+
+    if (sourceStats.progs === 0 && sourceStats.kegs === 0 && sourceStats.subs === 0 && sourceStats.rkas === 0) {
+      const confirmSeed = window.confirm(
+        `Tahun sumber ${copySourceYear} tidak memiliki data anggaran. Apakah Anda ingin membuat Data Sampel Bidang Pertanahan ${copySourceYear} terlebih dahulu agar langsung disalin ke tahun aktif ${copyTargetYear}?`
+      );
+      if (!confirmSeed) return;
+
+      setIsCopying(true);
+      try {
+        await doSeedSourceYear(copySourceYear);
+        const stats = await doCloneYearData(copySourceYear, copyTargetYear);
+        alert(`Sukses menginisialisasi Data Sampel Pertanahan ${copySourceYear} & langsung menyalin ke tahun ${copyTargetYear}:\n- ${stats.copiedProgs} Program\n- ${stats.copiedKegs} Kegiatan\n- ${stats.copiedSubs} Sub-Kegiatan\n- ${stats.copiedRkas} Rincian RKA Belanja\n\nSemua kalkulasi pagu telah disinkronkan secara bottom-up.`);
+        setShowCopyModal(false);
+      } catch (err) {
+        console.error("Gagal menyalin data:", err);
+        alert("Gagal menyalin data: " + (err instanceof Error ? err.message : String(err)));
+      } finally {
+        setIsCopying(false);
+      }
+      return;
+    }
+
+    const confirmClone = window.confirm(
+      `Apakah Anda yakin ingin menyalin ${sourceStats.progs} Program, ${sourceStats.kegs} Kegiatan, ${sourceStats.subs} Sub-Kegiatan, dan ${sourceStats.rkas} Rincian RKA Belanja dari tahun ${copySourceYear} ke tahun anggaran ${copyTargetYear}?`
+    );
+    if (!confirmClone) return;
+
+    setIsCopying(true);
+
+    try {
+      const stats = await doCloneYearData(copySourceYear, copyTargetYear);
+      alert(`Sukses menyalin data dari tahun ${copySourceYear} ke tahun ${copyTargetYear}:\n- ${stats.copiedProgs} Program\n- ${stats.copiedKegs} Kegiatan\n- ${stats.copiedSubs} Sub-Kegiatan\n- ${stats.copiedRkas} Rincian RKA Belanja\n\nSemua kalkulasi pagu telah disinkronkan secara bottom-up.`);
+      setShowCopyModal(false);
+    } catch (err) {
+      console.error("Gagal menyalin data tahunan:", err);
+      alert("Gagal menyalin data: " + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setIsCopying(false);
+    }
+  };
 
   // Form Fields holding state based on current dynamic tab
   const [formKode, setFormKode] = useState('');
@@ -144,7 +476,9 @@ export default function ProgramView({
     }
 
     try {
-      const docId = formKode.trim();
+      const baseCode = formKode.trim();
+      const targetYear = editItem?.tahun || selectedYear;
+      const docId = `${targetYear}_${baseCode}`;
       let collectionName = '';
       let logModule = '';
       let payload: any = {};
@@ -152,7 +486,7 @@ export default function ProgramView({
       if (activeTab === 'program') {
         collectionName = COLL_PROGRAM;
         logModule = "PROGRAM";
-        payload = { ...editItem, id: docId, kode_program: docId, nama_program: formNama.trim(), tahun: editItem?.tahun || selectedYear };
+        payload = { ...editItem, id: docId, kode_program: baseCode, nama_program: formNama.trim(), tahun: targetYear };
         if (!editItem) {
           payload.pagu = formManualPagu;
           payload.realisasi = 0;
@@ -166,7 +500,7 @@ export default function ProgramView({
           alert("Harap pilih Program Atasan.");
           return;
         }
-        payload = { ...editItem, id: docId, kode_kegiatan: docId, nama_kegiatan: formNama.trim(), kode_program: formParentProgram, tahun: editItem?.tahun || selectedYear };
+        payload = { ...editItem, id: docId, kode_kegiatan: baseCode, nama_kegiatan: formNama.trim(), kode_program: formParentProgram, tahun: targetYear };
         if (!editItem) {
           payload.pagu = formManualPagu;
           payload.realisasi = 0;
@@ -180,7 +514,7 @@ export default function ProgramView({
           alert("Harap lengkapi Program dan Kegiatan Atasan.");
           return;
         }
-        payload = { ...editItem, id: docId, kode_sub_kegiatan: docId, nama_sub_kegiatan: formNama.trim(), kode_program: formParentProgram, kode_kegiatan: formParentKegiatan, tahun: editItem?.tahun || selectedYear };
+        payload = { ...editItem, id: docId, kode_sub_kegiatan: baseCode, nama_sub_kegiatan: formNama.trim(), kode_program: formParentProgram, kode_kegiatan: formParentKegiatan, tahun: targetYear };
         if (!editItem) {
           payload.pagu = formManualPagu;
           payload.realisasi = 0;
@@ -297,6 +631,16 @@ export default function ProgramView({
           <p className="text-xs text-slate-500 mt-1">Kinerja master program dinas, kode kegiatan DPA, dan sub kegiatan teknis pendukung.</p>
         </div>
         <div className="flex gap-2 shrink-0">
+          {canEdit && (
+            <button 
+              onClick={() => setShowCopyModal(true)}
+              className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg border border-blue-200 transition cursor-pointer"
+              id="btn-copy-previous-year"
+            >
+              <Copy size={13} />
+              Salin dari Tahun Lain
+            </button>
+          )}
           <button 
             onClick={handleExport}
             className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 rounded-lg border border-slate-200 transition cursor-pointer"
@@ -767,6 +1111,155 @@ export default function ProgramView({
                 className="px-5 py-2 hover:bg-slate-200/80 text-slate-750 font-bold border rounded-lg bg-white transition cursor-pointer text-xs uppercase shadow-sm"
               >
                 Tutup Rincian
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Yearly Cloning Modal */}
+      {showCopyModal && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in" id="copy-yearly-data-modal">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border border-slate-100 flex flex-col">
+            <div className="bg-gradient-to-r from-blue-900 to-[#1e3a8a] px-6 py-4 flex items-center justify-between text-white shrink-0">
+              <div className="flex items-center gap-2">
+                <Copy size={16} />
+                <h3 className="text-sm font-bold font-display">Salin Struktur & RKA Anggaran</h3>
+              </div>
+              <button 
+                onClick={() => setShowCopyModal(false)}
+                className="text-white hover:text-orange-400 font-extrabold text-xl p-1 transition"
+                disabled={isCopying}
+              >
+                &times;
+              </button>
+            </div>
+
+            <div className="p-6 space-y-5 text-xs text-slate-600">
+              <div className="bg-blue-50/50 p-4 rounded-xl border border-blue-100 flex gap-3">
+                <HelpCircle className="text-blue-700 shrink-0 mt-0.5" size={16} />
+                <div>
+                  <p className="font-semibold text-blue-900">Salin Data Master & Struktur Anggaran</p>
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    Fitur ini akan menyalin seluruh Program, Kegiatan, Sub-Kegiatan, beserta detail Rincian RKA Belanja dari tahun sumber ke tahun anggaran tujuan pilihan Anda.
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="block text-slate-700 font-bold">Tahun Sumber *</label>
+                  <select
+                    value={copySourceYear}
+                    onChange={(e) => setCopySourceYear(Number(e.target.value))}
+                    disabled={isCopying}
+                    className="w-full p-2.5 rounded-lg border border-slate-200 outline-blue-600 focus:border-blue-600 bg-slate-50 font-semibold cursor-pointer"
+                  >
+                    {listAllYears.map((yr) => (
+                      <option key={yr} value={yr}>Tahun {yr}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block text-slate-700 font-bold">Tahun Tujuan *</label>
+                  <select
+                    value={copyTargetYear}
+                    onChange={(e) => setCopyTargetYear(Number(e.target.value))}
+                    disabled={isCopying}
+                    className="w-full p-2.5 rounded-lg border border-slate-200 outline-blue-600 focus:border-blue-600 bg-slate-50 font-semibold cursor-pointer"
+                  >
+                    {listAllYears.map((yr) => (
+                      <option key={yr} value={yr}>Tahun {yr}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Dynamic Stats Preview */}
+              {copySourceYear && (
+                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+                  <p className="font-bold text-slate-700">Ringkasan Data yang Akan Disalin ({copySourceYear}):</p>
+                  <div className="grid grid-cols-2 gap-3 text-[11px]">
+                    <div className="bg-white p-2.5 rounded-lg border border-slate-100 flex flex-col">
+                      <span className="text-slate-400 font-medium">Program</span>
+                      <span className="text-base font-black text-slate-800 mt-0.5">{sourceStats.progs}</span>
+                    </div>
+                    <div className="bg-white p-2.5 rounded-lg border border-slate-100 flex flex-col">
+                      <span className="text-slate-400 font-medium">Kegiatan</span>
+                      <span className="text-base font-black text-slate-800 mt-0.5">{sourceStats.kegs}</span>
+                    </div>
+                    <div className="bg-white p-2.5 rounded-lg border border-slate-100 flex flex-col">
+                      <span className="text-slate-400 font-medium">Sub-Kegiatan</span>
+                      <span className="text-base font-black text-slate-800 mt-0.5">{sourceStats.subs}</span>
+                    </div>
+                    <div className="bg-white p-2.5 rounded-lg border border-slate-100 flex flex-col">
+                      <span className="text-slate-400 font-medium">Detail RKA</span>
+                      <span className="text-base font-black text-blue-800 mt-0.5">{sourceStats.rkas} items</span>
+                    </div>
+                  </div>
+
+                  {sourceStats.progs === 0 && (
+                    <p className="text-amber-900 font-medium text-[11px] leading-relaxed mt-3 p-3 bg-amber-50/70 rounded-lg border border-amber-200 shadow-3xs flex flex-col gap-2">
+                      <span className="flex items-start gap-2">
+                        <span className="shrink-0 text-amber-600 text-xs">⚠️</span>
+                        <span>
+                          <strong>Sistem Informasi:</strong> Tidak ditemukan data Master Program maupun RKA pada tahun sumber <strong>{copySourceYear}</strong>. Silakan gunakan tombol di bawah untuk membuat data sampel atau langsung klik tombol Tempel.
+                        </span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          setIsCopying(true);
+                          try {
+                            await doSeedSourceYear(copySourceYear);
+                            alert(`Berhasil membuat Data Sampel Tahun ${copySourceYear}! Sekarang Anda dapat menyalin data tersebut.`);
+                          } catch (err) {
+                            alert("Gagal membuat data sampel: " + (err instanceof Error ? err.message : String(err)));
+                          } finally {
+                            setIsCopying(false);
+                          }
+                        }}
+                        disabled={isCopying}
+                        className="mt-1 self-start px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded font-bold text-[10px] uppercase tracking-wider transition disabled:opacity-50 cursor-pointer"
+                      >
+                        Inisialisasi Data Sampel {copySourceYear}
+                      </button>
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+ 
+            <div className="p-4 bg-slate-50 border-t flex justify-end gap-2 shrink-0">
+              <button 
+                type="button"
+                onClick={() => setShowCopyModal(false)}
+                disabled={isCopying}
+                className="px-4 py-2 hover:bg-slate-200/85 text-slate-700 font-bold border rounded-lg bg-white transition cursor-pointer text-xs uppercase"
+              >
+                Batal
+              </button>
+              <button 
+                type="button"
+                onClick={handleCloneYearData}
+                disabled={isCopying}
+                className="px-5 py-2 text-white font-bold rounded-lg bg-blue-700 hover:bg-blue-800 transition cursor-pointer text-xs uppercase shadow-sm flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isCopying ? (
+                  <>
+                    <svg className="animate-spin h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                    Menyalin...
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle size={14} />
+                    Tempel ke {copyTargetYear}
+                  </>
+                )}
               </button>
             </div>
           </div>

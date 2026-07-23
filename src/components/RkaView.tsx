@@ -362,9 +362,10 @@ export default function RkaView({
               // 1. Copy parent Program to target year if it doesn't exist yet
               const parentProgram = allPrograms?.find(p => p.kode_program === globalSub.kode_program);
               if (parentProgram) {
-                const programDocRef = doc(db, 'sibiru_program', parentProgram.kode_program);
+                const programDocRef = doc(db, 'sibiru_program', `${selectedYear}_${parentProgram.kode_program}`);
                 await setDoc(programDocRef, {
                   ...parentProgram,
+                  id: `${selectedYear}_${parentProgram.kode_program}`,
                   tahun: selectedYear
                 }, { merge: true });
               }
@@ -372,17 +373,19 @@ export default function RkaView({
               // 2. Copy parent Kegiatan to target year
               const parentKegiatan = allKegiatans?.find(k => k.kode_kegiatan === globalSub.kode_kegiatan);
               if (parentKegiatan) {
-                const kegiatanDocRef = doc(db, 'sibiru_kegiatan', parentKegiatan.kode_kegiatan);
+                const kegiatanDocRef = doc(db, 'sibiru_kegiatan', `${selectedYear}_${parentKegiatan.kode_kegiatan}`);
                 await setDoc(kegiatanDocRef, {
                   ...parentKegiatan,
+                  id: `${selectedYear}_${parentKegiatan.kode_kegiatan}`,
                   tahun: selectedYear
                 }, { merge: true });
               }
               
               // 3. Copy Sub-Kegiatan to target year
-              const subDocRef = doc(db, 'sibiru_sub_kegiatan', globalSub.kode_sub_kegiatan);
+              const subDocRef = doc(db, 'sibiru_sub_kegiatan', `${selectedYear}_${globalSub.kode_sub_kegiatan}`);
               await setDoc(subDocRef, {
                 ...globalSub,
+                id: `${selectedYear}_${globalSub.kode_sub_kegiatan}`,
                 tahun: selectedYear
               }, { merge: true });
               

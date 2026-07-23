@@ -54,8 +54,8 @@ service cloud.firestore {
 
     // Rules for sibiru_program
     match /sibiru_program/{id} {
-      allow read, write if true;
-      allow create: if isAdmin() && isValidId(id) && 
+      allow read: if isVerified();
+      allow create: if isOperator() && isValidId(id) && 
         incoming().kode_program is string && incoming().kode_program.size() <= 32 &&
         incoming().nama_program is string && incoming().nama_program.size() <= 256;
       allow update: if isOperator() && 
@@ -65,11 +65,11 @@ service cloud.firestore {
 
     // Rules for sibiru_kegiatan
     match /sibiru_kegiatan/{id} {
-      allow read, write if true;
-      allow create: if isAdmin() && isValidId(id) &&
+      allow read: if isVerified();
+      allow create: if isOperator() && isValidId(id) &&
         incoming().kode_kegiatan is string && incoming().kode_kegiatan.size() <= 32 &&
         incoming().nama_kegiatan is string && incoming().nama_kegiatan.size() <= 256 &&
-        exists(/databases/$(database)/documents/sibiru_program/$(incoming().kode_program));
+        exists(/databases/$(database)/documents/sibiru_program/$(string(incoming().tahun) + "_" + incoming().kode_program));
       allow update: if isOperator() &&
         incoming().nama_kegiatan is string && incoming().nama_kegiatan.size() <= 256;
       allow delete: if isOperator();
@@ -77,11 +77,11 @@ service cloud.firestore {
 
     // Rules for sibiru_sub_kegiatan
     match /sibiru_sub_kegiatan/{id} {
-      allow read, write if true;
-      allow create: if isAdmin() && isValidId(id) &&
+      allow read: if isVerified();
+      allow create: if isOperator() && isValidId(id) &&
         incoming().kode_sub_kegiatan is string && incoming().kode_sub_kegiatan.size() <= 32 &&
         incoming().nama_sub_kegiatan is string && incoming().nama_sub_kegiatan.size() <= 256 &&
-        exists(/databases/$(database)/documents/sibiru_kegiatan/$(incoming().kode_kegiatan));
+        exists(/databases/$(database)/documents/sibiru_kegiatan/$(string(incoming().tahun) + "_" + incoming().kode_kegiatan));
       allow update: if isOperator() &&
         incoming().nama_sub_kegiatan is string && incoming().nama_sub_kegiatan.size() <= 256;
       allow delete: if isOperator();
@@ -89,11 +89,11 @@ service cloud.firestore {
 
     // Rules for sibiru_rka
     match /sibiru_rka/{id} {
-      allow read, write if true;
+      allow read: if isVerified();
       allow create: if isOperator() && isValidId(id) &&
         incoming().uraian_belanja is string && incoming().uraian_belanja.size() <= 500 &&
         incoming().jumlah is number && incoming().jumlah >= 0 &&
-        exists(/databases/$(database)/documents/sibiru_sub_kegiatan/$(incoming().kode_sub_kegiatan));
+        exists(/databases/$(database)/documents/sibiru_sub_kegiatan/$(string(incoming().tahun) + "_" + incoming().kode_sub_kegiatan));
       allow update: if isOperator() &&
         incoming().uraian_belanja is string && incoming().uraian_belanja.size() <= 500 &&
         incoming().jumlah is number && incoming().jumlah >= 0;
@@ -102,11 +102,11 @@ service cloud.firestore {
 
     // Rules for sibiru_realisasi
     match /sibiru_realisasi/{id} {
-      allow read, write if true;
+      allow read: if isVerified();
       allow create: if isOperator() && isValidId(id) &&
         incoming().uraian_belanja is string && incoming().uraian_belanja.size() <= 500 &&
         incoming().nominal_realisasi is number && incoming().nominal_realisasi >= 0 &&
-        exists(/databases/$(database)/documents/sibiru_sub_kegiatan/$(incoming().kode_sub_kegiatan));
+        exists(/databases/$(database)/documents/sibiru_sub_kegiatan/$(string(incoming().tahun) + "_" + incoming().kode_sub_kegiatan));
       allow update: if isOperator() &&
         incoming().uraian_belanja is string && incoming().uraian_belanja.size() <= 500 &&
         incoming().nominal_realisasi is number && incoming().nominal_realisasi >= 0;

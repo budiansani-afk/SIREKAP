@@ -776,6 +776,10 @@ export default function App() {
             kegiatans={filteredKegiatans} 
             subKegiatans={filteredSubKegiatans} 
             rkaList={filteredRkaList}
+            allPrograms={programs}
+            allKegiatans={kegiatans}
+            allSubKegiatans={subKegiatans}
+            allRkaList={rkaList}
             currentUserRole={userRole} 
             currentUserEmail={user.email} 
             activeTab={programActiveTab}
