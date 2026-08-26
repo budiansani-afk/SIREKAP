@@ -820,6 +820,7 @@ export default function App() {
         return (
           <BelanjaPihakKetigaView 
             pihakKetigas={filteredPihakKetigas} 
+            realisasis={filteredRealisasis}
             programs={filteredPrograms} 
             kegiatans={filteredKegiatans} 
             subKegiatans={filteredSubKegiatans} 

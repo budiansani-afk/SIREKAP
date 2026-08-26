@@ -60,7 +60,28 @@ export default function AnalisisView({
   }, [subKegiatans]);
 
   const totalRealisasi = useMemo(() => realisasis.reduce((sum, r) => sum + r.nominal_realisasi, 0), [realisasis]);
-  const totalPihakKetiga = useMemo(() => pihakKetigas.reduce((sum, p) => sum + (p.realisasi || 0), 0), [pihakKetigas]);
+  const totalPihakKetiga = useMemo(() => {
+    if (!pihakKetigas || pihakKetigas.length === 0) return 0;
+    let sum = 0;
+    const countedIds = new Set<string>();
+    for (const p of pihakKetigas) {
+      const matched = realisasis.filter(r => {
+        if (countedIds.has(r.id)) return false;
+        if (r.kode_sub_kegiatan !== p.kode_sub_kegiatan) return false;
+        if (p.uraian_belanja && r.uraian_belanja) {
+          const u1 = p.uraian_belanja.trim().toLowerCase();
+          const u2 = r.uraian_belanja.trim().toLowerCase();
+          return u1 === u2 || u1.includes(u2) || u2.includes(u1);
+        }
+        return true;
+      });
+      matched.forEach(r => {
+        countedIds.add(r.id);
+        sum += (Number(r.nominal_realisasi) || 0);
+      });
+    }
+    return sum > 0 ? sum : pihakKetigas.reduce((acc, p) => acc + (Number(p.realisasi) || 0), 0);
+  }, [pihakKetigas, realisasis]);
   const rasioPihakKetiga = totalRealisasi > 0 ? (totalPihakKetiga / totalRealisasi) * 100 : 0;
 
   // Sorter progress ranking list representation
