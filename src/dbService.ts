@@ -11,7 +11,7 @@ import {
   where,
   writeBatch
 } from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType } from './firebase';
+import { db, auth, handleFirestoreError, OperationType } from './firebase';
 import { 
   Program, 
   Kegiatan, 
@@ -71,6 +71,202 @@ export async function createAuditLog(
     await addDoc(collection(db, COLL_LOG_AKTIVITAS), log);
   } catch (error) {
     console.warn("Failed to write audit log:", error);
+  }
+// Helper untuk menentukan nama bulan dari format tanggal YYYY-MM-DD
+export function getNamaBulanFromDate(dateStr?: string): string {
+  if (!dateStr) return "Januari";
+  const months = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
+  try {
+    const d = new Date(dateStr);
+    const m = d.getMonth();
+    if (!isNaN(m) && m >= 0 && m < 12) {
+      return months[m];
+    }
+  } catch (e) {}
+  return "Januari";
+}
+
+// Sinkronisasi Belanja Pihak Ketiga ke Realisasi SP2D
+export async function syncPihakKetigaToSp2d(
+  item: BelanjaPihakKetiga,
+  linkedSub?: SubKegiatan,
+  rkaList: RKA[] = [],
+  isDelete: boolean = false
+) {
+  try {
+    const sp2dId = `sp2d_pihak_ketiga_${item.id}`;
+    if (isDelete || !item.realisasi || Number(item.realisasi) <= 0) {
+      const sp2dDocRef = doc(db, COLL_REALISASI, sp2dId);
+      const snap = await getDoc(sp2dDocRef).catch(() => null);
+      if (snap && snap.exists()) {
+        await deleteDoc(sp2dDocRef).catch(err => console.warn("Notice: gagal menghapus sp2d linked:", err));
+      }
+      return;
+    }
+
+    const matchedRka = rkaList.find(r => 
+      r.kode_sub_kegiatan === item.kode_sub_kegiatan && 
+      (r.uraian_belanja.trim().toLowerCase() === (item.uraian_belanja || '').trim().toLowerCase())
+    );
+    const paguAmt = matchedRka ? matchedRka.jumlah : (linkedSub?.pagu || 0);
+    const nominal = Number(item.realisasi) || 0;
+    const persentase = paguAmt > 0 ? (nominal / paguAmt) * 100 : 0;
+    const sisa = paguAmt - nominal;
+    const bulan = getNamaBulanFromDate(item.tanggal);
+    const tahun = item.tahun || (item.tanggal ? new Date(item.tanggal).getFullYear() : 2026);
+
+    const sp2dPayload: Realisasi = {
+      id: sp2dId,
+      tanggal: item.tanggal || new Date().toISOString().substring(0, 10),
+      bulan: bulan,
+      tahun: tahun,
+      kode_program: linkedSub?.kode_program || item.kode_program || '',
+      kode_kegiatan: linkedSub?.kode_kegiatan || item.kode_kegiatan || '',
+      kode_sub_kegiatan: item.kode_sub_kegiatan,
+      uraian_belanja: item.uraian_belanja || 'Belanja Pihak Ketiga',
+      nominal_realisasi: nominal,
+      persentase_realisasi: parseFloat(persentase.toFixed(2)),
+      sisa_anggaran: sisa,
+      pagu_anggaran_terpantau: paguAmt,
+      keterangan: `[Belanja Pihak Ketiga] ${item.nama_pelaksana ? item.nama_pelaksana + ' | ' : ''}Kontrak: ${item.nomor_kontrak || '-'}${item.catatan ? ' | ' + item.catatan : ''}`,
+      bukti_transaksi: item.foto_kegiatan || undefined,
+      bukti_transaksi_public_id: item.foto_kegiatan_public_id || undefined,
+      id_pihak_ketiga: item.id
+    };
+
+    await setDoc(doc(db, COLL_REALISASI, sp2dId), sp2dPayload, { merge: true });
+  } catch (err) {
+    console.warn("syncPihakKetigaToSp2d warning:", err);
+  }
+}
+
+// Sinkronisasi Realisasi SP2D ke Belanja Pihak Ketiga
+export async function syncSp2dToPihakKetiga(
+  real: Realisasi,
+  isDelete: boolean = false
+) {
+  try {
+    // 1. Jika terhubung langsung via id_pihak_ketiga
+    if (real.id_pihak_ketiga) {
+      const pkRef = doc(db, COLL_BELANJA_PIHAK_KETIGA, real.id_pihak_ketiga);
+      const pkSnap = await getDoc(pkRef).catch(() => null);
+      if (pkSnap && pkSnap.exists()) {
+        await updateDoc(pkRef, {
+          realisasi: isDelete ? 0 : real.nominal_realisasi,
+          foto_kegiatan: real.bukti_transaksi || '',
+          foto_kegiatan_public_id: real.bukti_transaksi_public_id || ''
+        }).catch(err => console.warn("Failed updating pihak ketiga by id:", err));
+      }
+      return;
+    }
+
+    // 2. Jika tidak ada id_pihak_ketiga langsung, cari kecocokan sub kegiatan & uraian belanja
+    const qPk = await getDocs(
+      query(
+        collection(db, COLL_BELANJA_PIHAK_KETIGA),
+        where("kode_sub_kegiatan", "==", real.kode_sub_kegiatan)
+      )
+    ).catch(() => null);
+
+    if (qPk && !qPk.empty) {
+      const cleanRealUraian = (real.uraian_belanja || '').trim().toLowerCase();
+      const matchedDoc = qPk.docs.find(d => {
+        const u = (d.data().uraian_belanja || '').trim().toLowerCase();
+        return u === cleanRealUraian || u.includes(cleanRealUraian) || cleanRealUraian.includes(u);
+      });
+
+      if (matchedDoc) {
+        // Hitung total realisasi SP2D untuk pihak ketiga ini
+        const qAllReal = await getDocs(
+          query(
+            collection(db, COLL_REALISASI),
+            where("kode_sub_kegiatan", "==", real.kode_sub_kegiatan)
+          )
+        ).catch(() => null);
+
+        let totalForMatched = 0;
+        if (qAllReal && !qAllReal.empty) {
+          qAllReal.docs.forEach(docSnap => {
+            const d = docSnap.data() as Realisasi;
+            if (isDelete && docSnap.id === real.id) return;
+            const u = (d.uraian_belanja || '').trim().toLowerCase();
+            if (u === cleanRealUraian || u.includes(cleanRealUraian) || cleanRealUraian.includes(u)) {
+              totalForMatched += (d.nominal_realisasi || 0);
+            }
+          });
+        }
+        if (!isDelete && !qAllReal?.docs.some(d => d.id === real.id)) {
+          totalForMatched += real.nominal_realisasi;
+        }
+
+        await updateDoc(doc(db, COLL_BELANJA_PIHAK_KETIGA, matchedDoc.id), {
+          realisasi: totalForMatched
+        }).catch(err => console.warn("Failed updating pihak ketiga realisasi:", err));
+      }
+    }
+  } catch (err) {
+    console.warn("syncSp2dToPihakKetiga warning:", err);
+  }
+}
+
+// Sinkronisasi perubahan RKA / Perubahan Anggaran ke Realisasi dan Belanja Pihak Ketiga
+export async function syncRkaChangesToAll(
+  oldSubKeg: string,
+  oldUraian: string,
+  newSubKeg: string,
+  newUraian: string,
+  newJumlah: number
+) {
+  try {
+    const cleanOldUraian = oldUraian.trim().toLowerCase();
+    const cleanNewUraian = newUraian.trim();
+
+    // A. Sinkronisasi ke koleksi Realisasi SP2D
+    const qReal = await getDocs(
+      query(
+        collection(db, COLL_REALISASI),
+        where("kode_sub_kegiatan", "==", oldSubKeg)
+      )
+    ).catch(() => null);
+
+    if (qReal && !qReal.empty) {
+      for (const rDoc of qReal.docs) {
+        const d = rDoc.data() as Realisasi;
+        if ((d.uraian_belanja || '').trim().toLowerCase() === cleanOldUraian) {
+          const nominal = d.nominal_realisasi || 0;
+          const persentase = newJumlah > 0 ? (nominal / newJumlah) * 100 : 0;
+          await updateDoc(doc(db, COLL_REALISASI, rDoc.id), {
+            kode_sub_kegiatan: newSubKeg,
+            uraian_belanja: cleanNewUraian,
+            pagu_anggaran_terpantau: newJumlah,
+            persentase_realisasi: parseFloat(persentase.toFixed(2)),
+            sisa_anggaran: newJumlah - nominal
+          }).catch(e => console.warn("Update realisasi after RKA change warning:", e));
+        }
+      }
+    }
+
+    // B. Sinkronisasi ke koleksi Belanja Pihak Ketiga
+    const qPk = await getDocs(
+      query(
+        collection(db, COLL_BELANJA_PIHAK_KETIGA),
+        where("kode_sub_kegiatan", "==", oldSubKeg)
+      )
+    ).catch(() => null);
+
+    if (qPk && !qPk.empty) {
+      for (const pkDoc of qPk.docs) {
+        const d = pkDoc.data() as BelanjaPihakKetiga;
+        if ((d.uraian_belanja || '').trim().toLowerCase() === cleanOldUraian) {
+          await updateDoc(doc(db, COLL_BELANJA_PIHAK_KETIGA, pkDoc.id), {
+            kode_sub_kegiatan: newSubKeg,
+            uraian_belanja: cleanNewUraian
+          }).catch(e => console.warn("Update pihak ketiga after RKA change warning:", e));
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("syncRkaChangesToAll warning:", err);
   }
 }
 
@@ -302,6 +498,9 @@ export async function restoreDatabaseFromJSON(backupData: Record<string, any[]>,
 
 // 4. Clean up any previously seeded dummy/sample data and set up system configurations
 export async function seedInitialDataIfEmpty() {
+  if (!auth.currentUser) {
+    return;
+  }
   try {
     const dummyProgramIds = ["2.10.01", "2.10.02", "2.10.03"];
     const dummyKegiatanIds = ["2.10.01.2.01", "2.10.01.2.06", "2.10.02.2.01", "2.10.02.2.02", "2.10.03.2.01"];
@@ -373,7 +572,7 @@ export async function seedInitialDataIfEmpty() {
         id: "aktif",
         tahun_anggaran_aktif: 2026,
         nama_instansi: "Dinas Perumahan dan Kawasan Permukiman",
-        logo_instansi: ""
+        logo_instansi: "https://firebasestorage.googleapis.com/v0/b/bidang-pertanahan.firebasestorage.app/o/bimatanahku%2Flogo%20kab.png?alt=media&token=678421d5-13c6-44d5-9e9e-82283be5e25f"
       };
       await setDoc(doc(db, COLL_PENGATURAN, initSettings.id), initSettings);
     }
@@ -412,6 +611,6 @@ export async function seedInitialDataIfEmpty() {
       }
     }
   } catch (error) {
-    console.error("Error during initial data check/cleanup:", error);
+    console.warn("Notice during initial data check/cleanup:", error);
   }
 }

@@ -206,6 +206,10 @@
       "schema": { "$ref": "#/entities/MonitoringFisik" },
       "description": "Koleksi pemantauan fisik kegiatan"
     },
+    "sibiru_belanja_pihak_ketiga": {
+      "schema": { "$ref": "#/entities/MonitoringFisik" },
+      "description": "Koleksi monitoring belanja pihak ketiga"
+    },
     "sibiru_dokumen": {
       "schema": { "$ref": "#/entities/Dokumen" },
       "description": "Koleksi data arsip dokumen"

@@ -1,10 +1,12 @@
 {
-  "projectId": "aplikasi-huntap",
-  "appId": "1:913800740835:web:83442381089c2013a4aad6",
-  "apiKey": "AIzaSyDxeGYTWxy-aeLEmDsWUn4oEDf4-bO80_g",
-  "authDomain": "aplikasi-huntap.firebaseapp.com",
-  "firestoreDatabaseId": "ai-studio-44505a92-d446-42b7-9565-a9004cfe39b7",
-  "storageBucket": "aplikasi-huntap.firebasestorage.app",
-  "messagingSenderId": "913800740835",
-  "measurementId": ""
+  "projectId": "bidang-pertanahan",
+  "appId": "1:208169868343:web:2124bb1860a530125e33b2",
+  "apiKey": "AIzaSyCZCsaPlKCWC_1ZB1J7lcQke5PCKRdLg0c",
+  "authDomain": "bidang-pertanahan.firebaseapp.com",
+  "firestoreDatabaseId": "sirekap",
+  "storageBucket": "bidang-pertanahan.firebasestorage.app",
+  "messagingSenderId": "208169868343",
+  "measurementId": "",
+  "oAuthClientId": "208169868343-9g64echrdubbn1pejbhie1an51e33ko1.apps.googleusercontent.com",
+  "recaptchaSiteKey": ""
 }

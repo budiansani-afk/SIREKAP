@@ -73,7 +73,7 @@ export default function PengaturanView({
   useEffect(() => {
     if (settings) {
       setInstNama(settings.nama_instansi || 'Dinas Perumahan dan Kawasan Permukiman Kabupaten Bima');
-      setExistingLogoUrl(settings.logo_instansi || '');
+      setExistingLogoUrl(settings.logo_instansi || 'https://firebasestorage.googleapis.com/v0/b/bidang-pertanahan.firebasestorage.app/o/bimatanahku%2Flogo%20kab.png?alt=media&token=678421d5-13c6-44d5-9e9e-82283be5e25f');
       setLogoFile(null);
       setFiscalYear(settings.tahun_anggaran_aktif || 2026);
       setNamaPejabatTtd(settings.nama_pejabat_ttd || '');

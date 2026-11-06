@@ -21,7 +21,7 @@ import { formatRupiah, exportToCSV } from '../utils/helpers';
 import * as XLSX from 'xlsx';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { doc, setDoc, deleteDoc, addDoc } from 'firebase/firestore';
-import { COLL_RKA, createAuditLog, synchronizeCalculations } from '../dbService';
+import { COLL_RKA, createAuditLog, synchronizeCalculations, syncRkaChangesToAll } from '../dbService';
 
 interface RkaViewProps {
   rkaList: RKA[];
@@ -34,6 +34,8 @@ interface RkaViewProps {
   currentUserRole: UserRole;
   currentUserEmail: string;
   selectedYear: number;
+  initialFilterSubKegiatan?: string;
+  initialFilterUraian?: string;
 }
 
 const DEFAULT_MASTER_RINCIAN = [
@@ -57,14 +59,28 @@ export default function RkaView({
   allSubKegiatans,
   currentUserRole,
   currentUserEmail,
-  selectedYear
+  selectedYear,
+  initialFilterSubKegiatan,
+  initialFilterUraian
 }: RkaViewProps) {
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState(initialFilterUraian || '');
   const [filterUraian, setFilterUraian] = useState('');
   const [filterTahun, setFilterTahun] = useState<string>(String(selectedYear));
   const [filterProgram, setFilterProgram] = useState('');
   const [filterKegiatan, setFilterKegiatan] = useState('');
-  const [filterSubKegiatan, setFilterSubKegiatan] = useState('');
+  const [filterSubKegiatan, setFilterSubKegiatan] = useState(initialFilterSubKegiatan || '');
+
+  React.useEffect(() => {
+    if (initialFilterSubKegiatan !== undefined) {
+      setFilterSubKegiatan(initialFilterSubKegiatan);
+    }
+  }, [initialFilterSubKegiatan]);
+
+  React.useEffect(() => {
+    if (initialFilterUraian !== undefined) {
+      setSearchTerm(initialFilterUraian);
+    }
+  }, [initialFilterUraian]);
 
   // Modals state
   const [showForm, setShowForm] = useState(false);
@@ -296,6 +312,17 @@ export default function RkaView({
       };
 
       await setDoc(doc(db, COLL_RKA, docId), payload).catch(err => handleFirestoreError(err, OperationType.WRITE, `${COLL_RKA}/${docId}`));
+
+      // Sinkronisasi perubahan rincian belanja ke Realisasi SP2D dan Belanja Pihak Ketiga
+      if (editItem && (editItem.uraian_belanja !== payload.uraian_belanja || editItem.kode_sub_kegiatan !== payload.kode_sub_kegiatan || editItem.jumlah !== payload.jumlah)) {
+        await syncRkaChangesToAll(
+          editItem.kode_sub_kegiatan,
+          editItem.uraian_belanja,
+          payload.kode_sub_kegiatan,
+          payload.uraian_belanja,
+          payload.jumlah
+        );
+      }
 
       // Log Activities
       await createAuditLog(

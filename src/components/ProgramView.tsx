@@ -755,7 +755,7 @@ export default function ProgramView({
 
                     const displayPagu = rkaSumProg > 0 ? rkaSumProg : (p.pagu || 0);
                     const displayRealisasi = p.realisasi || 0;
-                    const displaySisa = Math.max(0, displayPagu - displayRealisasi);
+                    const displaySisa = displayPagu - displayRealisasi;
                     const displayPersentase = displayPagu > 0 ? parseFloat(((displayRealisasi / displayPagu) * 100).toFixed(2)) : 0;
 
                     return (
@@ -775,7 +775,7 @@ export default function ProgramView({
                         </td>
                         <td className="p-3.5 text-right font-bold text-slate-950">{formatRupiah(displayPagu)}</td>
                         <td className="p-3.5 text-right text-emerald-800 font-semibold">{formatRupiah(displayRealisasi)}</td>
-                        <td className="p-3.5 text-right font-medium text-slate-700">{formatRupiah(displaySisa)}</td>
+                        <td className={`p-3.5 text-right font-medium ${displaySisa < 0 ? 'text-red-600 font-bold' : 'text-slate-700'}`}>{formatRupiah(displaySisa)}</td>
                         <td className="p-3.5 text-center">
                           <span className={`px-2 py-0.5 rounded-full font-black text-[10px] ${displayPersentase >= 80 ? 'bg-emerald-100 text-emerald-800' : displayPersentase >= 50 ? 'bg-blue-100 text-blue-800' : 'bg-slate-100 text-slate-800'}`}>
                             {displayPersentase}%
@@ -825,7 +825,7 @@ export default function ProgramView({
 
                     const displayPagu = rkaSumKeg > 0 ? rkaSumKeg : (k.pagu || 0);
                     const displayRealisasi = k.realisasi || 0;
-                    const displaySisa = Math.max(0, displayPagu - displayRealisasi);
+                    const displaySisa = displayPagu - displayRealisasi;
                     const displayPersentase = displayPagu > 0 ? parseFloat(((displayRealisasi / displayPagu) * 100).toFixed(2)) : 0;
 
                     return (
@@ -847,7 +847,7 @@ export default function ProgramView({
                         <td className="p-3.5 font-mono text-slate-600">{k.kode_program}</td>
                         <td className="p-3.5 text-right font-bold text-slate-950">{formatRupiah(displayPagu)}</td>
                         <td className="p-3.5 text-right text-emerald-800 font-semibold">{formatRupiah(displayRealisasi)}</td>
-                        <td className="p-3.5 text-right font-medium text-slate-700">{formatRupiah(displaySisa)}</td>
+                        <td className={`p-3.5 text-right font-medium ${displaySisa < 0 ? 'text-red-600 font-bold' : 'text-slate-700'}`}>{formatRupiah(displaySisa)}</td>
                         <td className="p-3.5 text-center">
                           <span className={`px-2 py-0.5 rounded-full font-black text-[10px] ${displayPersentase >= 80 ? 'bg-emerald-100 text-emerald-800' : displayPersentase >= 50 ? 'bg-blue-100 text-blue-800' : 'bg-slate-100 text-slate-800'}`}>
                             {displayPersentase}%
@@ -896,7 +896,7 @@ export default function ProgramView({
 
                     const displayPagu = rkaSumSub > 0 ? rkaSumSub : (s.pagu || 0);
                     const displayRealisasi = s.realisasi || 0;
-                    const displaySisa = Math.max(0, displayPagu - displayRealisasi);
+                    const displaySisa = displayPagu - displayRealisasi;
                     const displayPersentase = displayPagu > 0 ? parseFloat(((displayRealisasi / displayPagu) * 100).toFixed(2)) : 0;
 
                     return (
@@ -916,7 +916,7 @@ export default function ProgramView({
                         <td className="p-3.5 font-mono text-slate-600">{s.kode_kegiatan}</td>
                         <td className="p-3.5 text-right font-bold text-slate-950">{formatRupiah(displayPagu)}</td>
                         <td className="p-3.5 text-right text-emerald-800 font-semibold">{formatRupiah(displayRealisasi)}</td>
-                        <td className="p-3.5 text-right font-medium text-slate-700">{formatRupiah(displaySisa)}</td>
+                        <td className={`p-3.5 text-right font-medium ${displaySisa < 0 ? 'text-red-600 font-bold' : 'text-slate-700'}`}>{formatRupiah(displaySisa)}</td>
                         <td className="p-3.5 text-center">
                           <span className={`px-2 py-0.5 rounded-full font-black text-[10px] ${displayPersentase >= 80 ? 'bg-emerald-100 text-emerald-800' : displayPersentase >= 50 ? 'bg-blue-100 text-blue-800' : 'bg-slate-100 text-slate-800'}`}>
                             {displayPersentase}%

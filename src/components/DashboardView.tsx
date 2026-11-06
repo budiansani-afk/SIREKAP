@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { 
   DollarSign, 
   TrendingUp, 
@@ -9,7 +9,15 @@ import {
   FileCheck, 
   Activity,
   AlertTriangle,
-  ArrowUpRight
+  ArrowUpRight,
+  ArrowRight,
+  ShieldAlert,
+  FileSpreadsheet,
+  Receipt,
+  X,
+  CheckCircle2,
+  ExternalLink,
+  BellRing
 } from 'lucide-react';
 import { Program, Kegiatan, SubKegiatan, Realisasi, BelanjaPihakKetiga, DokumenArsip, RKA } from '../types';
 import { formatRupiah, formatPercent } from '../utils/helpers';
@@ -23,6 +31,22 @@ import {
   Tooltip as RechartsTooltip 
 } from 'recharts';
 
+export interface OverbudgetItem {
+  id: string;
+  kode_program: string;
+  kode_kegiatan: string;
+  kode_sub_kegiatan: string;
+  nama_sub_kegiatan: string;
+  kode_rekening?: string;
+  uraian_belanja: string;
+  pagu: number;
+  realisasi: number;
+  defisit: number;
+  persentase: number;
+  transaksiCount: number;
+  transaksiList: Realisasi[];
+}
+
 interface DashboardProps {
   programs: Program[];
   kegiatans: Kegiatan[];
@@ -31,7 +55,7 @@ interface DashboardProps {
   pihakKetigas: BelanjaPihakKetiga[];
   rkaList: RKA[];
   dokumens: DokumenArsip[];
-  onNavigate?: (page: 'dashboard' | 'program' | 'rka' | 'realisasi' | 'pihakKetiga' | 'dokumen' | 'laporan' | 'analisis' | 'logs' | 'pengaturan', tabDetail?: string) => void;
+  onNavigate?: (page: 'dashboard' | 'program' | 'rka' | 'realisasi' | 'pihakKetiga' | 'dokumen' | 'laporan' | 'analisis' | 'logs' | 'pengaturan', tabDetail?: string, filterInfo?: { subKegiatan?: string; uraian?: string }) => void;
   onShowInfo?: (info: { title: string; content: string; type: 'guide' | 'alert' }) => void;
   selectedYear: number;
 }
@@ -53,7 +77,7 @@ const ComparisonTooltip = ({ active, payload, label }: any) => {
   if (active && payload && payload.length) {
     const paguVal = payload[0]?.value || 0;
     const realisasiVal = payload[1]?.value || 0;
-    const sisaVal = Math.max(0, paguVal - realisasiVal);
+    const sisaVal = paguVal - realisasiVal;
     const percentage = paguVal > 0 ? (realisasiVal / paguVal) * 100 : 0;
     
     return (
@@ -72,7 +96,7 @@ const ComparisonTooltip = ({ active, payload, label }: any) => {
           </div>
           <div className="flex justify-between gap-6 pt-1 border-t border-white/5">
             <span className="text-slate-400">Sisa:</span>
-            <span className="font-bold text-amber-400">{formatRupiah(sisaVal)}</span>
+            <span className={`font-bold ${sisaVal < 0 ? 'text-red-400' : 'text-amber-400'}`}>{formatRupiah(sisaVal)}</span>
           </div>
           <div className="flex justify-between gap-6">
             <span className="text-slate-400">Penyerapan:</span>
@@ -102,19 +126,20 @@ interface StatCardProps {
   title: string;
   value: string;
   subtitle: string;
-  color: 'blue' | 'emerald' | 'amber';
+  color: 'blue' | 'emerald' | 'amber' | 'rose';
 }
 
 const StatCard = ({ title, value, subtitle, color }: StatCardProps) => {
   const colorMap = {
     blue: 'bg-white border-slate-200 text-blue-700',
     emerald: 'bg-white border-slate-200 text-emerald-700',
-    amber: 'bg-white border-slate-200 text-amber-700'
+    amber: 'bg-white border-slate-200 text-amber-700',
+    rose: 'bg-white border-red-200 text-rose-700'
   };
   return (
     <div className={`p-4 rounded-xl border shadow-sm hover:shadow transition-all ${colorMap[color]}`}>
       <p className="text-slate-400 text-[10px] font-bold uppercase tracking-wider block truncate">{title}</p>
-      <h3 className="text-lg font-black text-slate-950 mt-1 truncate" title={value}>{value}</h3>
+      <h3 className={`text-lg font-black mt-1 truncate ${color === 'rose' ? 'text-red-600' : 'text-slate-950'}`} title={value}>{value}</h3>
       <p className="text-[10px] mt-0.5 font-bold">{subtitle}</p>
     </div>
   );
@@ -207,9 +232,9 @@ export default function DashboardView({
   const totalPaguNonPK = Math.max(0, totalPaguAll - totalPaguPK);
   const totalRealisasiNonPK = Math.max(0, totalRealisasiAll - totalRealisasiPK);
   
-  const totalSisaAll = Math.max(0, totalPaguAll - totalRealisasiAll);
-  const totalSisaNonPK = Math.max(0, totalPaguNonPK - totalRealisasiNonPK);
-  const totalSisaPK = Math.max(0, totalPaguPK - totalRealisasiPK);
+  const totalSisaAll = totalPaguAll - totalRealisasiAll;
+  const totalSisaNonPK = totalPaguNonPK - totalRealisasiNonPK;
+  const totalSisaPK = totalPaguPK - totalRealisasiPK;
   
   const persentaseSerapanAll = totalPaguAll > 0 ? (totalRealisasiAll / totalPaguAll) * 100 : 0;
   const persentaseSerapanPK = totalPaguPK > 0 ? (totalRealisasiPK / totalPaguPK) * 100 : 0;
@@ -252,6 +277,102 @@ export default function DashboardView({
     return list;
   }, [persentaseSerapanAll, subKegiatans]);
 
+  // Perhitungan komprehensif jenis belanja yang pencairannya melebihi pagu (Overbudget)
+  const overbudgetBelanjaList = useMemo(() => {
+    const map = new Map<string, {
+      kode_sub_kegiatan: string;
+      nama_sub_kegiatan: string;
+      kode_program: string;
+      kode_kegiatan: string;
+      kode_rekening?: string;
+      uraian_belanja: string;
+      pagu: number;
+      realisasi: number;
+      transaksiCount: number;
+      transaksiList: Realisasi[];
+    }>();
+
+    // 1. Kumpulkan pagu dari rkaList
+    rkaList.forEach(r => {
+      if (!r.kode_sub_kegiatan || !r.uraian_belanja) return;
+      const sub = subKegiatans.find(s => s.kode_sub_kegiatan === r.kode_sub_kegiatan);
+      const key = `${r.kode_sub_kegiatan}:::${r.uraian_belanja.trim()}`;
+      if (!map.has(key)) {
+        map.set(key, {
+          kode_sub_kegiatan: r.kode_sub_kegiatan,
+          nama_sub_kegiatan: sub?.nama_sub_kegiatan || r.kode_sub_kegiatan,
+          kode_program: r.kode_program || sub?.kode_program || '',
+          kode_kegiatan: r.kode_kegiatan || sub?.kode_kegiatan || '',
+          kode_rekening: r.kode_rekening || '',
+          uraian_belanja: r.uraian_belanja.trim(),
+          pagu: r.jumlah || 0,
+          realisasi: 0,
+          transaksiCount: 0,
+          transaksiList: []
+        });
+      } else {
+        const item = map.get(key)!;
+        item.pagu += (r.jumlah || 0);
+        if (!item.kode_rekening && r.kode_rekening) item.kode_rekening = r.kode_rekening;
+      }
+    });
+
+    // 2. Akumulasi pencairan realisasi SP2D
+    realisasis.forEach(real => {
+      if (!real.kode_sub_kegiatan || !real.uraian_belanja) return;
+      const sub = subKegiatans.find(s => s.kode_sub_kegiatan === real.kode_sub_kegiatan);
+      const key = `${real.kode_sub_kegiatan}:::${real.uraian_belanja.trim()}`;
+      if (!map.has(key)) {
+        map.set(key, {
+          kode_sub_kegiatan: real.kode_sub_kegiatan,
+          nama_sub_kegiatan: sub?.nama_sub_kegiatan || real.kode_sub_kegiatan,
+          kode_program: real.kode_program || sub?.kode_program || '',
+          kode_kegiatan: real.kode_kegiatan || sub?.kode_kegiatan || '',
+          kode_rekening: '',
+          uraian_belanja: real.uraian_belanja.trim(),
+          pagu: real.pagu_anggaran_terpantau || 0,
+          realisasi: real.nominal_realisasi || 0,
+          transaksiCount: 1,
+          transaksiList: [real]
+        });
+      } else {
+        const item = map.get(key)!;
+        item.realisasi += (real.nominal_realisasi || 0);
+        item.transaksiCount += 1;
+        item.transaksiList.push(real);
+      }
+    });
+
+    // 3. Saring hanya belanja yang realisasi > pagu
+    const list: OverbudgetItem[] = [];
+    map.forEach((item, key) => {
+      if (item.realisasi > item.pagu) {
+        const defisit = item.realisasi - item.pagu;
+        const persentase = item.pagu > 0 ? (item.realisasi / item.pagu) * 100 : 999;
+        list.push({
+          id: key,
+          ...item,
+          defisit,
+          persentase
+        });
+      }
+    });
+
+    return list.sort((a, b) => b.defisit - a.defisit);
+  }, [rkaList, realisasis, subKegiatans]);
+
+  const [selectedOverbudgetDetail, setSelectedOverbudgetDetail] = useState<OverbudgetItem | null>(null);
+
+  const handleOpenBelanjaInRka = (item: OverbudgetItem) => {
+    setSelectedOverbudgetDetail(null);
+    onNavigate?.('rka', undefined, { subKegiatan: item.kode_sub_kegiatan, uraian: item.uraian_belanja });
+  };
+
+  const handleOpenBelanjaInRealisasi = (item: OverbudgetItem) => {
+    setSelectedOverbudgetDetail(null);
+    onNavigate?.('realisasi', undefined, { subKegiatan: item.kode_sub_kegiatan, uraian: item.uraian_belanja });
+  };
+
   return (
     <div className="space-y-6" id="dashboard-container">
       {/* Compact Alerts (Sistem Peringatan Dini dibuat lebih kecil) */}
@@ -276,6 +397,99 @@ export default function DashboardView({
           >
             Detail Tindak
           </button>
+        </div>
+      )}
+
+      {/* SECTION PERINGATAN DEFISIT: REALISASI ANGGARAN MELEBIHI PAGU */}
+      {overbudgetBelanjaList.length > 0 && (
+        <div className="bg-gradient-to-r from-red-50 via-rose-50 to-orange-50 border-2 border-red-300 rounded-2xl p-4 sm:p-5 shadow-sm space-y-3 animate-fade-in" id="dashboard-overbudget-section">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 border-b border-red-200/80 pb-2.5">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 bg-red-600 text-white rounded-xl shadow-md shrink-0">
+                <ShieldAlert size={20} className="animate-pulse" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-black text-red-950 uppercase tracking-wide flex items-center gap-2">
+                    Peringatan: Realisasi Anggaran Melebihi Pagu
+                  </h3>
+                  <span className="px-2 py-0.5 bg-red-600 text-white text-[10px] font-black rounded-full shadow-xs">
+                    {overbudgetBelanjaList.length} Jenis Belanja Overbudget
+                  </span>
+                </div>
+                <p className="text-[11px] text-red-800 mt-0.5">
+                  Terdeteksi pencairan SP2D yang melampaui plafon pagu anggaran. <b>Klik pada jenis belanja di bawah ini untuk membuka dan meninjau rincian belanja dimaksud.</b>
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Daftar kartu jenis belanja memanjang per baris rapat */}
+          <div className="flex flex-col gap-2">
+            {overbudgetBelanjaList.map((item, idx) => (
+              <div 
+                key={item.id || idx}
+                onClick={() => setSelectedOverbudgetDetail(item)}
+                className="bg-white hover:bg-red-50/70 border border-red-200 hover:border-red-400 p-2.5 sm:px-4 sm:py-2.5 rounded-xl shadow-2xs hover:shadow-xs transition-all cursor-pointer group flex flex-col md:flex-row md:items-center justify-between gap-2.5 sm:gap-4"
+                title={`Klik untuk membuka rincian jenis belanja: ${item.uraian_belanja}`}
+              >
+                {/* Sisi Kiri: Ikon Notif Peringatan + Identitas Belanja */}
+                <div className="flex items-center gap-3 min-w-0 flex-1">
+                  {/* Ikon Notifikasi Peringatan Berkedip/Aktif */}
+                  <div className="relative shrink-0 flex items-center justify-center w-8 h-8 rounded-lg bg-red-100 text-red-700 border border-red-200 group-hover:bg-red-600 group-hover:text-white transition-colors shadow-2xs">
+                    <BellRing size={16} className="animate-pulse" />
+                    <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-600"></span>
+                    </span>
+                  </div>
+
+                  {/* Uraian dan Sub-Kegiatan */}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[10px] font-mono font-bold text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200/60">
+                        {item.kode_sub_kegiatan}
+                      </span>
+                      <span className="text-[10.5px] text-slate-500 truncate max-w-[280px]" title={item.nama_sub_kegiatan}>
+                        {item.nama_sub_kegiatan}
+                      </span>
+                    </div>
+                    <p className="font-extrabold text-slate-900 group-hover:text-red-700 transition-colors text-xs sm:text-[13px] truncate mt-0.5" title={item.uraian_belanja}>
+                      {item.uraian_belanja}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Sisi Kanan: Parameter Anggaran Tersusun Rapat Memanjang */}
+                <div className="flex items-center justify-between md:justify-end gap-3 sm:gap-5 shrink-0 flex-wrap sm:flex-nowrap border-t md:border-t-0 pt-2 md:pt-0 border-slate-100">
+                  <div className="text-right">
+                    <span className="text-[9px] uppercase font-bold text-slate-400 block leading-tight">Pagu</span>
+                    <span className="font-mono font-bold text-slate-700 text-xs">{formatRupiah(item.pagu)}</span>
+                  </div>
+
+                  <div className="text-right">
+                    <span className="text-[9px] uppercase font-bold text-slate-400 block leading-tight">Realisasi SP2D</span>
+                    <span className="font-mono font-black text-rose-700 text-xs">{formatRupiah(item.realisasi)}</span>
+                  </div>
+
+                  <div className="text-right flex flex-col items-end">
+                    <span className="px-2 py-0.5 bg-rose-100 text-rose-800 border border-rose-200 text-[10px] font-black rounded-full whitespace-nowrap shadow-2xs">
+                      Defisit: +{formatRupiah(item.defisit)}
+                    </span>
+                    <span className="text-[9px] font-bold text-red-600 font-mono mt-0.5">
+                      {item.persentase > 999 ? '>1000%' : `${item.persentase.toFixed(1)}%`} Serapan
+                    </span>
+                  </div>
+
+                  {/* Tombol Aksi Buka Jenis Belanja */}
+                  <div className="flex items-center gap-1 px-2.5 py-1.5 bg-red-50 group-hover:bg-red-600 text-red-700 group-hover:text-white border border-red-200 group-hover:border-red-600 text-[11px] font-extrabold rounded-lg transition-colors shrink-0">
+                    <span>Buka Jenis Belanja</span>
+                    <ArrowRight size={13} className="group-hover:translate-x-0.5 transition-transform" />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
@@ -351,19 +565,34 @@ export default function DashboardView({
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <StatCard title="Total Pagu" value={formatRupiah(totalPaguAll)} subtitle="Total Anggaran" color="blue" />
           <StatCard title="Total Realisasi" value={formatRupiah(totalRealisasiAll)} subtitle={`${persentaseSerapanAll.toFixed(1)}% Serapan`} color="emerald" />
-          <StatCard title="Sisa Anggaran" value={formatRupiah(totalSisaAll)} subtitle="Dana Tersisa" color="amber" />
+          <StatCard 
+            title="Sisa Anggaran" 
+            value={formatRupiah(totalSisaAll)} 
+            subtitle={totalSisaAll < 0 ? "Defisit Anggaran" : "Dana Tersisa"} 
+            color={totalSisaAll < 0 ? "rose" : "amber"} 
+          />
         </div>
         {/* Row 2: Non-PK */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <StatCard title="Pagu Non-PK" value={formatRupiah(totalPaguNonPK)} subtitle="Total Anggaran Non-PK" color="blue" />
           <StatCard title="Realisasi Non-PK" value={formatRupiah(totalRealisasiNonPK)} subtitle={`${persentaseSerapanNonPK.toFixed(1)}% Serapan`} color="emerald" />
-          <StatCard title="Sisa Anggaran Non-PK" value={formatRupiah(totalSisaNonPK)} subtitle="Dana Tersisa Non-PK" color="amber" />
+          <StatCard 
+            title="Sisa Anggaran Non-PK" 
+            value={formatRupiah(totalSisaNonPK)} 
+            subtitle={totalSisaNonPK < 0 ? "Defisit Anggaran Non-PK" : "Dana Tersisa Non-PK"} 
+            color={totalSisaNonPK < 0 ? "rose" : "amber"} 
+          />
         </div>
         {/* Row 3: PK */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <StatCard title="Pagu Pihak Ketiga" value={formatRupiah(totalPaguPK)} subtitle="Total Anggaran PK" color="blue" />
           <StatCard title="Realisasi Pihak Ketiga" value={formatRupiah(totalRealisasiPK)} subtitle={`${persentaseSerapanPK.toFixed(1)}% Serapan`} color="emerald" />
-          <StatCard title="Sisa Anggaran PK" value={formatRupiah(totalSisaPK)} subtitle="Dana Tersisa PK" color="amber" />
+          <StatCard 
+            title="Sisa Anggaran PK" 
+            value={formatRupiah(totalSisaPK)} 
+            subtitle={totalSisaPK < 0 ? "Defisit Anggaran PK" : "Dana Tersisa PK"} 
+            color={totalSisaPK < 0 ? "rose" : "amber"} 
+          />
         </div>
       </div>
 
@@ -714,6 +943,169 @@ export default function DashboardView({
           </div>
         </div>
       </div>
+
+      {/* MODAL DETAIL RINCIAN JENIS BELANJA MELEBIHI PAGU */}
+      {selectedOverbudgetDetail && (
+        <div 
+          className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4 z-[9999] animate-fade-in"
+          onClick={() => setSelectedOverbudgetDetail(null)}
+        >
+          <div 
+            className="bg-white rounded-2xl shadow-2xl border-2 border-red-300 max-w-2xl w-full overflow-hidden max-h-[90vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="p-4 bg-gradient-to-r from-red-600 via-rose-600 to-red-700 text-white flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-white/20 rounded-xl backdrop-blur-xs">
+                  <AlertTriangle size={20} className="text-white animate-pulse" />
+                </div>
+                <div>
+                  <h3 className="font-black text-sm tracking-wide uppercase">Rincian Jenis Belanja Melampaui Pagu (Overbudget)</h3>
+                  <p className="text-[11px] text-red-100 font-medium">Informasi Defisit Anggaran &amp; Riwayat Pencairan SP2D</p>
+                </div>
+              </div>
+              <button 
+                type="button"
+                onClick={() => setSelectedOverbudgetDetail(null)}
+                className="text-white/80 hover:text-white font-black text-xl p-1.5 rounded-lg hover:bg-white/10 transition cursor-pointer"
+              >
+                &times;
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-5 space-y-4 overflow-y-auto text-xs flex-1">
+              {/* Identitas Belanja */}
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-2">
+                <div className="flex items-center justify-between gap-2 border-b border-slate-200 pb-2">
+                  <div>
+                    <span className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">Sub-Kegiatan</span>
+                    <p className="font-bold text-slate-800 text-xs">
+                      {selectedOverbudgetDetail.kode_sub_kegiatan} - {selectedOverbudgetDetail.nama_sub_kegiatan}
+                    </p>
+                  </div>
+                  {selectedOverbudgetDetail.kode_rekening && (
+                    <span className="px-2 py-0.5 bg-slate-200 text-slate-700 font-mono text-[10px] font-bold rounded">
+                      Rek: {selectedOverbudgetDetail.kode_rekening}
+                    </span>
+                  )}
+                </div>
+
+                <div>
+                  <span className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">Uraian / Jenis Belanja</span>
+                  <p className="font-black text-blue-950 text-sm mt-0.5">
+                    {selectedOverbudgetDetail.uraian_belanja}
+                  </p>
+                </div>
+              </div>
+
+              {/* Financial KPI Grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
+                <div className="bg-blue-50 border border-blue-200 p-2.5 rounded-xl">
+                  <span className="text-[10px] text-blue-700 font-bold block">Pagu Anggaran</span>
+                  <span className="font-mono font-black text-blue-900 text-xs mt-0.5 block">{formatRupiah(selectedOverbudgetDetail.pagu)}</span>
+                </div>
+                <div className="bg-rose-50 border border-rose-200 p-2.5 rounded-xl">
+                  <span className="text-[10px] text-rose-700 font-bold block">Realisasi SP2D</span>
+                  <span className="font-mono font-black text-rose-900 text-xs mt-0.5 block">{formatRupiah(selectedOverbudgetDetail.realisasi)}</span>
+                </div>
+                <div className="bg-red-100 border border-red-300 p-2.5 rounded-xl">
+                  <span className="text-[10px] text-red-800 font-black block">Defisit / Kelebihan</span>
+                  <span className="font-mono font-black text-red-700 text-xs mt-0.5 block">+{formatRupiah(selectedOverbudgetDetail.defisit)}</span>
+                </div>
+                <div className="bg-amber-50 border border-amber-200 p-2.5 rounded-xl">
+                  <span className="text-[10px] text-amber-700 font-bold block">Persentase Serapan</span>
+                  <span className="font-mono font-black text-amber-900 text-xs mt-0.5 block">
+                    {selectedOverbudgetDetail.persentase > 999 ? '>1000%' : `${selectedOverbudgetDetail.persentase.toFixed(1)}%`}
+                  </span>
+                </div>
+              </div>
+
+              {/* Tabel Riwayat Transaksi SP2D */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <h4 className="font-extrabold text-slate-800 text-xs flex items-center gap-1.5">
+                    <Receipt size={14} className="text-blue-700" />
+                    Daftar Pencairan SP2D Terkait ({selectedOverbudgetDetail.transaksiList.length} Transaksi)
+                  </h4>
+                </div>
+
+                <div className="border border-slate-200 rounded-xl overflow-hidden shadow-2xs max-h-48 overflow-y-auto">
+                  <table className="w-full text-left text-[11px] border-collapse">
+                    <thead className="bg-slate-100 text-slate-600 font-bold sticky top-0 border-b border-slate-200">
+                      <tr>
+                        <th className="p-2 pl-3">No.</th>
+                        <th className="p-2">Tanggal / Bulan</th>
+                        <th className="p-2">Keterangan / SP2D</th>
+                        <th className="p-2 text-right pr-3">Nominal Realisasi</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 text-slate-700">
+                      {selectedOverbudgetDetail.transaksiList.length === 0 ? (
+                        <tr>
+                          <td colSpan={4} className="p-4 text-center text-slate-400 italic">Tidak ada catatan transaksi spesifik.</td>
+                        </tr>
+                      ) : (
+                        selectedOverbudgetDetail.transaksiList.map((t, idx) => (
+                          <tr key={t.id || idx} className="hover:bg-slate-50">
+                            <td className="p-2 pl-3 font-mono text-slate-500">{idx + 1}</td>
+                            <td className="p-2 font-mono">
+                              <span className="font-bold text-slate-800">{t.tanggal}</span>
+                              <span className="text-[10px] text-slate-500 block">({t.bulan})</span>
+                            </td>
+                            <td className="p-2 truncate max-w-[200px]" title={t.keterangan || t.uraian_belanja}>
+                              {t.keterangan || t.uraian_belanja}
+                            </td>
+                            <td className="p-2 pr-3 text-right font-mono font-bold text-rose-800">
+                              {formatRupiah(t.nominal_realisasi)}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Petunjuk Aksi */}
+              <p className="text-[10.5px] text-slate-500 italic bg-amber-50/70 border border-amber-200/70 p-2.5 rounded-lg">
+                💡 <b>Aksi Penanganan:</b> Anda dapat membuka jenis belanja ini langsung di menu <b>E-RKA</b> untuk menyesuaikan alokasi pagu anggaran atau di menu <b>Realisasi SP2D</b> untuk memeriksa berkas transaksi keuangan terkait.
+              </p>
+            </div>
+
+            {/* Modal Actions Footer */}
+            <div className="p-4 bg-slate-50 border-t border-slate-200 flex flex-wrap items-center justify-between gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => setSelectedOverbudgetDetail(null)}
+                className="px-4 py-2 bg-white hover:bg-slate-100 text-slate-700 font-bold rounded-xl border border-slate-200 transition text-xs cursor-pointer"
+              >
+                Tutup
+              </button>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleOpenBelanjaInRka(selectedOverbudgetDetail)}
+                  className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-extrabold rounded-xl shadow-xs transition text-xs flex items-center gap-1.5 cursor-pointer"
+                >
+                  <FileSpreadsheet size={14} />
+                  Buka di E-RKA Detail Belanja
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleOpenBelanjaInRealisasi(selectedOverbudgetDetail)}
+                  className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold rounded-xl shadow-xs transition text-xs flex items-center gap-1.5 cursor-pointer"
+                >
+                  <TrendingUp size={14} />
+                  Buka di Realisasi SP2D
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

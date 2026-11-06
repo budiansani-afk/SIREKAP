@@ -22,7 +22,7 @@ import { BelanjaPihakKetiga, Program, Kegiatan, SubKegiatan, RKA, Realisasi, Use
 import { formatRupiah, exportToCSV } from '../utils/helpers';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { doc, setDoc, deleteDoc } from 'firebase/firestore';
-import { COLL_BELANJA_PIHAK_KETIGA, createAuditLog } from '../dbService';
+import { COLL_BELANJA_PIHAK_KETIGA, createAuditLog, syncPihakKetigaToSp2d, synchronizeCalculations } from '../dbService';
 import { uploadFile, deleteFile } from '../cloudinaryService';
 
 interface BelanjaPihakKetigaProps {
@@ -158,7 +158,7 @@ export default function BelanjaPihakKetigaView({
       totalReal += getItemRealisasi(m);
     });
 
-    const totalSisa = Math.max(0, totalPagu - totalReal);
+    const totalSisa = totalPagu - totalReal;
     const persentase = totalPagu > 0 ? (totalReal / totalPagu) * 100 : 0;
 
     return { totalPagu, totalReal, totalSisa, persentase };
@@ -285,6 +285,10 @@ export default function BelanjaPihakKetigaView({
 
       await setDoc(doc(db, COLL_BELANJA_PIHAK_KETIGA, docId), payload).catch(err => handleFirestoreError(err, OperationType.WRITE, `${COLL_BELANJA_PIHAK_KETIGA}/${docId}`));
 
+      // Sinkronisasi otomatis ke modul Realisasi SP2D & Perhitungan Anggaran
+      await syncPihakKetigaToSp2d(payload, linkedSub, rkaList, false);
+      await synchronizeCalculations();
+
       // Handle audit logging
       await createAuditLog(
         currentUserEmail,
@@ -295,7 +299,7 @@ export default function BelanjaPihakKetigaView({
         payload
       );
 
-      alert(`[NOTIFIKASI DATA BERUBAH]\nBerhasil menyimpan belanja pihak ketiga untuk sub-kegiatan ${payload.kode_sub_kegiatan}. Log audit dicatat.`);
+      alert(`[NOTIFIKASI DATA BERUBAH]\nBerhasil menyimpan belanja pihak ketiga untuk sub-kegiatan ${payload.kode_sub_kegiatan}. Data otomatis tersinkron ke Realisasi SP2D dan Pagu Anggaran.`);
 
       setShowForm(false);
       setEditItem(null);
@@ -324,6 +328,10 @@ export default function BelanjaPihakKetigaView({
 
       await deleteDoc(doc(db, COLL_BELANJA_PIHAK_KETIGA, item.id)).catch(err => handleFirestoreError(err, OperationType.DELETE, `${COLL_BELANJA_PIHAK_KETIGA}/${item.id}`));
       
+      // Sinkronisasi otomatis hapus dari Realisasi SP2D & Perhitungan Anggaran
+      await syncPihakKetigaToSp2d(item, undefined, rkaList, true);
+      await synchronizeCalculations();
+
       await createAuditLog(
         currentUserEmail,
         currentUserRole,
@@ -333,7 +341,7 @@ export default function BelanjaPihakKetigaView({
         null
       );
 
-      alert(`[NOTIFIKASI DATA BERUBAH]\nPencatatan belanja pihak ketiga sub-kegiatan ${item.kode_sub_kegiatan} berhasil dihapus.`);
+      alert(`[NOTIFIKASI DATA BERUBAH]\nPencatatan belanja pihak ketiga sub-kegiatan ${item.kode_sub_kegiatan} berhasil dihapus dan otomatis disinkronkan ke seluruh menu.`);
     } catch (err) {
       alert("Gagal menghapus: " + (err instanceof Error ? err.message : String(err)));
     }
@@ -392,10 +400,12 @@ export default function BelanjaPihakKetigaView({
           <p className="text-base font-black text-emerald-600 font-mono mt-1">{formatRupiah(totalStats.totalReal)}</p>
           <span className="text-[10px] text-emerald-700 font-bold">{totalStats.persentase.toFixed(1)}% Dari Pagu PK</span>
         </div>
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
-          <span className="text-[10px] text-amber-700 font-bold uppercase tracking-wider block">Sisa Anggaran PK</span>
-          <p className="text-base font-black text-amber-600 font-mono mt-1">{formatRupiah(totalStats.totalSisa)}</p>
-          <span className="text-[10px] text-slate-400 font-medium">Sisa Pagu Tersedia</span>
+        <div className={`p-4 rounded-xl border shadow-2xs ${totalStats.totalSisa < 0 ? 'bg-red-50/50 border-red-200' : 'bg-white border-slate-200'}`}>
+          <span className={`text-[10px] font-bold uppercase tracking-wider block ${totalStats.totalSisa < 0 ? 'text-red-700' : 'text-amber-700'}`}>Sisa Anggaran PK</span>
+          <p className={`text-base font-black font-mono mt-1 ${totalStats.totalSisa < 0 ? 'text-red-600' : 'text-amber-600'}`}>{formatRupiah(totalStats.totalSisa)}</p>
+          <span className={`text-[10px] font-medium ${totalStats.totalSisa < 0 ? 'text-red-600 font-bold' : 'text-slate-400'}`}>
+            {totalStats.totalSisa < 0 ? 'Defisit Anggaran PK' : 'Sisa Pagu Tersedia'}
+          </span>
         </div>
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
           <span className="text-[10px] text-indigo-700 font-bold uppercase tracking-wider block">Tingkat Penyerapan</span>
@@ -459,7 +469,7 @@ export default function BelanjaPihakKetigaView({
               // Realisasi SP2D
               const matchedSp2ds = getMatchedSp2dList(m);
               const realisasiVal = getItemRealisasi(m);
-              const sisaPaguSub = Math.max(0, paguRka - realisasiVal);
+              const sisaPaguSub = paguRka - realisasiVal;
               const persentaseSerapan = paguRka > 0 ? (realisasiVal / paguRka) * 100 : 0;
 
               return (
@@ -524,9 +534,9 @@ export default function BelanjaPihakKetigaView({
                         <p className="font-mono font-extrabold text-emerald-950 text-xs mt-0.5">{formatRupiah(realisasiVal)}</p>
                         <span className="text-[9px] text-emerald-700 font-bold">Serapan: {persentaseSerapan.toFixed(1)}%</span>
                       </div>
-                      <div className="bg-amber-50/80 border border-amber-100 p-2 rounded-lg min-w-[120px]">
-                        <p className="font-bold text-amber-900 uppercase">Sisa Pagu RKA</p>
-                        <p className="font-mono font-extrabold text-amber-950 text-xs mt-0.5">{formatRupiah(sisaPaguSub)}</p>
+                      <div className={`border p-2 rounded-lg min-w-[120px] ${sisaPaguSub < 0 ? 'bg-red-50/80 border-red-200' : 'bg-amber-50/80 border-amber-100'}`}>
+                        <p className={`font-bold uppercase ${sisaPaguSub < 0 ? 'text-red-900' : 'text-amber-900'}`}>Sisa Pagu RKA</p>
+                        <p className={`font-mono font-extrabold text-xs mt-0.5 ${sisaPaguSub < 0 ? 'text-red-600' : 'text-amber-950'}`}>{formatRupiah(sisaPaguSub)}</p>
                       </div>
                       <div className="bg-slate-100 border border-slate-200 p-2 rounded-lg flex-1 min-w-[140px]">
                         <p className="font-bold text-slate-600 uppercase">Masa Kerja</p>

@@ -98,6 +98,10 @@ export default function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [selectedInfo, setSelectedInfo] = useState<{ title: string; content: string; type: 'guide' | 'alert' } | null>(null);
 
+  // Filter target dari dashboard saat user mengklik jenis belanja yang overbudget
+  const [targetFilterSubKeg, setTargetFilterSubKeg] = useState<string>('');
+  const [targetFilterUraian, setTargetFilterUraian] = useState<string>('');
+
   const showToast = (message: string, type: 'success' | 'error' = 'success') => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 3000);
@@ -243,8 +247,9 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
-  // Auto seed on boot
+  // Auto seed check after authentication is established
   useEffect(() => {
+    if (!user) return;
     const initSeed = async () => {
       try {
         await seedInitialDataIfEmpty();
@@ -253,7 +258,7 @@ export default function App() {
       }
     };
     initSeed();
-  }, []);
+  }, [user]);
 
   // Listen for Authentication session shifts
   useEffect(() => {
@@ -289,7 +294,7 @@ export default function App() {
                 role: role,
                 aktif: true,
                 password: "bima2026"
-              }, { merge: true });
+              }, { merge: true }).catch(err => console.warn("Notice: could not save initial user doc:", err));
             }
           } catch (e) {
             console.warn("Could not retrieve user document from firestore:", e);
@@ -315,35 +320,35 @@ export default function App() {
 
     const unsubProg = onSnapshot(collection(db, COLL_PROGRAM), (snap) => {
       setPrograms(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Program)));
-    });
+    }, (err) => console.warn('Error listening program:', err));
 
     const unsubKeg = onSnapshot(collection(db, COLL_KEGIATAN), (snap) => {
       setKegiatans(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Kegiatan)));
-    });
+    }, (err) => console.warn('Error listening kegiatan:', err));
 
     const unsubSub = onSnapshot(collection(db, COLL_SUB_KEGIATAN), (snap) => {
       setSubKegiatans(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as SubKegiatan)));
-    });
+    }, (err) => console.warn('Error listening sub kegiatan:', err));
 
     const unsubRka = onSnapshot(collection(db, COLL_RKA), (snap) => {
       setRkaList(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as RKA)));
-    });
+    }, (err) => console.warn('Error listening rka:', err));
 
     const unsubReal = onSnapshot(collection(db, COLL_REALISASI), (snap) => {
       setRealisasis(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Realisasi)));
-    });
+    }, (err) => console.warn('Error listening realisasi:', err));
 
     const unsubMon = onSnapshot(collection(db, COLL_BELANJA_PIHAK_KETIGA), (snap) => {
       setPihakKetigas(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as BelanjaPihakKetiga)));
-    });
+    }, (err) => console.warn('Error listening belanja pihak ketiga:', err));
 
     const unsubDoc = onSnapshot(collection(db, COLL_DOKUMEN), (snap) => {
       setDokumens(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as DokumenArsip)));
-    });
+    }, (err) => console.warn('Error listening dokumen:', err));
 
     const unsubPengguna = onSnapshot(collection(db, "sibiru_pengguna"), (snap) => {
       setPenggunas(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Pengguna)));
-    });
+    }, (err) => console.warn('Error listening pengguna:', err));
 
     const unsubLogs = onSnapshot(collection(db, COLL_LOG_AKTIVITAS), (snap) => {
       setLogs(snap.docs.map(doc => {
@@ -375,7 +380,7 @@ export default function App() {
           details: parsedNew || parsedOld || null
         } as any;
       }));
-    });
+    }, (err) => console.warn('Error listening logs:', err));
 
     const unsubSet = onSnapshot(doc(db, COLL_PENGATURAN, "aktif"), (docSnap) => {
       if (docSnap.exists()) {
@@ -394,7 +399,7 @@ export default function App() {
           nip_bendahara: d.nip_bendahara || ""
         });
       }
-    });
+    }, (err) => console.warn('Error listening pengaturan:', err));
 
     const unsubVisits = onSnapshot(collection(db, 'sibiru_visits'), (snap) => {
       // We will set a beautiful baseline of 2145 to make it match existing system status vibe + actual count!
@@ -500,30 +505,19 @@ export default function App() {
     const emailClean = emailInput.trim().toLowerCase();
 
     try {
-      // 1. Fetch from Firestore sibiru_pengguna
-      const userDocRef = doc(db, "sibiru_pengguna", emailClean);
-      const userDocSnap = await getDoc(userDocRef);
-      
-      if (!userDocSnap.exists()) {
-        // If it's a seed email and doesn't exist yet, allow standard onboarding
-        if (
-          emailClean === 'admin@sirekap.com' ||
-          emailClean === 'operator@sirekap.com' ||
-          emailClean === 'pimpinan@sirekap.com'
-        ) {
-          // Allow through to trigger creation below
+      // 1. Authenticate with Firebase Auth first
+      try {
+        await signInWithEmailAndPassword(auth, emailClean, passwordInput);
+      } catch (authErr: any) {
+        if (authErr.code === 'auth/user-not-found' || authErr.code === 'auth/invalid-credential') {
+          // If first run, auto-register in Auth
+          try {
+            await createUserWithEmailAndPassword(auth, emailClean, passwordInput);
+          } catch (createErr: any) {
+            throw new Error("Akun belum terdaftar atau kombinasi email dan kata sandi salah!");
+          }
         } else {
-          throw new Error("Nama akun tidak terdaftar di database Firestore! Daftarkan akun di Administrasi.");
-        }
-      } else {
-        const userData = userDocSnap.data();
-        if (userData.aktif === false) {
-          throw new Error("Akun Anda telah dinonaktifkan oleh administrator!");
-        }
-        
-        // Verify Password match
-        if (userData.password && userData.password !== passwordInput) {
-          throw new Error("Kata sandi yang Anda masukkan salah!");
+          throw authErr;
         }
       }
 
@@ -532,25 +526,22 @@ export default function App() {
       setNamaPenggunaAktif(namaPenggunaInput.trim());
       setUserDisplayName(namaPenggunaInput.trim());
 
-      // 3. Authenticate with Firebase Auth
+      // 3. Fetch from Firestore sibiru_pengguna now that user is signed in
       try {
-        await signInWithEmailAndPassword(auth, emailClean, passwordInput);
-      } catch (authErr: any) {
-        if (authErr.code === 'auth/user-not-found' || authErr.code === 'auth/invalid-credential') {
-          // If first run, create user in Auth
-          if (
-            emailClean === 'admin@sirekap.com' || 
-            emailClean === 'operator@sirekap.com' || 
-            emailClean === 'pimpinan@sirekap.com' ||
-            userDocSnap.exists()
-          ) {
-            await createUserWithEmailAndPassword(auth, emailClean, passwordInput);
-          } else {
-            throw authErr;
+        const userDocRef = doc(db, "sibiru_pengguna", emailClean);
+        const userDocSnap = await getDoc(userDocRef);
+        if (userDocSnap.exists()) {
+          const userData = userDocSnap.data();
+          if (userData.aktif === false) {
+            await signOut(auth);
+            throw new Error("Akun Anda telah dinonaktifkan oleh administrator!");
           }
-        } else {
-          throw authErr;
         }
+      } catch (docErr: any) {
+        if (docErr.message?.includes('dinonaktifkan')) {
+          throw docErr;
+        }
+        console.warn("Could not check user status doc:", docErr);
       }
     } catch (err: any) {
       setLoginError(err.message || `Nama akun atau kata sandi tidak cocok.`);
@@ -760,10 +751,14 @@ export default function App() {
             realisasis={filteredRealisasis} 
             pihakKetigas={filteredPihakKetigas}
             dokumens={dokumens}
-            onNavigate={(page, tabDetail) => {
+            onNavigate={(page, tabDetail, filterInfo) => {
               setActivePage(page as any);
               if (page === "program" && tabDetail) {
                 setProgramActiveTab(tabDetail as any);
+              }
+              if (filterInfo) {
+                setTargetFilterSubKeg(filterInfo.subKegiatan || '');
+                setTargetFilterUraian(filterInfo.uraian || '');
               }
             }}
             selectedYear={selectedYear}
@@ -800,6 +795,8 @@ export default function App() {
             currentUserRole={userRole} 
             currentUserEmail={user.email} 
             selectedYear={selectedYear}
+            initialFilterSubKegiatan={targetFilterSubKeg}
+            initialFilterUraian={targetFilterUraian}
           />
         );
       case "realisasi":
@@ -810,10 +807,13 @@ export default function App() {
             programs={filteredPrograms} 
             kegiatans={filteredKegiatans} 
             subKegiatans={filteredSubKegiatans} 
+            pihakKetigas={filteredPihakKetigas}
             currentUserRole={userRole} 
             currentUserEmail={user.email} 
             onShowToast={showToast}
             selectedYear={selectedYear}
+            initialSubKeg={targetFilterSubKeg}
+            initialUraianFilter={targetFilterUraian}
           />
         );
       case "pihakKetiga":
@@ -1041,6 +1041,8 @@ export default function App() {
                     key={item.id}
                     onClick={() => {
                       setActivePage(item.id as ViewPage);
+                      setTargetFilterSubKeg('');
+                      setTargetFilterUraian('');
                       if (item.id === 'program') {
                         setProgramActiveTab('program');
                       }

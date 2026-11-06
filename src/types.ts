@@ -74,6 +74,7 @@ export interface Realisasi {
   bukti_transaksi?: string; // Base64 data url or name
   bukti_transaksi_public_id?: string; // Cloudinary public_id for real-time deletion
   tahun?: number;
+  id_pihak_ketiga?: string;
 }
 
 export interface BelanjaPihakKetiga {
@@ -92,6 +93,7 @@ export interface BelanjaPihakKetiga {
   foto_kegiatan?: string; // Base64 or Cloudinary secure URL
   foto_kegiatan_public_id?: string; // Cloudinary public_id
   tahun?: number;
+  id_realisasi_sp2d?: string;
 }
 
 export interface DokumenArsip {

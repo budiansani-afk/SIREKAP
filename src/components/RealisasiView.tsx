@@ -11,13 +11,17 @@ import {
   Receipt,
   Download,
   DollarSign,
-  Eye
+  Eye,
+  ShieldAlert,
+  X,
+  Ban,
+  Activity
 } from 'lucide-react';
-import { Realisasi, Program, Kegiatan, SubKegiatan, UserRole, RKA } from '../types';
+import { Realisasi, Program, Kegiatan, SubKegiatan, UserRole, RKA, BelanjaPihakKetiga } from '../types';
 import { formatRupiah, exportToCSV } from '../utils/helpers';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { doc, setDoc, deleteDoc } from 'firebase/firestore';
-import { COLL_REALISASI, createAuditLog, synchronizeCalculations } from '../dbService';
+import { COLL_REALISASI, createAuditLog, synchronizeCalculations, syncSp2dToPihakKetiga } from '../dbService';
 import { uploadFile, deleteFile } from '../cloudinaryService';
 
 interface RealisasiViewProps {
@@ -26,10 +30,13 @@ interface RealisasiViewProps {
   programs: Program[];
   kegiatans: Kegiatan[];
   subKegiatans: SubKegiatan[];
+  pihakKetigas?: BelanjaPihakKetiga[];
   currentUserRole: UserRole;
   currentUserEmail: string;
   onShowToast: (msg: string, type: 'success' | 'error') => void;
   selectedYear: number;
+  initialSubKeg?: string;
+  initialUraianFilter?: string;
 }
 
 export default function RealisasiView({
@@ -38,15 +45,45 @@ export default function RealisasiView({
   programs,
   kegiatans,
   subKegiatans,
+  pihakKetigas = [],
   currentUserRole,
   currentUserEmail,
   onShowToast,
-  selectedYear
+  selectedYear,
+  initialSubKeg,
+  initialUraianFilter
 }: RealisasiViewProps) {
   const [selectedMonth, setSelectedMonth] = useState('');
-  const [selectedSubKeg, setSelectedSubKeg] = useState('');
-  const [selectedErikaFilter, setSelectedErikaFilter] = useState('');
+  const [selectedSubKeg, setSelectedSubKeg] = useState(initialSubKeg || '');
+  const [selectedErikaFilter, setSelectedErikaFilter] = useState(initialUraianFilter || '');
   const [selectedRealisasiStatus, setSelectedRealisasiStatus] = useState('');
+
+  // Sinkronisasi filter saat menerima navigasi dari luar (misal Dashboard)
+  React.useEffect(() => {
+    if (initialSubKeg !== undefined) {
+      setSelectedSubKeg(initialSubKeg);
+    }
+  }, [initialSubKeg]);
+
+  React.useEffect(() => {
+    if (initialUraianFilter !== undefined) {
+      setSelectedErikaFilter(initialUraianFilter);
+    }
+  }, [initialUraianFilter]);
+
+  // Modal State untuk Peringatan Anggaran Tidak Cukup (Budget Exceeded Popup)
+  const [showInsufficientBudgetModal, setShowInsufficientBudgetModal] = useState(false);
+  const [insufficientBudgetData, setInsufficientBudgetData] = useState<{
+    subKegiatanKode: string;
+    namaSubKegiatan: string;
+    uraianBelanja: string;
+    paguAnggaran: number;
+    realisasiSebelumnya: number;
+    sisaTersedia: number;
+    nominalInput: number;
+    kelebihanNominal: number;
+    level: string;
+  } | null>(null);
 
   // Modals
   const [showForm, setShowForm] = useState(false);
@@ -69,6 +106,7 @@ export default function RealisasiView({
   const [isSaving, setIsSaving] = useState(false);
   const [formUraianIsManual, setFormUraianIsManual] = useState(false);
   const [manualUraianVal, setManualUraianVal] = useState('');
+  const [formPihakKetigaId, setFormPihakKetigaId] = useState<string>('');
 
   const canEdit = currentUserRole === UserRole.ADMIN || currentUserRole === UserRole.OPERATOR;
 
@@ -186,7 +224,7 @@ export default function RealisasiView({
                   type: 'realized',
                   ...real,
                   pagu: rka.jumlah,
-                  sisa_anggaran: Math.max(0, rka.jumlah - runningSpent),
+                  sisa_anggaran: rka.jumlah - runningSpent,
                 });
               });
           }
@@ -216,8 +254,8 @@ export default function RealisasiView({
       .filter(rka => (!selectedSubKeg || rka.kode_sub_kegiatan === selectedSubKeg) && (!selectedErikaFilter || rka.uraian_belanja === selectedErikaFilter))
       .reduce((sum, rka) => sum + rka.jumlah, 0);
 
-    // Sisa Anggaran
-    const sisa = Math.max(0, pagu - totalReal);
+    // Sisa Anggaran (tetap ditampilkan bila negatif/defisit)
+    const sisa = pagu - totalReal;
     
     const persen = pagu > 0 ? (totalReal / pagu) * 100 : 0;
     
@@ -235,18 +273,28 @@ export default function RealisasiView({
     if (!formSubKeg) return null;
     const s = subKegiatans.find(sk => sk.kode_sub_kegiatan === formSubKeg);
     if (!s) return null;
+    const subRealisasis = realisasis.filter(r => r.kode_sub_kegiatan === formSubKeg && r.id !== editItem?.id);
+    const spent = subRealisasis.reduce((sum, r) => sum + r.nominal_realisasi, 0);
+    const sisa = s.pagu - spent;
     return {
       pagu: s.pagu,
-      realisasi_lama: s.realisasi,
-      sisa_tersedia: Math.max(0, s.pagu - s.realisasi)
+      realisasi_lama: spent,
+      sisa_tersedia: sisa,
+      sisa_setelah_input: sisa - formNominal
     };
-  }, [formSubKeg, subKegiatans]);
+  }, [formSubKeg, subKegiatans, realisasis, editItem, formNominal]);
 
   // Find RKA list for chosen sub-kegiatan
   const matchingRkasForSub = useMemo(() => {
     if (!formSubKeg) return [];
     return rkaList.filter(r => r.kode_sub_kegiatan === formSubKeg);
   }, [formSubKeg, rkaList]);
+
+  // Find Belanja Pihak Ketiga list for chosen sub-kegiatan
+  const availablePihakKetigas = useMemo(() => {
+    if (!formSubKeg) return [];
+    return pihakKetigas.filter(p => p.kode_sub_kegiatan === formSubKeg);
+  }, [formSubKeg, pihakKetigas]);
 
   // Find currently selected RKA item to display its pagu and sisa
   const totalPagu = useMemo(() => {
@@ -260,12 +308,12 @@ export default function RealisasiView({
     if (totalPagu === 0) return null;
     const itemRealisasis = realisasis.filter(r => r.kode_sub_kegiatan === formSubKeg && r.uraian_belanja === formUraian && r.id !== editItem?.id);
     const spent = itemRealisasis.reduce((sum, r) => sum + r.nominal_realisasi, 0);
-    const sisa = Math.max(0, totalPagu - spent);
+    const sisa = totalPagu - spent;
     return {
       pagu: totalPagu,
       realisasi_lama: spent,
       sisa_tersedia: sisa,
-      sisa_setelah_input: Math.max(0, sisa - formNominal)
+      sisa_setelah_input: sisa - formNominal
     };
   }, [totalPagu, realisasis, formSubKeg, formUraian, editItem, formNominal]);
 
@@ -284,6 +332,7 @@ export default function RealisasiView({
     setFormUraian('');
     setFormUraianIsManual(false);
     setManualUraianVal('');
+    setFormPihakKetigaId('');
     setFormNominal(0);
     setFormKeterangan('');
     setFormBuktiFile(null);
@@ -301,6 +350,7 @@ export default function RealisasiView({
     const belongsToRka = item.uraian_belanja && rkaList.some(r => r.kode_sub_kegiatan === item.kode_sub_kegiatan && r.uraian_belanja === item.uraian_belanja);
     setFormUraianIsManual(!belongsToRka);
     setManualUraianVal(!belongsToRka ? item.uraian_belanja : '');
+    setFormPihakKetigaId(item.id_pihak_ketiga || '');
     setFormNominal(item.nominal_realisasi);
     setFormKeterangan(item.keterangan || '');
     setFormBuktiFile(null);
@@ -323,18 +373,48 @@ export default function RealisasiView({
       return;
     }
 
-    // Budget check guard based on RKA specific sisa
-    const maxAvailableSpecific = rkaSpecificBudgetStatus ? rkaSpecificBudgetStatus.sisa_tersedia + (editItem ? editItem.nominal_realisasi : 0) : 9999999999;
-    if (rkaSpecificBudgetStatus && formNominal > maxAvailableSpecific) {
-      onShowToast(`VALIDASI GAGAL: Nominal pengeluaran ${formatRupiah(formNominal)} melebihi kuota Sisa Anggaran khusus untuk rincian belanja terpilih (${formatRupiah(maxAvailableSpecific)}). Silakan sesuaikan kembali nominal input.`, 'error');
-      return;
+    // 1. Validasi Keras Anggaran Khusus Rincian Belanja (E-RKA) jika terdaftar di E-RKA
+    if (rkaSpecificBudgetStatus) {
+      const maxAvailableSpecific = rkaSpecificBudgetStatus.sisa_tersedia;
+      if (formNominal > maxAvailableSpecific) {
+        const kelebihan = formNominal - maxAvailableSpecific;
+        setInsufficientBudgetData({
+          subKegiatanKode: linkedSub.kode_sub_kegiatan,
+          namaSubKegiatan: linkedSub.nama_sub_kegiatan,
+          uraianBelanja: formUraian.trim(),
+          paguAnggaran: rkaSpecificBudgetStatus.pagu,
+          realisasiSebelumnya: rkaSpecificBudgetStatus.realisasi_lama,
+          sisaTersedia: maxAvailableSpecific,
+          nominalInput: formNominal,
+          kelebihanNominal: kelebihan,
+          level: 'Rincian Belanja (E-RKA)'
+        });
+        setShowInsufficientBudgetModal(true);
+        onShowToast(`PROSES INPUT DITOLAK: Anggaran tidak cukup! Melebihi sisa pagu belanja sebesar ${formatRupiah(kelebihan)}`, 'error');
+        return; // PROSES PENCAIRAN TIDAK BISA DILANJUTKAN!
+      }
     }
 
-    // Budget check guard to notify but let user decide
-    const maxAvailable = activeSubStatus ? activeSubStatus.sisa_tersedia + (editItem ? editItem.nominal_realisasi : 0) : 0;
-    if (formNominal > maxAvailable) {
-      const proceed = window.confirm(`Peringatan Defisit DPA: Nominal pengeluaran ${formatRupiah(formNominal)} melebihi kuota Sisa Anggaran total sub-kegiatan tersedia (${formatRupiah(maxAvailable)}). Apakah Anda yakin ingin memproses ini?`);
-      if (!proceed) return;
+    // 2. Validasi Keras Anggaran Total Sub-Kegiatan (DPA)
+    if (activeSubStatus) {
+      const maxAvailableSub = activeSubStatus.sisa_tersedia;
+      if (formNominal > maxAvailableSub) {
+        const kelebihan = formNominal - maxAvailableSub;
+        setInsufficientBudgetData({
+          subKegiatanKode: linkedSub.kode_sub_kegiatan,
+          namaSubKegiatan: linkedSub.nama_sub_kegiatan,
+          uraianBelanja: formUraian.trim(),
+          paguAnggaran: activeSubStatus.pagu,
+          realisasiSebelumnya: activeSubStatus.realisasi_lama,
+          sisaTersedia: maxAvailableSub,
+          nominalInput: formNominal,
+          kelebihanNominal: kelebihan,
+          level: 'Total Pagu Sub-Kegiatan (DPA)'
+        });
+        setShowInsufficientBudgetModal(true);
+        onShowToast(`PROSES INPUT DITOLAK: Anggaran tidak cukup! Melebihi sisa pagu sub-kegiatan sebesar ${formatRupiah(kelebihan)}`, 'error');
+        return; // PROSES PENCAIRAN TIDAK BISA DILANJUTKAN!
+      }
     }
 
     setIsSaving(true);
@@ -375,7 +455,8 @@ export default function RealisasiView({
       const paguAmt = matchedRka ? matchedRka.jumlah : linkedSub.pagu;
       
       const computedPersentaseOfSub = paguAmt > 0 ? (formNominal / paguAmt) * 100 : 0;
-      const computedSisaValue = Math.max(0, maxAvailable - formNominal);
+      const currentAvailable = rkaSpecificBudgetStatus ? rkaSpecificBudgetStatus.sisa_tersedia : (activeSubStatus ? activeSubStatus.sisa_tersedia : paguAmt);
+      const computedSisaValue = currentAvailable - formNominal;
       
       const payload: Realisasi = {
         id: docId,
@@ -392,10 +473,14 @@ export default function RealisasiView({
         pagu_anggaran_terpantau: paguAmt,
         keterangan: formKeterangan.trim(),
         bukti_transaksi: cloudinaryUrl || undefined,
-        bukti_transaksi_public_id: cloudinaryPublicId || undefined
+        bukti_transaksi_public_id: cloudinaryPublicId || undefined,
+        id_pihak_ketiga: formPihakKetigaId || editItem?.id_pihak_ketiga || undefined
       };
 
       await setDoc(doc(db, COLL_REALISASI, docId), payload).catch(err => handleFirestoreError(err, OperationType.WRITE, `${COLL_REALISASI}/${docId}`));
+
+      // Sinkronisasi otomatis ke modul Belanja Pihak Ketiga
+      await syncSp2dToPihakKetiga(payload, false);
 
       // Audit trail
       await createAuditLog(
@@ -410,7 +495,7 @@ export default function RealisasiView({
       // Trigger structural budgets calculations
       await synchronizeCalculations();
 
-      onShowToast(`Berhasil menyimpan realisasi belanja: "${payload.uraian_belanja}" senilai ${formatRupiah(payload.nominal_realisasi)}.`, 'success');
+      onShowToast(`Berhasil menyimpan realisasi belanja: "${payload.uraian_belanja}" senilai ${formatRupiah(payload.nominal_realisasi)}. Tersinkron ke seluruh modul.`, 'success');
 
       setShowForm(false);
       setEditItem(null);
@@ -439,6 +524,9 @@ export default function RealisasiView({
 
       await deleteDoc(doc(db, COLL_REALISASI, item.id)).catch(err => handleFirestoreError(err, OperationType.DELETE, `${COLL_REALISASI}/${item.id}`));
       
+      // Sinkronisasi otomatis ke modul Belanja Pihak Ketiga saat dihapus
+      await syncSp2dToPihakKetiga(item, true);
+
       await createAuditLog(
         currentUserEmail,
         currentUserRole,
@@ -451,7 +539,7 @@ export default function RealisasiView({
       // Re-calculate structural cascades
       await synchronizeCalculations();
 
-      onShowToast(`Berhasil menghapus pencatatan realisasi "${item.uraian_belanja}".`, 'success');
+      onShowToast(`Berhasil menghapus pencatatan realisasi "${item.uraian_belanja}". Tersinkron ke seluruh modul.`, 'success');
     } catch (err) {
       onShowToast("Gagal menghapus realisasi: " + (err instanceof Error ? err.message : String(err)), 'error');
     }
@@ -505,11 +593,18 @@ export default function RealisasiView({
         </div>
         <div>
           <span className="text-[10px] text-slate-500 font-bold uppercase block">Total Sisa Anggaran</span>
-          <span className="text-sm font-black text-indigo-900 font-mono">{formatRupiah(summaryTotals.sisa)}</span>
+          <span className={`text-sm font-black font-mono flex items-center gap-1.5 ${summaryTotals.sisa < 0 ? 'text-red-600' : 'text-indigo-900'}`}>
+            {formatRupiah(summaryTotals.sisa)}
+            {summaryTotals.sisa < 0 && (
+              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-red-100 text-red-700 uppercase tracking-wider">
+                Defisit
+              </span>
+            )}
+          </span>
         </div>
         <div>
           <span className="text-[10px] text-slate-500 font-bold uppercase block">Persentase Serapan</span>
-          <span className={`text-sm font-black ${summaryTotals.persen >= 100 ? 'text-emerald-700' : 'text-blue-800'} font-mono`}>{summaryTotals.persen.toFixed(2)}%</span>
+          <span className={`text-sm font-black ${summaryTotals.persen > 100 ? 'text-rose-600' : summaryTotals.persen === 100 ? 'text-emerald-700' : 'text-blue-800'} font-mono`}>{summaryTotals.persen.toFixed(2)}%</span>
         </div>
       </div>
 
@@ -669,7 +764,7 @@ export default function RealisasiView({
                       </td>
                       <td className="p-3.5 text-right font-black text-slate-900 font-mono">{formatRupiah(r.pagu)}</td>
                       <td className="p-3.5 text-right font-black text-rose-950 font-mono">{formatRupiah(r.nominal_realisasi)}</td>
-                      <td className="p-3.5 text-right font-black text-indigo-900 font-mono">{formatRupiah(r.sisa_anggaran)}</td>
+                      <td className={`p-3.5 text-right font-black font-mono ${r.sisa_anggaran < 0 ? 'text-red-600' : 'text-indigo-900'}`}>{formatRupiah(r.sisa_anggaran)}</td>
                       {canEdit && (
                         <td className="p-3.5 text-center">
                           <div className="flex items-center justify-center gap-1.5">
@@ -942,8 +1037,8 @@ export default function RealisasiView({
                           if (matched) {
                             const itemRealisasis = realisasis.filter(r => r.kode_sub_kegiatan === formSubKeg && r.uraian_belanja === matched.uraian_belanja && r.id !== editItem?.id);
                             const spent = itemRealisasis.reduce((sum, r) => sum + r.nominal_realisasi, 0);
-                            const sisaVal = Math.max(0, matched.jumlah - spent);
-                            setFormNominal(sisaVal > 0 ? sisaVal : matched.jumlah);
+                            const sisaVal = matched.jumlah - spent;
+                            setFormNominal(sisaVal > 0 ? sisaVal : 0);
                           }
                         }
                       }}
@@ -1004,13 +1099,28 @@ export default function RealisasiView({
                   onChange={(e) => setFormNominal(Number(e.target.value))}
                   min={1}
                   required
-                  className={`w-full p-2.5 rounded-lg border ${rkaSpecificBudgetStatus && formNominal > (rkaSpecificBudgetStatus.sisa_tersedia + (editItem ? editItem.nominal_realisasi : 0)) ? 'border-rose-500 bg-rose-50' : 'border-slate-200'} outline-blue-600 font-bold text-indigo-900`}
+                  className={`w-full p-2.5 rounded-lg border ${
+                    (rkaSpecificBudgetStatus && formNominal > rkaSpecificBudgetStatus.sisa_tersedia) ||
+                    (activeSubStatus && formNominal > activeSubStatus.sisa_tersedia)
+                      ? 'border-rose-500 bg-rose-50 text-rose-900 font-black ring-2 ring-rose-300' 
+                      : 'border-slate-200 text-indigo-900 font-bold'
+                  } outline-blue-600`}
                 />
-                {rkaSpecificBudgetStatus && formNominal > (rkaSpecificBudgetStatus.sisa_tersedia + (editItem ? editItem.nominal_realisasi : 0)) && (
-                  <p className="text-[10px] text-rose-600 font-bold mt-1 flex items-center gap-1">
-                    <AlertTriangle size={12} />
-                    Melebihi sisa pagu uraian! (Sisa: {formatRupiah(rkaSpecificBudgetStatus.sisa_tersedia + (editItem ? editItem.nominal_realisasi : 0))})
-                  </p>
+                {((rkaSpecificBudgetStatus && formNominal > rkaSpecificBudgetStatus.sisa_tersedia) ||
+                  (activeSubStatus && formNominal > activeSubStatus.sisa_tersedia)) && (
+                  <div className="mt-2 p-2.5 bg-red-50 border border-red-300 rounded-lg text-red-900 text-xs space-y-1 animate-fade-in">
+                    <p className="font-extrabold flex items-center gap-1.5 text-red-700">
+                      <AlertTriangle size={14} className="animate-pulse" />
+                      ANGGARAN TIDAK CUKUP (PROSES INPUT TIDAK DAPAT DILANJUTKAN)
+                    </p>
+                    <p className="text-[11px] text-red-800">
+                      Sisa pagu tersedia: <b className="font-mono text-emerald-800 font-bold">{formatRupiah(rkaSpecificBudgetStatus ? rkaSpecificBudgetStatus.sisa_tersedia : activeSubStatus!.sisa_tersedia)}</b>. 
+                      Defisit: <b className="font-mono text-rose-700 font-black">+{formatRupiah(formNominal - (rkaSpecificBudgetStatus ? rkaSpecificBudgetStatus.sisa_tersedia : activeSubStatus!.sisa_tersedia))}</b>.
+                    </p>
+                    <p className="text-[10px] text-rose-700 font-bold">
+                      🚫 Sistem mengunci proses simpan karena melebihi plafon pagu anggaran.
+                    </p>
+                  </div>
                 )}
               </div>
 
@@ -1080,6 +1190,118 @@ export default function RealisasiView({
               </div>
 
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* POPUP NOTIFIKASI ANGGARAN TIDAK CUKUP (BUDGET EXCEEDED) */}
+      {showInsufficientBudgetModal && insufficientBudgetData && (
+        <div 
+          className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4 z-[9999] animate-fade-in"
+          onClick={() => setShowInsufficientBudgetModal(false)}
+        >
+          <div 
+            className="bg-white rounded-2xl shadow-2xl border-2 border-red-400 max-w-lg w-full overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Red Alert Header */}
+            <div className="p-4 bg-gradient-to-r from-red-600 via-rose-600 to-red-700 text-white flex items-center justify-between shadow-md">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-white/20 rounded-xl backdrop-blur-xs">
+                  <ShieldAlert size={24} className="text-white animate-bounce" />
+                </div>
+                <div>
+                  <h3 className="font-black text-sm tracking-wide uppercase">Pencairan Ditolak: Anggaran Tidak Cukup</h3>
+                  <p className="text-[11px] text-red-100 font-medium">Batas Plafon Anggaran Terlampaui ({insufficientBudgetData.level})</p>
+                </div>
+              </div>
+              <button 
+                type="button"
+                onClick={() => setShowInsufficientBudgetModal(false)}
+                className="text-white/80 hover:text-white font-black text-xl p-1.5 rounded-lg hover:bg-white/10 transition cursor-pointer"
+              >
+                &times;
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4 text-xs">
+              {/* Main Warning Box */}
+              <div className="p-3.5 bg-red-50 border border-red-200 rounded-xl text-red-950 space-y-1.5">
+                <div className="flex items-center gap-2 font-black text-red-800 text-xs">
+                  <Ban size={15} className="text-red-600" />
+                  Proses Input Pencairan Tidak Bisa Dilanjutkan!
+                </div>
+                <p className="text-[11px] text-red-900/90 leading-relaxed">
+                  Nominal pencairan yang diajukan sebesar <b className="font-mono text-red-950 font-black">{formatRupiah(insufficientBudgetData.nominalInput)}</b> melebihi kuota sisa pagu anggaran yang tersedia.
+                </p>
+              </div>
+
+              {/* Data Breakdown Card */}
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-2.5 font-sans">
+                <div className="border-b border-slate-200 pb-2">
+                  <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider block">Sub-Kegiatan</span>
+                  <p className="font-bold text-slate-800 text-xs truncate" title={insufficientBudgetData.namaSubKegiatan}>
+                    {insufficientBudgetData.subKegiatanKode} - {insufficientBudgetData.namaSubKegiatan}
+                  </p>
+                </div>
+
+                <div className="border-b border-slate-200 pb-2">
+                  <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider block">Jenis / Uraian Belanja</span>
+                  <p className="font-black text-blue-950 text-xs mt-0.5">
+                    {insufficientBudgetData.uraianBelanja}
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 pt-1 text-[11px]">
+                  <div className="bg-white p-2.5 rounded-lg border border-slate-200">
+                    <span className="text-[10px] text-slate-500 font-semibold block">Pagu Anggaran ({insufficientBudgetData.level})</span>
+                    <span className="font-mono font-bold text-slate-900">{formatRupiah(insufficientBudgetData.paguAnggaran)}</span>
+                  </div>
+
+                  <div className="bg-white p-2.5 rounded-lg border border-slate-200">
+                    <span className="text-[10px] text-slate-500 font-semibold block">Total Realisasi Sebelumnya</span>
+                    <span className="font-mono font-bold text-slate-700">{formatRupiah(insufficientBudgetData.realisasiSebelumnya)}</span>
+                  </div>
+
+                  <div className="bg-emerald-50 p-2.5 rounded-lg border border-emerald-300">
+                    <span className="text-[10px] text-emerald-800 font-bold block">Sisa Pagu Tersedia (Maksimal)</span>
+                    <span className="font-mono font-black text-emerald-800 text-xs">{formatRupiah(insufficientBudgetData.sisaTersedia)}</span>
+                  </div>
+
+                  <div className="bg-rose-50 p-2.5 rounded-lg border border-rose-300">
+                    <span className="text-[10px] text-rose-800 font-bold block">Nominal Pencairan Diajukan</span>
+                    <span className="font-mono font-black text-rose-800 text-xs">{formatRupiah(insufficientBudgetData.nominalInput)}</span>
+                  </div>
+                </div>
+
+                <div className="bg-gradient-to-r from-red-100 to-rose-100 border border-red-300 p-2.5 rounded-lg flex items-center justify-between">
+                  <span className="font-bold text-red-950 text-[11px]">Kekurangan / Defisit Anggaran:</span>
+                  <span className="font-mono font-black text-red-700 text-sm">+{formatRupiah(insufficientBudgetData.kelebihanNominal)}</span>
+                </div>
+              </div>
+
+              {/* Informative Guidance */}
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-[11px] text-amber-900 space-y-1">
+                <p className="font-bold text-amber-950 flex items-center gap-1.5">
+                  <AlertTriangle size={13} className="text-amber-700" />
+                  SOP Pengendalian Anggaran (Internal Control):
+                </p>
+                <p className="text-amber-800 leading-relaxed text-[10.5px]">
+                  Pencairan SP2D tidak dapat diproses melebihi plafon pagu yang telah disahkan. Harap sesuaikan nominal pencairan agar tidak melebihi <b>{formatRupiah(insufficientBudgetData.sisaTersedia)}</b> atau ajukan pergeseran/revisi anggaran DPA terlebih dahulu.
+                </p>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="pt-2 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowInsufficientBudgetModal(false)}
+                  className="w-full sm:w-auto px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white font-extrabold rounded-xl shadow transition cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  Tutup &amp; Sesuaikan Nominal
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

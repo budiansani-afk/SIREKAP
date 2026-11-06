@@ -254,7 +254,7 @@ export default function AnalisisView({
                     if (active && payload && payload.length) {
                       const paguVal = Number(payload[0].value || 0);
                       const realisasiVal = Number(payload[1].value || 0);
-                      const sisa = Math.max(0, paguVal - realisasiVal);
+                      const sisa = paguVal - realisasiVal;
                       const p = paguVal > 0 ? (realisasiVal / paguVal) * 100 : 0;
                       return (
                         <div className="bg-slate-900 text-white p-3 rounded-xl shadow-xl border border-slate-700 text-xs text-left max-w-[240px] space-y-1.5">
@@ -262,7 +262,7 @@ export default function AnalisisView({
                           <div className="space-y-0.5 font-semibold">
                             <p className="flex justify-between gap-4"><span className="text-blue-300">Pagu:</span> <span className="font-mono">{formatRupiah(paguVal)}</span></p>
                             <p className="flex justify-between gap-4"><span className="text-orange-350 text-orange-400">Realisasi:</span> <span className="font-mono text-orange-300 font-extrabold">{formatRupiah(realisasiVal)}</span></p>
-                            <p className="flex justify-between gap-4 border-t border-dashed border-slate-700/50 pt-1"><span className="text-slate-405">Sisa:</span> <span className="font-mono">{formatRupiah(sisa)}</span></p>
+                            <p className="flex justify-between gap-4 border-t border-dashed border-slate-700/50 pt-1"><span className="text-slate-405">Sisa:</span> <span className={`font-mono ${sisa < 0 ? 'text-red-400 font-bold' : ''}`}>{formatRupiah(sisa)}</span></p>
                             <p className="flex justify-between gap-4 text-emerald-400 font-black"><span className="uppercase text-[9px] tracking-wider leading-relaxed">Rasio Serapan:</span> <span>{p.toFixed(2)}%</span></p>
                           </div>
                         </div>
@@ -313,7 +313,9 @@ export default function AnalisisView({
                   <td className="p-3 font-semibold text-slate-900 max-w-sm truncate" title={sk.nama_sub_kegiatan}>{sk.nama_sub_kegiatan}</td>
                   <td className="p-3 text-right font-medium">{formatRupiah(sk.pagu)}</td>
                   <td className="p-3 text-right text-emerald-900 font-bold">{formatRupiah(sk.realisasi)}</td>
-                  <td className="p-3 text-right text-rose-950 font-bold">{formatRupiah(sk.sisa ?? Math.max(0, sk.pagu - sk.realisasi))}</td>
+                  <td className={`p-3 text-right font-bold ${(sk.sisa ?? (sk.pagu - sk.realisasi)) < 0 ? 'text-red-600' : 'text-slate-800'}`}>
+                    {formatRupiah(sk.sisa ?? (sk.pagu - sk.realisasi))}
+                  </td>
                   <td className="p-3 text-center">
                     <div className="flex items-center justify-center gap-1.5">
                       <div className="w-16 bg-slate-100 rounded-full h-1.5 overflow-hidden">

@@ -149,7 +149,7 @@ export default function LaporanView({
           nama: `${r.kode_sub_kegiatan} - ${r.uraian_belanja}`,
           pagu: rkaList.find(a => a.uraian_belanja === r.uraian_belanja)?.jumlah || 0,
           realisasi: r.nominal_realisasi,
-          sisa: Math.max(0, (rkaList.find(a => a.uraian_belanja === r.uraian_belanja)?.jumlah || 0) - r.nominal_realisasi),
+          sisa: (rkaList.find(a => a.uraian_belanja === r.uraian_belanja)?.jumlah || 0) - r.nominal_realisasi,
           persen: r.persentase_realisasi
         }));
       case "belanja_pihak_ketiga":
@@ -391,11 +391,12 @@ export default function LaporanView({
         {/* Formal Header Logo / Kop Surat */}
         <div className="border-b-4 border-double border-slate-800 pb-5 text-center relative flex flex-col items-center" id="kop-surat">
           <div className="flex items-center justify-center gap-4">
-            {settings?.logo_instansi ? (
-              <img src={settings.logo_instansi} alt="Logo Dinas" className="w-16 h-16 object-contain" referrerPolicy="no-referrer" />
-            ) : (
-              <img src="https://res.cloudinary.com/de4prnqa4/image/upload/v1780640818/logo_sibiru_y2jgaw.jpg" alt="Logo SIREKAP TANAH" className="w-15 h-15 object-contain" referrerPolicy="no-referrer" />
-            )}
+            <img 
+              src={settings?.logo_instansi && !settings.logo_instansi.includes('logo_sibiru') ? settings.logo_instansi : "https://firebasestorage.googleapis.com/v0/b/bidang-pertanahan.firebasestorage.app/o/bimatanahku%2Flogo%20kab.png?alt=media&token=678421d5-13c6-44d5-9e9e-82283be5e25f"} 
+              alt="Logo Resmi Pemerintah Kabupaten Bima" 
+              className="w-16 h-16 object-contain" 
+              referrerPolicy="no-referrer" 
+            />
             <div className="text-left">
               <h1 className="text-base font-black tracking-widest text-slate-900 uppercase">PEMERINTAH KABUPATEN BIMA</h1>
               <h2 className="text-sm font-extrabold tracking-widest text-slate-800 uppercase mt-0.5">DINAS PERUMAHAN DAN KAWASAN PERMUKIMAN</h2>
@@ -442,7 +443,7 @@ export default function LaporanView({
                   <td className="p-2.5 border border-slate-200 text-right text-emerald-800 font-semibold whitespace-nowrap">
                     {selectedLaporan === "belanja_pihak_ketiga" ? formatRupiah(row.realisasi) : formatRupiah(row.realisasi)}
                   </td>
-                  <td className="p-2.5 border border-slate-200 text-right text-slate-600 whitespace-nowrap">
+                  <td className={`p-2.5 border border-slate-200 text-right whitespace-nowrap font-medium ${row.sisa < 0 ? 'text-red-600 font-bold' : 'text-slate-600'}`}>
                     {selectedLaporan === "belanja_pihak_ketiga" ? "-" : formatRupiah(row.sisa)}
                   </td>
                   <td className="p-2.5 border border-slate-200 text-center font-bold whitespace-nowrap">
@@ -460,7 +461,7 @@ export default function LaporanView({
                 <td className="p-3 text-right border border-slate-300">
                   {formatRupiah(totalRealisasiSum)}
                 </td>
-                <td className="p-3 text-right border border-slate-300">
+                <td className={`p-3 text-right border border-slate-300 font-mono ${totalSisaSum < 0 ? 'text-red-600 font-black' : ''}`}>
                   {selectedLaporan === "belanja_pihak_ketiga" ? "-" : formatRupiah(totalSisaSum)}
                 </td>
                 <td className="p-3 text-center border border-slate-300">
