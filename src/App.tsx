@@ -671,9 +671,11 @@ export default function App() {
     }
     try {
       await forceDisconnectSession(targetSessionId, user?.email || 'admin@sirekap.com', targetEmail, targetName);
+      setOnlineSessions(prev => prev.filter(s => s.id !== targetSessionId));
       showToast(`Koneksi sesi akun ${targetEmail} berhasil diputuskan.`, "success");
     } catch (err: any) {
       showToast("Gagal memutuskan sesi: " + (err?.message || String(err)), "error");
+      throw err;
     }
   };
 
@@ -1210,15 +1212,22 @@ export default function App() {
                   </div>
                   <div className="flex justify-between items-center group">
                     <span>• Pengguna Aktif</span>
-                    <span 
-                      onClick={() => setIsOnlineSessionsModalOpen(true)}
-                      className="font-bold text-emerald-400 font-mono flex items-center gap-1 hover:text-emerald-300 hover:underline cursor-pointer transition select-none"
-                      title="Klik untuk melihat akun mana saja yang sedang masuk, perangkat, IP, durasi, dan kontrol koneksi"
-                    >
-                      : {activeUsersCount} Aktif
-                      <span className="w-1.5 h-1.5 rounded-full bg-[#10b981] animate-ping inline-block"></span>
-                      <span className="text-[8px] bg-emerald-500/20 text-emerald-300 px-1 py-0.2 rounded border border-emerald-500/30 group-hover:bg-emerald-500/30">Lihat</span>
-                    </span>
+                    {userRole === UserRole.ADMIN ? (
+                      <span 
+                        onClick={() => setIsOnlineSessionsModalOpen(true)}
+                        className="font-bold text-emerald-400 font-mono flex items-center gap-1 hover:text-emerald-300 hover:underline cursor-pointer transition select-none"
+                        title="Klik untuk membuka monitoring akun yang sedang masuk & kontrol koneksi (Khusus Administrator)"
+                      >
+                        : {activeUsersCount} Aktif
+                        <span className="w-1.5 h-1.5 rounded-full bg-[#10b981] animate-ping inline-block"></span>
+                        <span className="text-[8px] bg-emerald-500/20 text-emerald-300 px-1 py-0.2 rounded border border-emerald-500/30 group-hover:bg-emerald-500/30 font-bold">Lihat</span>
+                      </span>
+                    ) : (
+                      <span className="font-bold text-slate-100 font-mono select-none flex items-center gap-1">
+                        : {activeUsersCount} Aktif
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block"></span>
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1299,16 +1308,18 @@ export default function App() {
         </div>
       )}
 
-      {/* Online Active Sessions Modal */}
-      <OnlineSessionsModal 
-        isOpen={isOnlineSessionsModalOpen}
-        onClose={() => setIsOnlineSessionsModalOpen(false)}
-        sessions={onlineSessions}
-        currentSessionId={sessionId}
-        currentUserRole={userRole}
-        currentUserEmail={user?.email || ''}
-        onDisconnectSession={handleDisconnectSession}
-      />
+      {/* Online Active Sessions Modal - Hanya Akun Role Administrator yang dapat melihat */}
+      {userRole === UserRole.ADMIN && (
+        <OnlineSessionsModal 
+          isOpen={isOnlineSessionsModalOpen}
+          onClose={() => setIsOnlineSessionsModalOpen(false)}
+          sessions={onlineSessions}
+          currentSessionId={sessionId}
+          currentUserRole={userRole}
+          currentUserEmail={user?.email || ''}
+          onDisconnectSession={handleDisconnectSession}
+        />
+      )}
 
       {/* Force Disconnected Notice Alert Modal */}
       {forceDisconnectedNotice && (

@@ -41,6 +41,7 @@ export default function OnlineSessionsModal({
 }: OnlineSessionsModalProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState<string>('ALL');
+  const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
   const [disconnectingId, setDisconnectingId] = useState<string | null>(null);
   const [now, setNow] = useState<number>(Date.now());
 
@@ -62,9 +63,9 @@ export default function OnlineSessionsModal({
     });
   }, [sessions, now]);
 
-  // Filtered and searched sessions
+  // Filtered and searched sessions - Disusun berdasarkan waktu masuk
   const filteredSessions = useMemo(() => {
-    return activeSessions.filter(s => {
+    const list = activeSessions.filter(s => {
       const matchRole = roleFilter === 'ALL' || s.role === roleFilter;
       const q = searchTerm.toLowerCase().trim();
       const matchSearch = !q || 
@@ -75,7 +76,14 @@ export default function OnlineSessionsModal({
 
       return matchRole && matchSearch;
     });
-  }, [activeSessions, roleFilter, searchTerm]);
+
+    // Susunan akun dalam daftar monitoring akun berdasarkan waktu masuk
+    return [...list].sort((a, b) => {
+      const timeA = a.login_at || 0;
+      const timeB = b.login_at || 0;
+      return sortOrder === 'desc' ? timeB - timeA : timeA - timeB;
+    });
+  }, [activeSessions, roleFilter, searchTerm, sortOrder]);
 
   // Statistics
   const adminCount = useMemo(() => activeSessions.filter(s => s.role === UserRole.ADMIN).length, [activeSessions]);
@@ -151,7 +159,8 @@ export default function OnlineSessionsModal({
     }
   };
 
-  if (!isOpen) return null;
+  // Hanya akun role administrator yang dapat melihat monitoring akun yang sedang masuk dan online
+  if (!isOpen || currentUserRole !== UserRole.ADMIN) return null;
 
   const isAdmin = currentUserRole === UserRole.ADMIN;
 
@@ -246,10 +255,23 @@ export default function OnlineSessionsModal({
             />
           </div>
 
-          <div className="flex items-center gap-2 w-full sm:w-auto justify-end text-xs">
+          <div className="flex items-center gap-2.5 w-full sm:w-auto justify-end text-xs flex-wrap">
+            <div className="flex items-center gap-1.5 text-slate-500 font-bold">
+              <Clock size={14} className="text-blue-600" />
+              <span>Urutkan:</span>
+            </div>
+            <select
+              value={sortOrder}
+              onChange={(e) => setSortOrder(e.target.value as 'desc' | 'asc')}
+              className="py-1.5 px-2.5 border border-slate-200 rounded-lg outline-blue-600 bg-white font-bold text-slate-800 text-xs"
+            >
+              <option value="desc">Waktu Masuk: Terbaru ke Terlama</option>
+              <option value="asc">Waktu Masuk: Terlama ke Terbaru</option>
+            </select>
+
             <div className="flex items-center gap-1.5 text-slate-500 font-bold">
               <Filter size={14} />
-              <span>Filter Peran:</span>
+              <span>Peran:</span>
             </div>
             <select
               value={roleFilter}
@@ -280,7 +302,18 @@ export default function OnlineSessionsModal({
                     <th className="p-3 pl-4">Akun & Pengguna</th>
                     <th className="p-3">Perangkat / Device</th>
                     <th className="p-3">Alamat IP</th>
-                    <th className="p-3">Waktu Masuk</th>
+                    <th 
+                      onClick={() => setSortOrder(prev => prev === 'desc' ? 'asc' : 'desc')}
+                      className="p-3 cursor-pointer hover:bg-slate-200 transition-colors select-none"
+                      title="Klik untuk membalikkan urutan waktu masuk"
+                    >
+                      <div className="flex items-center gap-1.5 text-blue-900 font-black">
+                        <span>Waktu Masuk</span>
+                        <span className="text-[9px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-mono font-bold">
+                          {sortOrder === 'desc' ? 'Terbaru ↓' : 'Terlama ↑'}
+                        </span>
+                      </div>
+                    </th>
                     <th className="p-3">Lama Durasi</th>
                     <th className="p-3">Status</th>
                     <th className="p-3 pr-4 text-right">Aksi</th>

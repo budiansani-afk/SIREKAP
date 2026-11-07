@@ -83,16 +83,26 @@ export default function PengaturanView({
     });
   }, [onlineSessions, now]);
 
+  const [sessionSortOrder, setSessionSortOrder] = useState<'desc' | 'asc'>('desc');
+
   const filteredOnlineSessions = useMemo(() => {
     const q = sessionSearchText.toLowerCase().trim();
-    if (!q) return activeOnlineSessions;
-    return activeOnlineSessions.filter(s => 
-      s.email.toLowerCase().includes(q) ||
-      (s.nama && s.nama.toLowerCase().includes(q)) ||
-      (s.device && s.device.toLowerCase().includes(q)) ||
-      (s.ip_address && s.ip_address.toLowerCase().includes(q))
-    );
-  }, [activeOnlineSessions, sessionSearchText]);
+    let list = activeOnlineSessions;
+    if (q) {
+      list = activeOnlineSessions.filter(s => 
+        s.email.toLowerCase().includes(q) ||
+        (s.nama && s.nama.toLowerCase().includes(q)) ||
+        (s.device && s.device.toLowerCase().includes(q)) ||
+        (s.ip_address && s.ip_address.toLowerCase().includes(q))
+      );
+    }
+    // Susunan akun dalam daftar monitoring akun berdasarkan waktu masuk
+    return [...list].sort((a, b) => {
+      const timeA = a.login_at || 0;
+      const timeB = b.login_at || 0;
+      return sessionSortOrder === 'desc' ? timeB - timeA : timeA - timeB;
+    });
+  }, [activeOnlineSessions, sessionSearchText, sessionSortOrder]);
 
   const handleDisconnectFromPengaturan = async (session: SesiPenggunaOnline) => {
     if (session.id === currentSessionId) {
@@ -1103,7 +1113,18 @@ export default function PengaturanView({
                 <th className="px-3.5 py-2.5 text-left">Akun & Pengguna</th>
                 <th className="px-3.5 py-2.5 text-left">Perangkat & Browser</th>
                 <th className="px-3.5 py-2.5 text-left">Alamat IP</th>
-                <th className="px-3.5 py-2.5 text-left">Waktu Masuk</th>
+                <th 
+                  onClick={() => setSessionSortOrder(prev => prev === 'desc' ? 'asc' : 'desc')}
+                  className="px-3.5 py-2.5 text-left cursor-pointer hover:bg-slate-200 transition-colors select-none"
+                  title="Klik untuk membalikkan urutan waktu masuk"
+                >
+                  <div className="flex items-center gap-1.5 text-blue-900">
+                    <span>Waktu Masuk</span>
+                    <span className="text-[9px] bg-blue-100 text-blue-700 px-1 py-0.2 rounded font-mono font-bold">
+                      {sessionSortOrder === 'desc' ? 'Terbaru ↓' : 'Terlama ↑'}
+                    </span>
+                  </div>
+                </th>
                 <th className="px-3.5 py-2.5 text-left">Lama Durasi</th>
                 <th className="px-3.5 py-2.5 text-center">Status</th>
                 <th className="px-3.5 py-2.5 text-right">Aksi</th>

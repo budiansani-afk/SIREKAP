@@ -837,11 +837,11 @@ export async function forceDisconnectSession(
   targetName?: string
 ): Promise<void> {
   const sessionRef = doc(db, COLL_PRESENCE, sessionId);
-  await updateDoc(sessionRef, {
+  await setDoc(sessionRef, {
     status: 'force_disconnected',
     disconnected_by: adminEmail,
     disconnected_at: Date.now()
-  });
+  }, { merge: true });
 
   await createAuditLog(
     adminEmail,
