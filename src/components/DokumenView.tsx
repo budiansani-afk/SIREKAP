@@ -16,7 +16,6 @@ import { DokumenArsip, UserRole } from '../types';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { doc, setDoc, deleteDoc } from 'firebase/firestore';
 import { COLL_DOKUMEN, createAuditLog } from '../dbService';
-import { uploadFile, deleteFile } from '../cloudinaryService';
 import { 
   uploadFileToFirebaseStorage, 
   deleteFileFromFirebaseStorage,
@@ -78,11 +77,11 @@ export default function DokumenView({
     });
   }, [dokumens, searchTerm, selectedCategory]);
 
-  // Trigger secure local download for both same-origin and different-origin (e.g., Cloudinary CDN) files
+  // Trigger secure local download for Firebase Storage files
   const handleDownloadFile = async (url: string, filename: string) => {
     if (!url) return;
     
-    // Extract the exact filename stored in the Cloudinary storage (the last segment of the path)
+    // Extract the exact filename stored in the storage (the last segment of the path)
     let storageFilename = url.split('/').pop()?.split('?')[0] || filename || 'dokumen';
     try {
       storageFilename = decodeURIComponent(storageFilename);
@@ -90,38 +89,8 @@ export default function DokumenView({
 
     console.log(`[DOWNLOAD] Initiating download for filename in storage: "${storageFilename}"`);
 
-    // 1. If it's a Cloudinary URL, use fl_attachment with the specific filename to force browser download in the CDN layer
-    if (url.includes("res.cloudinary.com/")) {
-      try {
-        let downloadUrl = url;
-        const lastDot = storageFilename.lastIndexOf('.');
-        const baseName = lastDot !== -1 ? storageFilename.substring(0, lastDot) : storageFilename;
-        const cleanBaseName = encodeURIComponent(baseName);
-
-        if (url.includes("/upload/")) {
-          // Replace /upload/ with /upload/fl_attachment:cleanBaseName/ to preserve storage filename
-          downloadUrl = url.replace("/upload/", `/upload/fl_attachment:${cleanBaseName}/`);
-        } else {
-          downloadUrl = url + `?fl_attachment=${cleanBaseName}`;
-        }
-        
-        console.log(`[DOWNLOAD] Triggering native Cloudinary download with fl_attachment: ${downloadUrl}`);
-        const link = document.createElement("a");
-        link.href = downloadUrl;
-        link.target = "_blank";
-        link.setAttribute("download", storageFilename);
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        return;
-      } catch (err) {
-        console.warn("[DOWNLOAD] Failed Cloudinary delivery flag optimization, falling back to Blob download:", err);
-      }
-    }
-
-    // 2. Fetch Blob fallback - this guarantees custom name attribute is respected by the browser
+    // Fetch Blob download - guarantees custom name attribute is respected by browser
     try {
-      console.log(`[DOWNLOAD] Fetching data blob for URL: ${url}`);
       const response = await fetch(url);
       if (!response.ok) throw new Error("Gagal mengambil file");
       const blob = await response.blob();
@@ -135,8 +104,8 @@ export default function DokumenView({
       document.body.removeChild(link);
       URL.revokeObjectURL(blobUrl);
     } catch (err: any) {
-      console.error("[DOWNLOAD] Blob download failed:", err);
-      // Absolute fallback if everything fails (CORS blocks, etc): open direct in blank page
+      console.warn("[DOWNLOAD] Blob download failed, fallback to direct open:", err);
+      // Absolute fallback if CORS blocks: open direct in blank page
       const link = document.createElement("a");
       link.href = url;
       link.target = "_blank";
@@ -212,8 +181,6 @@ export default function DokumenView({
           
           return existingName === targetWithExt || 
                  existingName === targetWithoutExt ||
-                 d.cloudinary_public_id === `sirekap/${candidateNameWithoutExt}` ||
-                 d.cloudinary_public_id?.endsWith(`/${candidateNameWithoutExt}`) ||
                  d.data_url?.toLowerCase().includes(`/${targetWithExt}`) ||
                  d.data_url?.toLowerCase().includes(`/${targetWithoutExt}`);
         });
@@ -289,23 +256,6 @@ export default function DokumenView({
         const targetPath = item.storage_path || item.data_url;
         console.log(`[STORAGE_HAPUS] Menghapus dokumen dari Firebase Storage:`, targetPath);
         await deleteFileFromFirebaseStorage(targetPath);
-      } 
-      // 2. Legacy fallback: Cloudinary
-      else if (item.cloudinary_public_id || (item.data_url?.includes("res.cloudinary.com"))) {
-        const deleteTarget = item.cloudinary_public_id || item.data_url;
-        console.log(`[DEBUG_HAPUS] Menghapus asset legacy Cloudinary:`, deleteTarget);
-        try {
-          await fetch("/api/cloudinary/delete", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              public_id: item.cloudinary_public_id || deleteTarget,
-              url: item.data_url
-            })
-          });
-        } catch (cloudinaryErr: any) {
-          console.warn("[DEBUG_HAPUS] Gagal menghapus file legacy Cloudinary:", cloudinaryErr);
-        }
       }
 
       await deleteDoc(doc(db, COLL_DOKUMEN, item.id)).catch(err => handleFirestoreError(err, OperationType.DELETE, `${COLL_DOKUMEN}/${item.id}`));
@@ -662,11 +612,11 @@ export default function DokumenView({
                   <span className="block text-[9px] uppercase tracking-wider text-slate-400 font-bold">Ukuran File</span>
                   <span className="font-semibold text-slate-800">{activeDoc.ukuran_file}</span>
                 </div>
-                {activeDoc.cloudinary_public_id && (
+                {activeDoc.storage_path && (
                   <div className="col-span-2 sm:col-span-1">
-                    <span className="block text-[9px] uppercase tracking-wider text-slate-400 font-bold">Cloudinary Public ID</span>
-                    <span className="font-mono text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded truncate block max-w-[200px]" title={activeDoc.cloudinary_public_id}>
-                      {activeDoc.cloudinary_public_id}
+                    <span className="block text-[9px] uppercase tracking-wider text-slate-400 font-bold">Storage Path</span>
+                    <span className="font-mono text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded truncate block max-w-[200px]" title={activeDoc.storage_path}>
+                      {activeDoc.storage_path}
                     </span>
                   </div>
                 )}

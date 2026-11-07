@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1e3a8a" />
+      <stop offset="100%" stop-color="#0f172a" />
+    </linearGradient>
+    <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f97316" />
+      <stop offset="100%" stop-color="#ea580c" />
+    </linearGradient>
+    <linearGradient id="shieldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3b82f6" />
+      <stop offset="100%" stop-color="#1d4ed8" />
+    </linearGradient>
+  </defs>
+
+  <!-- Circular Base -->
+  <circle cx="100" cy="100" r="96" fill="url(#bgGrad)" stroke="#f97316" stroke-width="4"/>
+  
+  <!-- Outer Ring Detail -->
+  <circle cx="100" cy="100" r="86" fill="none" stroke="#60a5fa" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.6"/>
+
+  <!-- Shield Base for Bidang Pertanahan -->
+  <path d="M100 32 L150 56 V108 C150 142 100 168 100 168 C100 168 50 142 50 108 V56 Z" fill="url(#shieldGrad)" stroke="#ffffff" stroke-width="2.5"/>
+
+  <!-- Land & Cadastral Contours (Pertanahan motif) -->
+  <path d="M64 116 Q82 102 100 114 T136 110 V122 C126 138 100 154 100 154 C100 154 74 138 64 122 Z" fill="#22c55e" opacity="0.9"/>
+  <path d="M60 98 Q80 86 100 96 T140 92 V108 C130 120 100 140 100 140 C100 140 70 120 60 108 Z" fill="#16a34a" opacity="0.5"/>
+
+  <!-- Cadastral Pin / Monolith Marker -->
+  <path d="M100 52 C89 52 80 61 80 72 C80 87 100 108 100 108 C100 108 120 87 120 72 C120 61 111 52 100 52 Z" fill="url(#goldGrad)" stroke="#ffffff" stroke-width="2"/>
+  <circle cx="100" cy="72" r="6" fill="#ffffff"/>
+
+  <!-- Stars / Indonesian Emblem Accent -->
+  <polygon points="100,38 102,43 107,43 103,46 105,51 100,48 95,51 97,46 93,43 98,43" fill="#facc15"/>
+</svg>

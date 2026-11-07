@@ -33,7 +33,6 @@ import {
 } from 'lucide-react';
 import { AppSettings, UserRole, Pengguna, SesiPenggunaOnline } from '../types';
 import { backupDatabaseToJSON, restoreDatabaseFromJSON, createAuditLog } from '../dbService';
-import { uploadFile, deleteFile } from '../cloudinaryService';
 import { 
   uploadFileToFirebaseStorage, 
   deleteFileFromFirebaseStorage, 
@@ -199,7 +198,6 @@ export default function PengaturanView({
     try {
       let finalLogoUrl = existingLogoUrl;
       let finalStoragePath = settings?.logo_instansi_storage_path || '';
-      let cloudinaryPublicId = settings?.logo_instansi_public_id || '';
 
       // If a new physical logo is uploaded
       if (logoFile) {
@@ -209,12 +207,6 @@ export default function PengaturanView({
             await deleteFileFromFirebaseStorage(settings.logo_instansi_storage_path || settings.logo_instansi);
           } catch (delErr) {
             console.warn("Gagal menghapus logo instansi lama di Firebase Storage:", delErr);
-          }
-        } else if (settings?.logo_instansi_public_id) {
-          try {
-            await deleteFile(settings.logo_instansi_public_id);
-          } catch (cloudinaryErr) {
-            console.warn("Gagal menghapus logo instansi lama di Cloudinary:", cloudinaryErr);
           }
         }
 
@@ -231,7 +223,7 @@ export default function PengaturanView({
         nama_instansi: instNama.trim(),
         logo_instansi: finalLogoUrl,
         logo_instansi_storage_path: finalStoragePath,
-        logo_instansi_public_id: cloudinaryPublicId,
+        logo_instansi_public_id: '',
         tahun_anggaran_aktif: fiscalYear,
         nama_pejabat_ttd: namaPejabatTtd.trim(),
         jabatan_pejabat_ttd: jabatanPejabatTtd.trim(),

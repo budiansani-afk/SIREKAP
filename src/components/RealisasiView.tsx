@@ -23,7 +23,6 @@ import { formatRupiah, exportToCSV } from '../utils/helpers';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { doc, setDoc, deleteDoc } from 'firebase/firestore';
 import { COLL_REALISASI, createAuditLog, synchronizeCalculations, syncSp2dToPihakKetiga } from '../dbService';
-import { uploadFile, deleteFile } from '../cloudinaryService';
 import { 
   uploadFileToFirebaseStorage, 
   deleteFileFromFirebaseStorage,
@@ -427,22 +426,15 @@ export default function RealisasiView({
     try {
       let storageUrl = existingBuktiUrl;
       let storagePath = editItem?.bukti_transaksi_storage_path || '';
-      let cloudinaryPublicId = editItem?.bukti_transaksi_public_id || '';
 
       // If a new physical file is selected
       if (formBuktiFile) {
-        // If there is an old photo on Firebase Storage or Cloudinary, delete it first
-        if (editItem?.bukti_transaksi_storage_path) {
+        // If there is an old photo on Firebase Storage, delete it first
+        if (editItem?.bukti_transaksi_storage_path || (editItem?.bukti_transaksi && isFirebaseStorageUrl(editItem.bukti_transaksi))) {
           try {
-            await deleteFileFromFirebaseStorage(editItem.bukti_transaksi_storage_path);
+            await deleteFileFromFirebaseStorage(editItem.bukti_transaksi_storage_path || editItem.bukti_transaksi);
           } catch (storageErr) {
             console.warn("Gagal menghapus berkas lama dari Firebase Storage:", storageErr);
-          }
-        } else if (editItem?.bukti_transaksi_public_id) {
-          try {
-            await deleteFile(editItem.bukti_transaksi_public_id);
-          } catch (cloudinaryErr) {
-            console.warn("Gagal menghapus asset Cloudinary lama:", cloudinaryErr);
           }
         }
 
@@ -459,25 +451,17 @@ export default function RealisasiView({
         });
         storageUrl = uploadRes.downloadUrl;
         storagePath = uploadRes.storagePath;
-        cloudinaryPublicId = '';
       } else if (!existingBuktiUrl) {
         // If the user removed the image completely
-        if (editItem?.bukti_transaksi_storage_path) {
+        if (editItem?.bukti_transaksi_storage_path || (editItem?.bukti_transaksi && isFirebaseStorageUrl(editItem.bukti_transaksi))) {
           try {
-            await deleteFileFromFirebaseStorage(editItem.bukti_transaksi_storage_path);
+            await deleteFileFromFirebaseStorage(editItem.bukti_transaksi_storage_path || editItem.bukti_transaksi);
           } catch (storageErr) {
             console.warn("Gagal menghapus berkas dari Firebase Storage:", storageErr);
-          }
-        } else if (editItem?.bukti_transaksi_public_id) {
-          try {
-            await deleteFile(editItem.bukti_transaksi_public_id);
-          } catch (cloudinaryErr) {
-            console.warn("Gagal menghapus asset Cloudinary lama:", cloudinaryErr);
           }
         }
         storageUrl = '';
         storagePath = '';
-        cloudinaryPublicId = '';
       }
 
       const docId = editItem ? editItem.id : `realisasi_${Date.now()}`;
@@ -506,7 +490,7 @@ export default function RealisasiView({
         keterangan: formKeterangan.trim(),
         bukti_transaksi: storageUrl || undefined,
         bukti_transaksi_storage_path: storagePath || undefined,
-        bukti_transaksi_public_id: cloudinaryPublicId || undefined,
+        bukti_transaksi_public_id: undefined,
         id_pihak_ketiga: formPihakKetigaId || editItem?.id_pihak_ketiga || undefined
       };
 
@@ -551,13 +535,6 @@ export default function RealisasiView({
           await deleteFileFromFirebaseStorage(item.bukti_transaksi_storage_path || item.bukti_transaksi);
         } catch (storageErr) {
           console.warn("Gagal menghapus bukti dari Firebase Storage:", storageErr);
-        }
-      } else if (item.bukti_transaksi_public_id) {
-        try {
-          await deleteFile(item.bukti_transaksi_public_id);
-          console.log(`Berhasil menghapus bukti transaksi dari Cloudinary: ${item.bukti_transaksi_public_id}`);
-        } catch (cloudinaryErr) {
-          console.warn("Gagal menghapus bukti dari Cloudinary:", cloudinaryErr);
         }
       }
 

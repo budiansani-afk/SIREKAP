@@ -753,10 +753,12 @@ export default function App() {
           <div className="flex justify-center mb-2">
             <div className="w-24 h-24 bg-white rounded-full flex items-center justify-center p-0.5 shadow-2xl border-2 border-orange-500 overflow-hidden">
               <img 
-                src="https://res.cloudinary.com/de4prnqa4/image/upload/v1780640818/logo_sibiru_y2jgaw.jpg" 
+                src={appSettings?.logo_instansi || "/logo.svg"} 
                 alt="Logo SIREKAP TANAH" 
                 className="w-full h-full object-cover rounded-full"
-                referrerPolicy="no-referrer"
+                onError={(e) => {
+                  (e.target as HTMLImageElement).src = "/logo.svg";
+                }}
               />
             </div>
           </div>
@@ -1049,10 +1051,12 @@ export default function App() {
             {/* Swapped Brand from Sidebar into Topheader (SIREKAP TAHUN ANGGARAN 2026) */}
             <div className="w-9 h-9 bg-white rounded-lg flex items-center justify-center shrink-0 border border-orange-500 overflow-hidden shadow-2xs select-none">
               <img 
-                src="https://res.cloudinary.com/de4prnqa4/image/upload/v1780640818/logo_sibiru_y2jgaw.jpg" 
+                src={appSettings?.logo_instansi || "/logo.svg"} 
                 alt="Logo SIREKAP" 
                 className="w-full h-full object-cover"
-                referrerPolicy="no-referrer"
+                onError={(e) => {
+                  (e.target as HTMLImageElement).src = "/logo.svg";
+                }}
               />
             </div>
             
@@ -1199,10 +1203,6 @@ export default function App() {
           <div className="p-4 border-t border-blue-950 bg-[#0d172e] space-y-3">
             {isSidebarOpen && (
               <div className="bg-[#13203f]/60 p-2.5 rounded-lg border border-blue-950/80 text-[10px] text-slate-300 space-y-1 font-sans animate-fade-in" id="panel-status-sistem">
-                <p className="font-extrabold text-orange-400 uppercase tracking-widest text-[9px] mb-1.5 flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                  Metrik Penggunaan Live
-                </p>
                 <div className="grid grid-cols-1 gap-1 font-medium text-slate-300">
                   <div className="flex justify-between border-b border-blue-950/20 pb-0.5">
                     <span>• Jumlah Kunjungan</span>
@@ -1221,31 +1221,10 @@ export default function App() {
                     </span>
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setIsOnlineSessionsModalOpen(true)}
-                  className="w-full mt-1.5 pt-1.5 border-t border-blue-950/40 text-center text-[9px] font-black uppercase tracking-wider text-orange-400 hover:text-orange-300 flex items-center justify-center gap-1 transition cursor-pointer"
-                  title="Pantau detail sesi pengguna yang sedang online"
-                >
-                  <Activity size={10} className="animate-pulse" />
-                  <span>Pantau Sesi Online ({activeUsersCount})</span>
-                </button>
               </div>
             )}
 
-            {isSidebarOpen ? (
-              <button 
-                onClick={() => setSelectedInfo({
-                  title: "SIREKAP TANAH - Informasi Lengkap Aplikasi",
-                  content: "SIREKAP TANAH (Sistem Informasi Rekapitulasi, Evaluasi, dan Kinerja Anggaran Pertanahan) merupakan aplikasi pengelolaan anggaran Bidang Pertanahan yang dirancang untuk mendukung perencanaan, pelaksanaan, monitoring, evaluasi, dan pelaporan kegiatan secara terintegrasi.\n\nSistem ini menyediakan kinerja secara real-time mengenai pagu anggaran, realisasi keuangan, capaian fisik, serta berkas arsip dokumen pendukung kegiatan pertanahan.\n\nTujuan Utama:\n• Meningkatkan efektivitas pengelolaan anggaran pertanahan.\n• Mempermudah monitoring dan evaluasi kegiatan secara terstruktur.\n• Menyediakan data dan laporan yang akurat, dinamis, dan terintegrasi.\n• Mendukung transparansi serta akuntabilitas pelaksanaan program kerja.",
-                  type: 'guide'
-                })}
-                className="flex items-center gap-3 bg-[#13203f]/60 hover:bg-blue-900/40 p-2.5 rounded-xl border border-blue-900/40 animate-fade-in w-full transition" 
-                id="panel-bottom-button"
-              >
-                <span className="text-[10px] text-slate-200 font-black uppercase tracking-widest text-center w-full">SIREKAP 2026</span>
-              </button>
-            ) : (
+            {!isSidebarOpen && (
               <div className="flex items-center justify-center animate-fade-in">
                 <div className="w-8 h-8 rounded-full bg-blue-900/50 text-blue-300 flex items-center justify-center font-black text-[10px] border border-blue-800">
                   {userRole.substring(0, 2).toUpperCase()}

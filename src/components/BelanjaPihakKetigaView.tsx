@@ -23,7 +23,6 @@ import { formatRupiah, exportToCSV } from '../utils/helpers';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { doc, setDoc, deleteDoc } from 'firebase/firestore';
 import { COLL_BELANJA_PIHAK_KETIGA, createAuditLog, syncPihakKetigaToSp2d, synchronizeCalculations } from '../dbService';
-import { uploadFile, deleteFile } from '../cloudinaryService';
 import { 
   uploadFileToFirebaseStorage, 
   deleteFileFromFirebaseStorage,
@@ -249,22 +248,15 @@ export default function BelanjaPihakKetigaView({
     try {
       let storageUrl = existingFotoUrl;
       let storagePath = editItem?.foto_kegiatan_storage_path || '';
-      let cloudinaryPublicId = editItem?.foto_kegiatan_public_id || '';
 
       // If a new physical file is selected
       if (formFotoFile) {
-        // If there is an old photo on Firebase Storage or Cloudinary, delete it first
-        if (editItem?.foto_kegiatan_storage_path) {
+        // If there is an old photo on Firebase Storage, delete it first
+        if (editItem?.foto_kegiatan_storage_path || (editItem?.foto_kegiatan && isFirebaseStorageUrl(editItem.foto_kegiatan))) {
           try {
-            await deleteFileFromFirebaseStorage(editItem.foto_kegiatan_storage_path);
+            await deleteFileFromFirebaseStorage(editItem.foto_kegiatan_storage_path || editItem.foto_kegiatan);
           } catch (storageErr) {
             console.warn("Gagal menghapus foto lama dari Firebase Storage:", storageErr);
-          }
-        } else if (editItem?.foto_kegiatan_public_id) {
-          try {
-            await deleteFile(editItem.foto_kegiatan_public_id);
-          } catch (cloudinaryErr) {
-            console.warn("Sedang menghapus, Gagal menghapus asset Cloudinary lama:", cloudinaryErr);
           }
         }
 
@@ -283,25 +275,17 @@ export default function BelanjaPihakKetigaView({
         });
         storageUrl = uploadRes.downloadUrl;
         storagePath = uploadRes.storagePath;
-        cloudinaryPublicId = '';
       } else if (!existingFotoUrl) {
         // If the user removed the image completely
-        if (editItem?.foto_kegiatan_storage_path) {
+        if (editItem?.foto_kegiatan_storage_path || (editItem?.foto_kegiatan && isFirebaseStorageUrl(editItem.foto_kegiatan))) {
           try {
-            await deleteFileFromFirebaseStorage(editItem.foto_kegiatan_storage_path);
+            await deleteFileFromFirebaseStorage(editItem.foto_kegiatan_storage_path || editItem.foto_kegiatan);
           } catch (storageErr) {
             console.warn("Gagal menghapus foto lama dari Firebase Storage:", storageErr);
-          }
-        } else if (editItem?.foto_kegiatan_public_id) {
-          try {
-            await deleteFile(editItem.foto_kegiatan_public_id);
-          } catch (cloudinaryErr) {
-            console.warn("Gagal menghapus asset Cloudinary lama:", cloudinaryErr);
           }
         }
         storageUrl = '';
         storagePath = '';
-        cloudinaryPublicId = '';
       }
 
       const docId = editItem ? editItem.id : `pihak_ketiga_${Date.now()}`;
@@ -321,7 +305,7 @@ export default function BelanjaPihakKetigaView({
         catatan: formCatatan ? formCatatan.trim() : '',
         foto_kegiatan: storageUrl || '',
         foto_kegiatan_storage_path: storagePath || '',
-        foto_kegiatan_public_id: cloudinaryPublicId || ''
+        foto_kegiatan_public_id: ''
       };
 
       await setDoc(doc(db, COLL_BELANJA_PIHAK_KETIGA, docId), payload).catch(err => handleFirestoreError(err, OperationType.WRITE, `${COLL_BELANJA_PIHAK_KETIGA}/${docId}`));
@@ -364,13 +348,6 @@ export default function BelanjaPihakKetigaView({
           console.log(`Berhasil menghapus foto kegiatan dari Firebase Storage: ${item.foto_kegiatan_storage_path}`);
         } catch (storageErr) {
           console.warn("Gagal menghapus foto dari Firebase Storage:", storageErr);
-        }
-      } else if (item.foto_kegiatan_public_id) {
-        try {
-          await deleteFile(item.foto_kegiatan_public_id);
-          console.log(`Berhasil menghapus foto kegiatan dari Cloudinary: ${item.foto_kegiatan_public_id}`);
-        } catch (cloudinaryErr) {
-          console.warn("Gagal menghapus foto dari Cloudinary:", cloudinaryErr);
         }
       }
 

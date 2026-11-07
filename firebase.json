@@ -8,19 +8,9 @@
     ],
     "rewrites": [
       {
-        "source": "/api/cloudinary/delete",
-        "function": {
-          "serviceId": "deletefromcloudinary",
-          "region": "us-central1"
-        }
-      },
-      {
         "source": "**",
         "destination": "/index.html"
       }
     ]
-  },
-  "functions": {
-    "source": "functions"
   }
 }
