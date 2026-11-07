@@ -753,11 +753,11 @@ export default function App() {
 
         <div className="sm:mx-auto sm:w-full sm:max-w-md z-10">
           <div className="flex justify-center mb-2">
-            <div className="w-24 h-24 bg-white rounded-full flex items-center justify-center p-0.5 shadow-2xl border-2 border-orange-500 overflow-hidden">
+            <div className="w-24 h-24 bg-white rounded-2xl flex items-center justify-center p-1.5 shadow-2xl border-2 border-orange-500 overflow-hidden">
               <img 
                 src={appSettings?.logo_instansi || "/logo.svg"} 
                 alt="Logo SIREKAP TANAH" 
-                className="w-full h-full object-cover rounded-full"
+                className="w-full h-full object-contain"
                 onError={(e) => {
                   (e.target as HTMLImageElement).src = "/logo.svg";
                 }}
@@ -1050,12 +1050,12 @@ export default function App() {
           </button>
           
           <div className="flex items-center gap-3">
-            {/* Swapped Brand from Sidebar into Topheader (SIREKAP TAHUN ANGGARAN 2026) */}
-            <div className="w-9 h-9 bg-white rounded-lg flex items-center justify-center shrink-0 border border-orange-500 overflow-hidden shadow-2xs select-none">
+            {/* Swapped Brand from Sidebar into Topheader (SIREKAP TAHUN ANGGARAN [TAHUN]) */}
+            <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center shrink-0 border border-orange-500 overflow-hidden shadow-2xs select-none p-0.5">
               <img 
                 src={appSettings?.logo_instansi || "/logo.svg"} 
                 alt="Logo SIREKAP" 
-                className="w-full h-full object-cover"
+                className="w-full h-full object-contain"
                 onError={(e) => {
                   (e.target as HTMLImageElement).src = "/logo.svg";
                 }}
@@ -1064,7 +1064,7 @@ export default function App() {
             
             <div className="flex flex-col justify-center border-l border-slate-200 pl-3">
               <h1 className="text-sm sm:text-base md:text-md lg:text-[17px] font-black tracking-tight text-blue-900 uppercase">
-                SIREKAP TAHUN ANGGARAN {selectedYear} - BIDANG PERTANAHAN
+                SIREKAP TAHUN ANGGARAN <span className="text-orange-600 font-mono font-black">{selectedYear}</span> - BIDANG PERTANAHAN
               </h1>
               <p className="text-[10px] sm:text-[11px] font-extrabold font-sans text-slate-500 tracking-wider uppercase mt-0.5">
                 Sistem Informasi Rekapitulasi, Evaluasi, dan Kinerja Anggaran Pertanahan
@@ -1082,12 +1082,16 @@ export default function App() {
               value={selectedYear}
               onChange={(e) => handleSelectYear(Number(e.target.value))}
               className="bg-transparent border-none font-black text-orange-900 outline-none cursor-pointer p-0.5 focus:ring-0 text-xs font-mono"
+              id="select-tahun-anggaran-topbar"
             >
+              <option value="2023">2023</option>
               <option value="2024">2024</option>
               <option value="2025">2025</option>
               <option value="2026">2026</option>
               <option value="2027">2027</option>
               <option value="2028">2028</option>
+              <option value="2029">2029</option>
+              <option value="2030">2030</option>
             </select>
           </div>
 
