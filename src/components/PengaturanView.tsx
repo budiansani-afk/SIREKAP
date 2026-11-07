@@ -380,7 +380,7 @@ export default function PengaturanView({
 
     const emailClean = emailState.trim().toLowerCase();
     if (!emailClean) {
-      setUserActionError("Nama Akun / Alamat Surel wajib diisi!");
+      setUserActionError("Nama Akun wajib diisi!");
       return;
     }
     if (!namaState.trim()) {
@@ -394,6 +394,11 @@ export default function PengaturanView({
 
     setIsSubmittingUser(true);
     try {
+      // Jika admin mengedit dan mengubah email ID dari dokumen lama
+      if (editingUserId && editingUserId.toLowerCase() !== emailClean) {
+        await deleteDoc(doc(db, "sibiru_pengguna", editingUserId.toLowerCase())).catch(() => {});
+      }
+
       const userPayload: any = {
         id: emailClean,
         email: emailClean,
@@ -404,17 +409,27 @@ export default function PengaturanView({
       };
 
       await setDoc(doc(db, "sibiru_pengguna", emailClean), userPayload, { merge: true });
+
+      // Sinkronisasi cache nama akun lokal untuk auto-fill di menu login
+      try {
+        const cached = JSON.parse(localStorage.getItem('sibiru_user_names_cache') || '{}');
+        if (editingUserId && editingUserId.toLowerCase() !== emailClean) {
+          delete cached[editingUserId.toLowerCase()];
+        }
+        cached[emailClean] = namaState.trim();
+        localStorage.setItem('sibiru_user_names_cache', JSON.stringify(cached));
+      } catch (e) {}
       
       await createAuditLog(
         currentUserEmail,
         currentUserRole,
-        editingUserId ? "EDIT AKUN PENGGUNA" : "TAMBAH AKUN PENGGUNA",
+        editingUserId ? "EDIT SEMUA PARAMETER AKUN PENGGUNA" : "TAMBAH AKUN PENGGUNA",
         "MANAJEMEN_AKUN",
         editingUserId ? { id: editingUserId } : null,
         { email: emailClean, role: roleState, nama: namaState.trim(), aktif: aktifState }
       );
 
-      setUserActionSuccess(`Akun "${emailClean}" berhasil ${editingUserId ? 'diperbarui' : 'disimpan'} di Firestore!`);
+      setUserActionSuccess(`Akun "${emailClean}" berhasil ${editingUserId ? 'diperbarui semua parameternya' : 'disimpan'} di sistem!`);
       
       // Reset State
       setEmailState('');
@@ -871,14 +886,13 @@ export default function PengaturanView({
 
             <form onSubmit={handleSaveUser} className="space-y-3">
               <div>
-                <label className="block text-slate-700 font-extrabold mb-1">Nama Akun / Surel (ID Wajib)</label>
+                <label className="block text-slate-700 font-extrabold mb-1">Nama Akun (Bebas / Tidak Wajib Email)</label>
                 <input 
-                  type="email"
-                  placeholder="name@sirekap.com"
-                  disabled={!!editingUserId} // Account email cannot be edited after creation
+                  type="text"
+                  placeholder="Cth: admin, operator1, atau surel"
                   value={emailState}
                   onChange={(e) => setEmailState(e.target.value)}
-                  className="w-full p-2 border border-slate-200 rounded-lg bg-white outline-blue-600 font-bold text-slate-900 disabled:bg-slate-100 disabled:cursor-not-allowed"
+                  className="w-full p-2 border border-slate-200 rounded-lg bg-white outline-blue-600 font-bold text-slate-900"
                   required
                 />
               </div>
@@ -989,7 +1003,7 @@ export default function PengaturanView({
             <table className="min-w-full divide-y divide-slate-150 border border-slate-100 rounded-lg overflow-hidden">
               <thead className="bg-slate-50 text-slate-750 font-bold uppercase tracking-wider">
                 <tr>
-                  <th className="px-3 py-2 text-left">Nama Akun / Surel</th>
+                  <th className="px-3 py-2 text-left">Nama Akun</th>
                   <th className="px-3 py-2 text-left">Nama Anggota/Karyawan</th>
                   <th className="px-3 py-2 text-left">Password</th>
                   <th className="px-3 py-2 text-left">Hak Akses (Role)</th>

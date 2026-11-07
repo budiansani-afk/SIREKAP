@@ -64,9 +64,9 @@ service cloud.firestore {
       allow write: if isSignedIn() && isValidId(id);
     }
 
-    // Rules for sibiru_pengguna
+    // Rules for sibiru_pengguna (read permitted so login screen can auto-fill registered user names)
     match /sibiru_pengguna/{id} {
-      allow read: if isSignedIn();
+      allow read: if true;
       allow write: if isSignedIn() && isValidId(id);
     }
 
@@ -92,7 +92,7 @@ service cloud.firestore {
 
     // Rules for sibiru_pengaturan
     match /sibiru_pengaturan/{id} {
-      allow read: if isSignedIn();
+      allow read: if true;
       allow write: if isSignedIn() && isValidId(id);
     }
   }

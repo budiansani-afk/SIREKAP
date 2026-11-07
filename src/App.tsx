@@ -37,7 +37,9 @@ import {
   AlertCircle,
   AlertTriangle,
   Clock,
-  PowerOff
+  PowerOff,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { auth, db } from './firebase';
 import { 
@@ -159,6 +161,62 @@ export default function App() {
   const [rememberMe, setRememberMe] = useState(true);
   const [loginError, setLoginError] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
+
+  // Helper resolusi nama pengguna otomatis dari nama akun / surel
+  const resolveUserNameFromEmail = (emailStr: string): string => {
+    const clean = emailStr.trim().toLowerCase();
+    if (!clean) return '';
+    
+    // 1. Cek di daftar pengguna Firestore (berdasarkan id akun, email, atau username)
+    const foundUser = penggunas.find(p => 
+      p.id?.toLowerCase() === clean || 
+      p.email?.toLowerCase() === clean ||
+      (p as any).username?.toLowerCase() === clean
+    );
+    if (foundUser && foundUser.nama) {
+      return foundUser.nama;
+    }
+
+    // 2. Cek cache lokal localStorage
+    try {
+      const cached = JSON.parse(localStorage.getItem('sibiru_user_names_cache') || '{}');
+      if (cached[clean]) return cached[clean];
+    } catch (e) {}
+
+    // 3. Preset akun baku sistem (baik format username maupun surel)
+    if (clean === 'admin@sirekap.com' || clean === 'admin' || clean === 'administrator') return 'Administrator SIREKAP Bima';
+    if (clean === 'budiansani@gmail.com' || clean === 'budiansani' || clean === 'budi') return 'Drs. H. BUDIAN SANI, M.Si';
+    if (clean === 'operator@sirekap.com' || clean === 'operator' || clean === 'operator1') return 'Operator Teknis Pertanahan';
+    if (clean === 'pimpinan@sirekap.com' || clean === 'pimpinan' || clean === 'kabid') return 'Kepala Bidang Pertanahan';
+
+    // 4. Heuristik berdasarkan kata kunci role
+    if (clean.includes('admin')) return 'Administrator SIREKAP';
+    if (clean.includes('operator')) return 'Operator Teknis';
+    if (clean.includes('pimpinan') || clean.includes('kabid')) return 'Kepala Bidang Pertanahan';
+
+    const username = clean.includes('@') ? clean.split('@')[0] : clean;
+    if (username) {
+      return username.charAt(0).toUpperCase() + username.slice(1);
+    }
+    return '';
+  };
+
+  const handleEmailInputChange = (val: string) => {
+    setEmailInput(val);
+    const resolved = resolveUserNameFromEmail(val);
+    setNamaPenggunaInput(resolved);
+  };
+
+  // Sinkronisasi otomatis nama pengguna saat email atau daftar pengguna berubah
+  useEffect(() => {
+    if (emailInput.trim()) {
+      const resolved = resolveUserNameFromEmail(emailInput);
+      if (resolved) {
+        setNamaPenggunaInput(resolved);
+      }
+    }
+  }, [emailInput, penggunas]);
 
   const [currentDateTime, setCurrentDateTime] = useState<string>('');
 
@@ -466,27 +524,31 @@ export default function App() {
           
           // Determine Role based on User Document in Firestore if it exists
           const email = currentUser.email?.toLowerCase() || '';
+          const rawAccount = email.endsWith('@sirekap.local') ? email.replace('@sirekap.local', '') : email;
           let role = UserRole.PIMPINAN; // Fallback standard role
-          let dbNama = email.split('@')[0];
+          let dbNama = rawAccount.split('@')[0];
           
           try {
-            const userDoc = await getDoc(doc(db, "sibiru_pengguna", email));
+            let userDoc = await getDoc(doc(db, "sibiru_pengguna", rawAccount));
+            if (!userDoc.exists() && rawAccount !== email) {
+              userDoc = await getDoc(doc(db, "sibiru_pengguna", email));
+            }
             if (userDoc.exists()) {
               const data = userDoc.data();
               role = data.role || UserRole.PIMPINAN;
               dbNama = data.nama || dbNama;
             } else {
               // Standard fallback rules
-              if (email.includes('admin') || email === 'budiansani@gmail.com') {
+              if (rawAccount.includes('admin') || rawAccount === 'budiansani@gmail.com' || rawAccount === 'budiansani') {
                 role = UserRole.ADMIN;
-              } else if (email.includes('operator')) {
+              } else if (rawAccount.includes('operator')) {
                 role = UserRole.OPERATOR;
               }
               // Save standard seeding account to Database so they can be modified
-              await setDoc(doc(db, "sibiru_pengguna", email), {
-                id: email,
-                email: email,
-                nama: email.includes('admin') ? "Administrator SIREKAP Bima" : email.includes('operator') ? "Operator Teknis Pertanahan" : "Kepala Bidang Pertanahan",
+              await setDoc(doc(db, "sibiru_pengguna", rawAccount), {
+                id: rawAccount,
+                email: rawAccount,
+                nama: rawAccount.includes('admin') ? "Administrator SIREKAP Bima" : rawAccount.includes('operator') ? "Operator Teknis Pertanahan" : "Kepala Bidang Pertanahan",
                 role: role,
                 aktif: true,
                 password: "bima2026"
@@ -510,7 +572,53 @@ export default function App() {
     });
   }, []);
 
-  // Real-time snap listeners for all firebase collections
+  // Real-time snapshot listeners untuk Pengaturan Instansi & Daftar Pengguna (Aktif sebelum login)
+  useEffect(() => {
+    const unsubPengguna = onSnapshot(collection(db, "sibiru_pengguna"), (snap) => {
+      const list = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Pengguna));
+      setPenggunas(list);
+
+      // Sinkronisasi otomatis ke cache nama akun lokal
+      try {
+        const cached = JSON.parse(localStorage.getItem('sibiru_user_names_cache') || '{}');
+        list.forEach(p => {
+          if (p.email && p.nama) {
+            cached[p.email.toLowerCase()] = p.nama;
+          }
+          if (p.id && p.nama) {
+            cached[p.id.toLowerCase()] = p.nama;
+          }
+        });
+        localStorage.setItem('sibiru_user_names_cache', JSON.stringify(cached));
+      } catch (e) {}
+    }, (err) => console.warn('Error listening pengguna:', err));
+
+    const unsubSet = onSnapshot(doc(db, COLL_PENGATURAN, "aktif"), (docSnap) => {
+      if (docSnap.exists()) {
+        const d = docSnap.data();
+        setAppSettings({
+          id: docSnap.id,
+          tahun_anggaran_aktif: d.tahun_anggaran_aktif || 2026,
+          nama_instansi: d.nama_instansi || "Dinas Perumahan dan Kawasan Permukiman",
+          logo_instansi: d.logo_instansi || "",
+          logo_instansi_public_id: d.logo_instansi_public_id || "",
+          nama_pejabat_ttd: d.nama_pejabat_ttd || "",
+          jabatan_pejabat_ttd: d.jabatan_pejabat_ttd || "",
+          nip_pejabat_ttd: d.nip_pejabat_ttd || "",
+          nama_bendahara: d.nama_bendahara || "",
+          jabatan_bendahara: d.jabatan_bendahara || "",
+          nip_bendahara: d.nip_bendahara || ""
+        });
+      }
+    }, (err) => console.warn('Error listening pengaturan:', err));
+
+    return () => {
+      unsubPengguna();
+      unsubSet();
+    };
+  }, []);
+
+  // Real-time snap listeners for all firebase collections (saat user terautentikasi)
   useEffect(() => {
     if (!user) return;
 
@@ -542,10 +650,6 @@ export default function App() {
       setDokumens(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as DokumenArsip)));
     }, (err) => console.warn('Error listening dokumen:', err));
 
-    const unsubPengguna = onSnapshot(collection(db, "sibiru_pengguna"), (snap) => {
-      setPenggunas(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Pengguna)));
-    }, (err) => console.warn('Error listening pengguna:', err));
-
     const unsubLogs = onSnapshot(collection(db, COLL_LOG_AKTIVITAS), (snap) => {
       setLogs(snap.docs.map(doc => {
         const data = doc.data();
@@ -554,10 +658,13 @@ export default function App() {
         try { if (data.data_lama) parsedOld = JSON.parse(data.data_lama); } catch(e) {}
         try { if (data.data_baru) parsedNew = JSON.parse(data.data_baru); } catch(e) {}
 
+        const loggedUser = data.nama_pengguna || "Aparatur";
+        const displayNama = resolveUserNameFromEmail(loggedUser) || loggedUser;
+
         return {
           id: doc.id,
           waktu: data.waktu || new Date().toISOString(),
-          nama_pengguna: data.nama_pengguna || "Guest",
+          nama_pengguna: displayNama,
           role: data.role || "Unknown",
           aksi: data.aksi || "Activity",
           modul: data.modul || "System",
@@ -566,7 +673,7 @@ export default function App() {
           ip_address: data.ip_address || "127.0.0.1",
           browser: data.browser || "System Browser",
 
-          userEmail: data.nama_pengguna || "Guest",
+          userEmail: displayNama,
           userRole: data.role || "Unknown",
           action: data.aksi || "Activity",
           module: data.modul || "System",
@@ -577,25 +684,6 @@ export default function App() {
         } as any;
       }));
     }, (err) => console.warn('Error listening logs:', err));
-
-    const unsubSet = onSnapshot(doc(db, COLL_PENGATURAN, "aktif"), (docSnap) => {
-      if (docSnap.exists()) {
-        const d = docSnap.data();
-        setAppSettings({
-          id: docSnap.id,
-          tahun_anggaran_aktif: d.tahun_anggaran_aktif || 2026,
-          nama_instansi: d.nama_instansi || "Dinas Perumahan dan Kawasan Permukiman",
-          logo_instansi: d.logo_instansi || "",
-          logo_instansi_public_id: d.logo_instansi_public_id || "",
-          nama_pejabat_ttd: d.nama_pejabat_ttd || "",
-          jabatan_pejabat_ttd: d.jabatan_pejabat_ttd || "",
-          nip_pejabat_ttd: d.nip_pejabat_ttd || "",
-          nama_bendahara: d.nama_bendahara || "",
-          jabatan_bendahara: d.jabatan_bendahara || "",
-          nip_bendahara: d.nip_bendahara || ""
-        });
-      }
-    }, (err) => console.warn('Error listening pengaturan:', err));
 
     const unsubVisits = onSnapshot(collection(db, 'sibiru_visits'), (snap) => {
       // We will set a beautiful baseline of 2145 to make it match existing system status vibe + actual count!
@@ -651,9 +739,7 @@ export default function App() {
       unsubReal();
       unsubMon();
       unsubDoc();
-      unsubPengguna();
       unsubLogs();
-      unsubSet();
       unsubVisits();
       unsubPresence();
     };
@@ -713,14 +799,17 @@ export default function App() {
   // Handle Authentication attempts
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!namaPenggunaInput.trim()) {
-      setLoginError("Nama Pengguna wajib diisi!");
+    if (!emailInput.trim()) {
+      setLoginError("Nama Akun wajib diisi!");
       return;
     }
-    if (!emailInput || !passwordInput) {
-      setLoginError("Harap masukkan email dan kata sandi Anda!");
+    if (!passwordInput) {
+      setLoginError("Harap masukkan kata sandi Anda!");
       return;
     }
+
+    const resolvedName = namaPenggunaInput.trim() || resolveUserNameFromEmail(emailInput) || emailInput.split('@')[0];
+    setNamaPenggunaInput(resolvedName);
 
     setIsLoggingIn(true);
     setLoginError('');
@@ -728,48 +817,65 @@ export default function App() {
     setForceDisconnectedNotice(null);
 
     const emailClean = emailInput.trim().toLowerCase();
+    const authEmail = emailClean.includes('@')
+      ? emailClean
+      : `${emailClean.replace(/[^a-z0-9._-]/g, '')}@sirekap.local`;
 
     try {
-      // 1. Authenticate with Firebase Auth first
+      // 1. Validasi status dan password di Firestore sibiru_pengguna jika ada
       try {
-        await signInWithEmailAndPassword(auth, emailClean, passwordInput);
+        let userDocSnap = await getDoc(doc(db, "sibiru_pengguna", emailClean));
+        if (!userDocSnap.exists() && emailClean !== authEmail) {
+          userDocSnap = await getDoc(doc(db, "sibiru_pengguna", authEmail));
+        }
+        if (userDocSnap.exists()) {
+          const userData = userDocSnap.data();
+          if (userData.aktif === false) {
+            throw new Error("Akun Anda telah dinonaktifkan oleh administrator!");
+          }
+          if (userData.password && userData.password !== passwordInput) {
+            throw new Error("Nama akun atau kata sandi tidak cocok.");
+          }
+        }
+      } catch (checkErr: any) {
+        if (checkErr.message?.includes('dinonaktifkan') || checkErr.message?.includes('tidak cocok')) {
+          throw checkErr;
+        }
+      }
+
+      // 2. Authenticate dengan Firebase Auth
+      try {
+        await signInWithEmailAndPassword(auth, authEmail, passwordInput);
       } catch (authErr: any) {
         if (authErr.code === 'auth/user-not-found' || authErr.code === 'auth/invalid-credential') {
           // If first run, auto-register in Auth
           try {
-            await createUserWithEmailAndPassword(auth, emailClean, passwordInput);
+            await createUserWithEmailAndPassword(auth, authEmail, passwordInput);
           } catch (createErr: any) {
-            throw new Error("Akun belum terdaftar atau kombinasi email dan kata sandi salah!");
+            throw new Error("Nama akun atau kata sandi tidak cocok.");
           }
         } else {
           throw authErr;
         }
       }
 
-      // 2. Clear out any previous session-cached display names and save the new active one
-      localStorage.setItem('nama_pengguna_aktif', namaPenggunaInput.trim());
-      setNamaPenggunaAktif(namaPenggunaInput.trim());
-      setUserDisplayName(namaPenggunaInput.trim());
+      // 3. Simpan nama pengguna aktif
+      localStorage.setItem('nama_pengguna_aktif', resolvedName);
+      setNamaPenggunaAktif(resolvedName);
+      setUserDisplayName(resolvedName);
       lastActivityRef.current = Date.now();
       localStorage.setItem('sirekap_last_activity', String(Date.now()));
 
-      // 3. Fetch from Firestore sibiru_pengguna now that user is signed in
-      try {
-        const userDocRef = doc(db, "sibiru_pengguna", emailClean);
-        const userDocSnap = await getDoc(userDocRef);
-        if (userDocSnap.exists()) {
-          const userData = userDocSnap.data();
-          if (userData.aktif === false) {
-            await signOut(auth);
-            throw new Error("Akun Anda telah dinonaktifkan oleh administrator!");
-          }
-        }
-      } catch (docErr: any) {
-        if (docErr.message?.includes('dinonaktifkan')) {
-          throw docErr;
-        }
-        console.warn("Could not check user status doc:", docErr);
-      }
+      // 4. Audit Log saat login berhasil (mencatat Nama Pengguna)
+      createAuditLog(
+        resolvedName,
+        userRole,
+        "LOGIN MASUK SISTEM",
+        "AUTENTIKASI",
+        null,
+        { nama_pengguna: resolvedName, nama_akun: emailClean, waktu: new Date().toISOString() }
+      ).catch(() => {});
+
     } catch (err: any) {
       setLoginError(err.message || `Nama akun atau kata sandi tidak cocok.`);
     } finally {
@@ -786,6 +892,16 @@ export default function App() {
         }, { merge: true });
       }
     } catch (e) {}
+
+    createAuditLog(
+      userDisplayName || namaPenggunaAktif || 'Pengguna',
+      userRole,
+      "LOGOUT KELUAR SISTEM",
+      "AUTENTIKASI",
+      null,
+      { waktu: new Date().toISOString() }
+    ).catch(() => {});
+
     localStorage.removeItem('nama_pengguna_aktif');
     localStorage.removeItem('sirekap_last_activity');
     sessionStorage.removeItem('sibiru_session_id');
@@ -817,13 +933,8 @@ export default function App() {
   const handleQuickLogin = (email: string) => {
     setEmailInput(email);
     setPasswordInput("bima2026");
-    if (email.includes('admin')) {
-      setNamaPenggunaInput("Administrator SIREKAP Bima");
-    } else if (email.includes('operator')) {
-      setNamaPenggunaInput("Operator Teknis Pertanahan");
-    } else {
-      setNamaPenggunaInput("Kepala Bidang Pertanahan");
-    }
+    const resolved = resolveUserNameFromEmail(email);
+    setNamaPenggunaInput(resolved);
   };
 
   // Update brand settings helper
@@ -940,48 +1051,66 @@ export default function App() {
             )}
 
             <form className="space-y-4 text-xs font-medium" onSubmit={handleLogin}>
+              {/* 1. Input Nama Akun (Manual, Tidak Wajib Email) */}
               <div>
-                <label className="block text-slate-700 font-bold mb-1 uppercase tracking-wider">Nama Pengguna (Wajib & Bebas)</label>
+                <label className="block text-slate-700 font-bold mb-1 uppercase tracking-wider text-[11px]">
+                  Nama Akun <span className="text-red-500">*</span>
+                </label>
+                <div className="relative">
+                  <User className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-600" size={15} />
+                  <input
+                    type="text"
+                    required
+                    autoComplete="username"
+                    placeholder="Masukkan nama akun..."
+                    value={emailInput}
+                    onChange={(e) => handleEmailInputChange(e.target.value)}
+                    className="w-full p-2.5 pl-9 border border-slate-300 bg-white focus:bg-blue-50/20 rounded-lg outline-blue-600 focus:border-blue-600 text-slate-900 font-bold transition shadow-xs"
+                  />
+                </div>
+              </div>
+
+              {/* 2. Nama Pengguna (Otomatis Terisi & Tidak Dapat Diubah) */}
+              <div>
+                <label className="block text-slate-700 font-bold mb-1 uppercase tracking-wider text-[11px]">
+                  Nama Pengguna
+                </label>
                 <div className="relative">
                   <User className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
                   <input
                     type="text"
-                    required
-                    placeholder="Contoh: Budi Santoso atau Keuangan"
-                    value={namaPenggunaInput}
-                    onChange={(e) => setNamaPenggunaInput(e.target.value)}
-                    className="w-full p-2.5 pl-9 border border-slate-200 bg-slate-50 focus:bg-white rounded-lg outline-blue-600 focus:border-blue-600 text-slate-900 font-semibold"
+                    readOnly
+                    tabIndex={-1}
+                    value={namaPenggunaInput || (emailInput ? resolveUserNameFromEmail(emailInput) : '')}
+                    placeholder="Otomatis terisi..."
+                    className="w-full p-2.5 pl-9 border border-slate-200 bg-slate-100 text-slate-700 font-bold rounded-lg cursor-not-allowed select-none focus:outline-none"
                   />
                 </div>
               </div>
 
+              {/* 3. Kotak Kata Sandi (Password) */}
               <div>
-                <label className="block text-slate-700 font-bold mb-1 uppercase tracking-wider">Nama Akun / Alamat Surel</label>
-                <div className="relative">
-                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
-                  <input
-                    type="email"
-                    required
-                    placeholder="nama@sirekap.com"
-                    value={emailInput}
-                    onChange={(e) => setEmailInput(e.target.value)}
-                    className="w-full p-2.5 pl-9 border border-slate-200 bg-slate-50 focus:bg-white rounded-lg outline-blue-600 focus:border-blue-600 text-slate-900 font-semibold"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-slate-700 font-bold mb-1 uppercase tracking-wider">Kata Sandi (Password)</label>
+                <label className="block text-slate-700 font-bold mb-1 uppercase tracking-wider text-[11px]">
+                  Kata Sandi (Password) <span className="text-red-500">*</span>
+                </label>
                 <div className="relative">
                   <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
                   <input
-                    type="password"
+                    type={showLoginPassword ? "text" : "password"}
                     required
-                    placeholder="••••••••"
+                    placeholder={showLoginPassword ? "Ketik kata sandi Anda..." : "••••••••"}
                     value={passwordInput}
                     onChange={(e) => setPasswordInput(e.target.value)}
-                    className="w-full p-2.5 pl-9 border border-slate-200 bg-slate-50 focus:bg-white rounded-lg outline-blue-600 focus:border-blue-600 text-slate-900"
+                    className="w-full p-2.5 pl-9 pr-10 border border-slate-300 bg-white focus:bg-blue-50/20 rounded-lg outline-blue-600 focus:border-blue-600 text-slate-900 font-semibold transition"
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowLoginPassword(prev => !prev)}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-blue-600 rounded-md focus:outline-none transition"
+                    title={showLoginPassword ? "Sembunyikan sandi" : "Lihat sandi"}
+                  >
+                    {showLoginPassword ? <EyeOff size={16} className="text-blue-600" /> : <Eye size={16} />}
+                  </button>
                 </div>
               </div>
 
@@ -1017,6 +1146,8 @@ export default function App() {
 
   // Dynamic Page translation router switchboard mapping
   const renderViewContent = () => {
+    const activeUserDisplay = userDisplayName || namaPenggunaAktif || (user?.email ? user.email.split('@')[0] : 'Aparatur Pertanahan');
+
     switch (activePage) {
       case "dashboard":
         return (
@@ -1053,7 +1184,7 @@ export default function App() {
             allSubKegiatans={subKegiatans}
             allRkaList={rkaList}
             currentUserRole={userRole} 
-            currentUserEmail={user.email} 
+            currentUserEmail={activeUserDisplay} 
             activeTab={programActiveTab}
             onChangeTab={setProgramActiveTab}
             selectedYear={selectedYear}
@@ -1070,7 +1201,7 @@ export default function App() {
             allKegiatans={kegiatans}
             allSubKegiatans={subKegiatans}
             currentUserRole={userRole} 
-            currentUserEmail={user.email} 
+            currentUserEmail={activeUserDisplay} 
             selectedYear={selectedYear}
             initialFilterSubKegiatan={targetFilterSubKeg}
             initialFilterUraian={targetFilterUraian}
@@ -1086,7 +1217,7 @@ export default function App() {
             subKegiatans={filteredSubKegiatans} 
             pihakKetigas={filteredPihakKetigas}
             currentUserRole={userRole} 
-            currentUserEmail={user.email} 
+            currentUserEmail={activeUserDisplay} 
             onShowToast={showToast}
             selectedYear={selectedYear}
             initialSubKeg={targetFilterSubKeg}
@@ -1103,7 +1234,7 @@ export default function App() {
             subKegiatans={filteredSubKegiatans} 
             rkaList={filteredRkaList}
             currentUserRole={userRole} 
-            currentUserEmail={user.email} 
+            currentUserEmail={activeUserDisplay} 
             selectedYear={selectedYear}
           />
         );
@@ -1112,7 +1243,7 @@ export default function App() {
           <DokumenView 
             dokumens={dokumens} 
             currentUserRole={userRole} 
-            currentUserEmail={user.email} 
+            currentUserEmail={activeUserDisplay} 
           />
         );
       case "laporan":
@@ -1125,7 +1256,7 @@ export default function App() {
             pihakKetigas={filteredPihakKetigas} 
             rkaList={filteredRkaList}
             settings={appSettings}
-            currentUserEmail={user?.email || ''}
+            currentUserEmail={activeUserDisplay}
             currentUserRole={userRole}
             logs={logs}
             selectedYear={selectedYear}
@@ -1172,7 +1303,7 @@ export default function App() {
           <PengaturanView 
             settings={appSettings} 
             currentUserRole={userRole} 
-            currentUserEmail={user?.email || ''}
+            currentUserEmail={activeUserDisplay} 
             onUpdateSettings={handleUpdateSettings} 
             penggunas={penggunas}
             onlineSessions={onlineSessions}
@@ -1204,7 +1335,7 @@ export default function App() {
           
           <div className="flex items-center gap-3">
             {/* Swapped Brand from Sidebar into Topheader (SIREKAP TAHUN ANGGARAN [TAHUN]) */}
-            <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center shrink-0 border border-orange-500 overflow-hidden shadow-2xs select-none p-0.5">
+            <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center shrink-0 border-none overflow-hidden shadow-2xs select-none p-0.5">
               <img 
                 src={appSettings?.logo_instansi || "/logo.svg"} 
                 alt="Logo SIREKAP" 
@@ -1265,7 +1396,9 @@ export default function App() {
           
           <div className="flex items-center gap-3 pl-5 border-l border-slate-200">
             <div className="hidden sm:flex flex-col text-right">
-              <p className="text-xs font-semibold text-slate-700 leading-tight">{user.email}</p>
+              <p className="text-xs font-bold text-slate-800 leading-tight">
+                {userDisplayName || namaPenggunaAktif || user.email}
+              </p>
               <div className="flex items-center justify-end gap-1 mt-0.5">
                 <span className={`text-[8px] uppercase tracking-wider px-1.5 py-0.5 rounded font-black ${userRole === UserRole.ADMIN ? 'bg-amber-100 text-amber-800' : userRole === UserRole.OPERATOR ? 'bg-emerald-100 text-emerald-800' : 'bg-purple-100 text-purple-800'}`}>
                   {userRole}

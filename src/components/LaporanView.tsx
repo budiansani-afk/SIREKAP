@@ -9,8 +9,7 @@ import {
   CheckCircle,
   TrendingDown,
   Building,
-  Activity,
-  Award
+  Activity
 } from 'lucide-react';
 import { Program, Kegiatan, SubKegiatan, Realisasi, BelanjaPihakKetiga, AppSettings, UserRole, ActivityLog, RKA } from '../types';
 import { formatRupiah, formatPercent } from '../utils/helpers';
@@ -30,6 +29,21 @@ interface LaporanViewProps {
   selectedYear: number;
 }
 
+interface ReportRowItem {
+  id?: string;
+  kode: string;
+  nama: string;
+  pagu: number;
+  realisasi: number;
+  sisa: number;
+  persen: number;
+  rekanan?: string;
+  sub_kegiatan?: string;
+  masa_kerja?: string;
+  tanggal?: string;
+  catatan?: string;
+}
+
 type LaporanType = 
   | "rekap_anggaran" 
   | "rekap_realisasi" 
@@ -38,6 +52,7 @@ type LaporanType =
   | "rekap_sub_kegiatan" 
   | "bulanan" 
   | "tahunan" 
+  | "belanja_pihak_ketiga"
   | "monitoring_fisik";
 
 export default function LaporanView({
@@ -55,6 +70,7 @@ export default function LaporanView({
 }: LaporanViewProps) {
   const [selectedLaporan, setSelectedLaporan] = useState<LaporanType>("rekap_anggaran");
   const [selectedMonth, setSelectedMonth] = useState<string>("Semua");
+  const [selectedSubKegFilter, setSelectedSubKegFilter] = useState<string>("Semua");
   const [showPdfModal, setShowPdfModal] = useState(false);
 
   const monthsList = [
@@ -71,8 +87,9 @@ export default function LaporanView({
       case "rekap_sub_kegiatan": return "05";
       case "bulanan": return "06";
       case "tahunan": return "07";
-      case "monitoring_fisik": return "08";
-      default: return "09";
+      case "belanja_pihak_ketiga": return "08";
+      case "monitoring_fisik": return "09";
+      default: return "10";
     }
   }, [selectedLaporan]);
 
@@ -105,13 +122,13 @@ export default function LaporanView({
       case "rekap_sub_kegiatan": return "LAPORAN REALISASI ANGGARAN PER SUB-KEGIATAN";
       case "bulanan": return `LAPORAN PERKEMBANGAN REALISASI BULANAN (${selectedMonth})`;
       case "tahunan": return "LAPORAN REKAPITULASI TAHUNAN KABUPATEN BIMA";
-      case "belanja_pihak_ketiga": return "LAPORAN PELAKSANAAN BELANJA PIHAK KETIGA";
+      case "belanja_pihak_ketiga": return "LAPORAN PELAKSANAAN & REALISASI BELANJA JASA PIHAK KETIGA";
       default: return "LAPORAN KEUANGAN";
     }
   }, [selectedLaporan, selectedMonth]);
 
   // Build rows depending on selected options
-  const reportRows = useMemo(() => {
+  const reportRows: ReportRowItem[] = useMemo(() => {
     switch (selectedLaporan) {
       case "rekap_program":
         return programs.map(p => ({
@@ -163,23 +180,69 @@ export default function LaporanView({
           };
         });
       case "belanja_pihak_ketiga":
-        return pihakKetigas.map(m => {
-          const matchedRka = rkaList.find(a => 
-            a.kode_sub_kegiatan === m.kode_sub_kegiatan && 
-            a.uraian_belanja.trim().toLowerCase() === (m.uraian_belanja || '').trim().toLowerCase()
+        const filteredPihakKetigaList = selectedSubKegFilter === "Semua" 
+          ? pihakKetigas 
+          : pihakKetigas.filter(p => p.kode_sub_kegiatan === selectedSubKegFilter);
+
+        return filteredPihakKetigaList.map(m => {
+          // 1. Cari alokasi pagu dari RKA / Sub-kegiatan persis logika di menu Belanja Pihak Ketiga
+          const rkaMatch = rkaList.find(r => 
+            (r.kode_sub_kegiatan === m.kode_sub_kegiatan && r.uraian_belanja.trim().toLowerCase() === (m.uraian_belanja || '').trim().toLowerCase()) ||
+            (m.uraian_belanja && r.uraian_belanja.trim().toLowerCase() === m.uraian_belanja.trim().toLowerCase())
           );
-          const paguVal = matchedRka ? matchedRka.jumlah : (subKegiatans.find(s => s.kode_sub_kegiatan === m.kode_sub_kegiatan)?.pagu || 0);
-          const realVal = Number(m.realisasi) || 0;
+          let paguVal = 0;
+          if (rkaMatch) {
+            paguVal = rkaMatch.jumlah || 0;
+          } else {
+            const rkaSumForSub = rkaList
+              .filter(r => r.kode_sub_kegiatan === m.kode_sub_kegiatan)
+              .reduce((acc, curr) => acc + (curr.jumlah || 0), 0);
+            if (rkaSumForSub > 0) {
+              paguVal = rkaSumForSub;
+            } else {
+              const linkedSub = subKegiatans.find(s => s.kode_sub_kegiatan === m.kode_sub_kegiatan);
+              paguVal = linkedSub?.pagu || 0;
+            }
+          }
+
+          // 2. Ambil realisasi pembayaran SP2D yang cocok persis logika di menu Belanja Pihak Ketiga
+          const matchedSp2ds = realisasis.filter(r => {
+            if (m.id && r.id_pihak_ketiga === m.id) return true;
+            if (m.id && r.id === `sp2d_pihak_ketiga_${m.id}`) return true;
+            if (r.kode_sub_kegiatan !== m.kode_sub_kegiatan) return false;
+            if (m.uraian_belanja && r.uraian_belanja) {
+              const u1 = m.uraian_belanja.trim().toLowerCase();
+              const u2 = r.uraian_belanja.trim().toLowerCase();
+              return u1 === u2 || u1.includes(u2) || u2.includes(u1);
+            }
+            return true;
+          });
+          const sumSp2d = matchedSp2ds.reduce((acc, r) => acc + (Number(r.nominal_realisasi) || 0), 0);
+          const realVal = sumSp2d > 0 ? sumSp2d : (Number(m.realisasi) || 0);
+
+          // 3. Hitung sisa pagu kontrak dan rasio serapan persentase
           const sisaVal = paguVal - realVal;
-          const persenVal = paguVal > 0 ? (realVal / paguVal) * 100 : 0;
+          const persenVal = paguVal > 0 ? (realVal / paguVal) * 100 : (realVal > 0 ? 100 : 0);
+
+          const subKeg = subKegiatans.find(s => s.kode_sub_kegiatan === m.kode_sub_kegiatan);
+          const namaSub = subKeg ? subKeg.nama_sub_kegiatan : (m.kode_sub_kegiatan || '-');
+          const masaKerja = (m.masa_kerja_mulai && m.masa_kerja_selesai)
+            ? `${m.masa_kerja_mulai} s/d ${m.masa_kerja_selesai}`
+            : (m.masa_kerja_mulai || m.tanggal || '-');
 
           return {
-            kode: m.nomor_kontrak || m.tanggal,
-            nama: `${m.nama_pelaksana ? m.nama_pelaksana + ' | ' : ''}${m.uraian_belanja}`,
+            id: m.id,
+            kode: m.nomor_kontrak || m.tanggal || '-',
+            nama: m.uraian_belanja || 'Belanja Jasa Pihak Ketiga',
+            rekanan: m.nama_pelaksana || 'Pihak Ketiga / Rekanan',
+            sub_kegiatan: `${m.kode_sub_kegiatan} - ${namaSub}`,
+            masa_kerja: masaKerja,
+            tanggal: m.tanggal,
             pagu: paguVal,
             realisasi: realVal,
             sisa: sisaVal,
-            persen: parseFloat(persenVal.toFixed(2))
+            persen: parseFloat(persenVal.toFixed(2)),
+            catatan: m.catatan || ''
           };
         });
       case "tahunan":
@@ -194,7 +257,7 @@ export default function LaporanView({
           persen: s.persentase
         }));
     }
-  }, [selectedLaporan, programs, kegiatans, subKegiatans, realisasis, pihakKetigas, selectedMonth]);
+  }, [selectedLaporan, programs, kegiatans, subKegiatans, realisasis, pihakKetigas, rkaList, selectedMonth, selectedSubKegFilter]);
 
   // Content signature of current report content
   const currentReportContentSignature = useMemo(() => {
@@ -331,15 +394,37 @@ export default function LaporanView({
 
   // Export to Excel
   const handleExportExcel = () => {
-    const wsData = [
-      ['KODE/TANGGAL', 'URAIAN KEGIATAN', 'PAGU (Rp)', 'REALISASI (Rp)', 'SISA (Rp)', 'PERSENTASE'],
-      ...reportRows.map(r => [r.kode, r.nama, r.pagu, r.realisasi, r.sisa, `${r.persen}%`]),
-      ['TOTAL', '', totalPaguSum, totalRealisasiSum, totalSisaSum, `${avgPersenSum.toFixed(2)}%`]
-    ];
+    let wsData: any[][];
+
+    if (selectedLaporan === "belanja_pihak_ketiga") {
+      wsData = [
+        ['NO. KONTRAK', 'TANGGAL', 'PELAKSANA / REKANAN', 'SUB-KEGIATAN', 'URAIAN BELANJA / PEKERJAAN', 'MASA KONTRAK', 'PAGU ANGGARAN (Rp)', 'REALISASI SP2D (Rp)', 'SISA ANGGARAN (Rp)', 'RASIO SERAPAN'],
+        ...reportRows.map(r => [
+          r.kode,
+          r.tanggal || '-',
+          r.rekanan || '-',
+          r.sub_kegiatan || '-',
+          r.nama,
+          r.masa_kerja || '-',
+          r.pagu,
+          r.realisasi,
+          r.sisa,
+          `${r.persen}%`
+        ]),
+        ['TOTAL', '', '', '', '', '', totalPaguSum, totalRealisasiSum, totalSisaSum, `${avgPersenSum.toFixed(2)}%`]
+      ];
+    } else {
+      wsData = [
+        ['KODE/TANGGAL', 'URAIAN KEGIATAN', 'PAGU (Rp)', 'REALISASI (Rp)', 'SISA (Rp)', 'PERSENTASE'],
+        ...reportRows.map(r => [r.kode, r.nama, r.pagu, r.realisasi, r.sisa, `${r.persen}%`]),
+        ['TOTAL', '', totalPaguSum, totalRealisasiSum, totalSisaSum, `${avgPersenSum.toFixed(2)}%`]
+      ];
+    }
+
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.aoa_to_sheet(wsData);
     XLSX.utils.book_append_sheet(wb, ws, "Laporan");
-    XLSX.writeFile(wb, `SIREKAP_Laporan_${selectedLaporan}_2026.xlsx`);
+    XLSX.writeFile(wb, `SIREKAP_Laporan_${selectedLaporan}_${selectedYear}.xlsx`);
   };
 
   return (
@@ -352,7 +437,7 @@ export default function LaporanView({
           <select 
             value={selectedLaporan} 
             onChange={(e) => setSelectedLaporan(e.target.value as LaporanType)}
-            className="p-2.5 border border-slate-200 bg-white font-bold rounded-lg outline-blue-600 focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+            className="p-2.5 border border-slate-200 bg-white font-bold rounded-lg outline-blue-600 focus:border-blue-600 focus:ring-1 focus:ring-blue-600 cursor-pointer"
           >
             <option value="rekap_anggaran">1. Laporan Rekapitulasi Alokasi Pagu</option>
             <option value="rekap_realisasi">2. Laporan Rekapitulasi Realisasi Belanja</option>
@@ -366,13 +451,31 @@ export default function LaporanView({
         </div>
 
         {/* Dynamic Context options */}
-        <div className="flex gap-2">
+        <div className="flex gap-2.5 flex-wrap items-center">
           {selectedLaporan === "bulanan" && (
             <div>
-              <label className="block text-slate-500 font-bold mb-1">Filter Month</label>
-              <select value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="p-2 border border-slate-200 rounded-md bg-white">
+              <label className="block text-slate-500 font-bold mb-1">Filter Bulan</label>
+              <select value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="p-2 border border-slate-200 rounded-md bg-white font-semibold cursor-pointer">
                 <option value="Semua">Semua Bulan</option>
                 {monthsList.map((m, idx) => <option key={idx} value={m}>{m}</option>)}
+              </select>
+            </div>
+          )}
+
+          {selectedLaporan === "belanja_pihak_ketiga" && (
+            <div>
+              <label className="block text-slate-500 font-bold mb-1">Filter Sub-Kegiatan</label>
+              <select 
+                value={selectedSubKegFilter} 
+                onChange={(e) => setSelectedSubKegFilter(e.target.value)} 
+                className="p-2 border border-slate-200 rounded-md bg-white font-semibold text-xs cursor-pointer max-w-xs truncate"
+              >
+                <option value="Semua">Semua Sub-Kegiatan ({pihakKetigas.length} Kontrak)</option>
+                {subKegiatans.map((s) => (
+                  <option key={s.id} value={s.kode_sub_kegiatan}>
+                    {s.kode_sub_kegiatan} - {s.nama_sub_kegiatan}
+                  </option>
+                ))}
               </select>
             </div>
           )}
@@ -421,7 +524,7 @@ export default function LaporanView({
             <div className="text-left">
               <h1 className="text-base font-black tracking-widest text-slate-900 uppercase">PEMERINTAH KABUPATEN BIMA</h1>
               <h2 className="text-sm font-extrabold tracking-widest text-slate-800 uppercase mt-0.5">DINAS PERUMAHAN DAN KAWASAN PERMUKIMAN</h2>
-              <p className="text-[9px] text-slate-500 font-semibold italic mt-0.5">Kompleks Perkantoran Pemkab Bima - Woha, Nusa Tenggara Barat</p>
+              <p className="text-[9px] text-slate-500 font-semibold italic mt-0.5">Jl. Soekarno Hatta No. 07 Kompleks Perkantoran Pemerintah Kabupaten Bima Dadibou - WOha</p>
             </div>
           </div>
         </div>
@@ -439,51 +542,95 @@ export default function LaporanView({
           <table className="w-full text-left text-[11px] border border-slate-300 border-collapse">
             <thead>
               <tr className="bg-slate-100/80 border-b border-slate-300 font-bold text-slate-800">
-                <th className="p-3 border border-slate-300 w-32">KODE / TANGGAL</th>
-                <th className="p-3 border border-slate-300">NAMA & URAIAN DETAIL KEGIATAN</th>
-                <th className="p-3 border border-slate-300 text-right w-36">
-                  {selectedLaporan === "belanja_pihak_ketiga" ? "NILAI KONTRAK" : "PAGU ANGGARAN"}
+                <th className="p-3 border border-slate-300 w-36">
+                  {selectedLaporan === "belanja_pihak_ketiga" ? "NO. KONTRAK / TGL" : "KODE / TANGGAL"}
+                </th>
+                <th className="p-3 border border-slate-300">
+                  {selectedLaporan === "belanja_pihak_ketiga" ? "REKANAN & URAIAN BELANJA PIHAK KETIGA" : "NAMA & URAIAN DETAIL KEGIATAN"}
                 </th>
                 <th className="p-3 border border-slate-300 text-right w-36">
-                  {selectedLaporan === "belanja_pihak_ketiga" ? "REALISASI" : "REALISASI KAS"}
+                  {selectedLaporan === "belanja_pihak_ketiga" ? "PAGU / NILAI KONTRAK" : "PAGU ANGGARAN"}
                 </th>
                 <th className="p-3 border border-slate-300 text-right w-36">
-                  {selectedLaporan === "belanja_pihak_ketiga" ? "SISA" : "SISA PLAFON"}
+                  {selectedLaporan === "belanja_pihak_ketiga" ? "REALISASI SP2D" : "REALISASI KAS"}
                 </th>
-                <th className="p-3 border border-slate-300 text-center w-20">RASIO SERAPAN</th>
+                <th className="p-3 border border-slate-300 text-right w-36">
+                  {selectedLaporan === "belanja_pihak_ketiga" ? "SISA ANGGARAN" : "SISA PLAFON"}
+                </th>
+                <th className="p-3 border border-slate-300 text-center w-24">RASIO SERAPAN</th>
               </tr>
             </thead>
             <tbody className="divide-y text-slate-800">
-              {reportRows.map((row, index) => (
-                <tr key={index} className="hover:bg-slate-50/20 divide-x font-medium">
-                  <td className="p-2.5 border border-slate-200 font-mono font-semibold whitespace-nowrap">{row.kode}</td>
-                  <td className="p-2.5 border border-slate-200 break-words whitespace-normal min-w-[260px] max-w-md font-semibold text-slate-900 leading-snug">{row.nama}</td>
-                  <td className="p-2.5 border border-slate-200 text-right lg:font-bold whitespace-nowrap">
-                    {selectedLaporan === "belanja_pihak_ketiga" ? "-" : formatRupiah(row.pagu)}
-                  </td>
-                  <td className="p-2.5 border border-slate-200 text-right text-emerald-800 font-semibold whitespace-nowrap">
-                    {selectedLaporan === "belanja_pihak_ketiga" ? formatRupiah(row.realisasi) : formatRupiah(row.realisasi)}
-                  </td>
-                  <td className={`p-2.5 border border-slate-200 text-right whitespace-nowrap font-medium ${row.sisa < 0 ? 'text-red-600 font-bold' : 'text-slate-600'}`}>
-                    {selectedLaporan === "belanja_pihak_ketiga" ? "-" : formatRupiah(row.sisa)}
-                  </td>
-                  <td className="p-2.5 border border-slate-200 text-center font-bold whitespace-nowrap">
-                    {row.persen}%
+              {reportRows.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="p-8 text-center text-slate-400 italic">
+                    {selectedLaporan === "belanja_pihak_ketiga" 
+                      ? "Belum ada data belanja pihak ketiga yang tercatat pada Tahun Anggaran ini. Silakan tambahkan pada menu Belanja Pihak Ketiga."
+                      : "Tidak ada data rekapan yang tersedia untuk kriteria laporan ini."}
                   </td>
                 </tr>
-              ))}
+              ) : (
+                reportRows.map((row, index) => (
+                  <tr key={index} className="hover:bg-slate-50/20 divide-x font-medium">
+                    <td className="p-2.5 border border-slate-200 font-mono font-semibold whitespace-nowrap">
+                      {selectedLaporan === "belanja_pihak_ketiga" ? (
+                        <div>
+                          <span className="font-bold text-slate-800 block text-[11px]">{row.kode}</span>
+                          {row.tanggal && <span className="text-[9px] text-slate-500 font-sans block">{row.tanggal}</span>}
+                        </div>
+                      ) : (
+                        row.kode
+                      )}
+                    </td>
+                    <td className="p-2.5 border border-slate-200 break-words whitespace-normal min-w-[260px] max-w-md font-semibold text-slate-900 leading-snug">
+                      {selectedLaporan === "belanja_pihak_ketiga" ? (
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-bold text-blue-900 text-[11px]">{row.nama}</span>
+                            {row.rekanan && (
+                              <span className="px-1.5 py-0.5 bg-orange-100 text-orange-900 border border-orange-200 rounded text-[9px] font-black uppercase">
+                                {row.rekanan}
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[10px] text-slate-500 font-normal flex items-center gap-3 flex-wrap">
+                            {row.sub_kegiatan && <span>Sub-Keg: <b className="text-slate-700">{row.sub_kegiatan}</b></span>}
+                            {row.masa_kerja && <span>Masa: <b className="text-slate-700 font-mono">{row.masa_kerja}</b></span>}
+                          </div>
+                        </div>
+                      ) : (
+                        row.nama
+                      )}
+                    </td>
+                    <td className="p-2.5 border border-slate-200 text-right font-bold whitespace-nowrap text-slate-800">
+                      {formatRupiah(row.pagu)}
+                    </td>
+                    <td className="p-2.5 border border-slate-200 text-right text-emerald-800 font-bold whitespace-nowrap">
+                      {formatRupiah(row.realisasi)}
+                    </td>
+                    <td className={`p-2.5 border border-slate-200 text-right whitespace-nowrap font-bold ${row.sisa < 0 ? 'text-red-600 font-black' : 'text-slate-700'}`}>
+                      {formatRupiah(row.sisa)}
+                    </td>
+                    <td className="p-2.5 border border-slate-200 text-center font-bold whitespace-nowrap">
+                      {row.persen}%
+                    </td>
+                  </tr>
+                ))
+              )}
 
               {/* Accumulator Row summary info */}
               <tr className="bg-slate-50 font-black text-rose-950 divide-x border-t-2 border-slate-300">
-                <td colSpan={2} className="p-3 text-right uppercase border border-slate-300">TOTAL KESELURUHAN (TOTAL EXPENDITURES):</td>
-                <td className="p-3 text-right border border-slate-300">
-                  {selectedLaporan === "belanja_pihak_ketiga" ? "-" : formatRupiah(totalPaguSum)}
+                <td colSpan={2} className="p-3 text-right uppercase border border-slate-300">
+                  {selectedLaporan === "belanja_pihak_ketiga" ? "TOTAL BELANJA JASA PIHAK KETIGA:" : "TOTAL KESELURUHAN (TOTAL EXPENDITURES):"}
                 </td>
-                <td className="p-3 text-right border border-slate-300">
+                <td className="p-3 text-right border border-slate-300 text-slate-900">
+                  {formatRupiah(totalPaguSum)}
+                </td>
+                <td className="p-3 text-right border border-slate-300 text-emerald-900">
                   {formatRupiah(totalRealisasiSum)}
                 </td>
-                <td className={`p-3 text-right border border-slate-300 font-mono ${totalSisaSum < 0 ? 'text-red-600 font-black' : ''}`}>
-                  {selectedLaporan === "belanja_pihak_ketiga" ? "-" : formatRupiah(totalSisaSum)}
+                <td className={`p-3 text-right border border-slate-300 font-mono ${totalSisaSum < 0 ? 'text-red-600 font-black' : 'text-slate-800'}`}>
+                  {formatRupiah(totalSisaSum)}
                 </td>
                 <td className="p-3 text-center border border-slate-300">
                   {avgPersenSum.toFixed(2)}%
@@ -498,9 +645,7 @@ export default function LaporanView({
           <div>
             <p className="text-slate-500 font-semibold uppercase">Mengetahui & Menyetujui,</p>
             <p className="text-slate-800 font-extrabold mt-0.5">{jabatanPejabat}</p>
-            <div className="h-16 flex items-center justify-center">
-              <Award className="text-blue-900 opacity-20" size={36} />
-            </div>
+            <div className="h-16 flex items-center justify-center" />
             <p className="text-slate-900 font-extrabold underline uppercase">{namaPejabat}</p>
             <p className="text-[10px] text-slate-500 font-bold font-mono">{nipPejabat}</p>
           </div>
@@ -508,9 +653,7 @@ export default function LaporanView({
           <div>
             <p className="text-slate-500 font-semibold uppercase">Bima, {new Date().toLocaleDateString('id-ID', {year:'numeric', month:'long', day:'numeric'})}</p>
             <p className="text-slate-800 font-extrabold mt-0.5">{jabatanBendahara}</p>
-            <div className="h-16 flex items-center justify-center">
-              <CheckCircle className="text-emerald-800 opacity-15" size={32} />
-            </div>
+            <div className="h-16 flex items-center justify-center" />
             <p className="text-slate-900 font-extrabold underline uppercase">{namaBendahara}</p>
             <p className="text-[10px] text-slate-500 font-bold font-mono">{nipBendahara}</p>
           </div>

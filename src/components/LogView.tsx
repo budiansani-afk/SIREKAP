@@ -164,7 +164,7 @@ export default function LogView({ logs }: LogViewProps) {
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
           <input 
             type="text" 
-            placeholder="Cari email operator atau aksi..." 
+            placeholder="Cari nama pengguna atau aksi..." 
             value={searchTerm} 
             onChange={(e) => setSearchTerm(e.target.value)} 
             className="w-full p-2 pl-8 border border-slate-200 rounded-lg focus:outline-blue-600"
@@ -179,7 +179,7 @@ export default function LogView({ logs }: LogViewProps) {
             <thead>
               <tr className="bg-slate-50 border-b border-slate-100 font-semibold text-slate-600">
                 <th className="p-3.5 pl-4 w-44 align-top text-left">Waktu Kejadian (UTC)</th>
-                <th className="p-3.5 w-48 align-top text-left">Pengguna / Role</th>
+                <th className="p-3.5 w-48 align-top text-left">Nama Pengguna / Peran</th>
                 <th className="p-3.5 align-top text-left">Dokumentasi Aksi / Kegiatan</th>
                 <th className="p-3.5 w-32 align-top text-left">Modul</th>
                 <th className="p-3.5 text-center w-24 align-top">Inspeksi Data</th>

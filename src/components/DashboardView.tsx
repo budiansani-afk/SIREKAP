@@ -418,28 +418,18 @@ export default function DashboardView({
 
   return (
     <div className="space-y-6" id="dashboard-container">
-      {/* Compact Alerts (Sistem Peringatan Dini dibuat lebih kecil) */}
+      {/* Compact Alerts (Sistem Peringatan Dini) */}
       {alerts.length > 0 && (
         <div className="bg-amber-50/90 border border-amber-200/80 rounded-lg p-2.5 text-amber-950 text-[11px] shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 border-l-4 border-l-amber-500" id="dashboard-alerts">
-          <div className="flex items-center gap-1.5 font-black uppercase tracking-wide shrink-0 text-amber-905 text-amber-900">
+          <div className="flex items-center gap-1.5 font-black uppercase tracking-wide shrink-0 text-amber-900 select-none">
             <AlertTriangle className="text-amber-600 animate-pulse shrink-0" size={14} />
             <span>Peringatan Dini ({alerts.length})</span>
           </div>
           <div className="flex-1 min-w-0">
-            <marquee scrollamount="6.0" className="cursor-pointer font-bold text-amber-900 block font-mono" title="Scroll Peringatan, klik Detail Tindak untuk petunjuk penanganan.">
+            <marquee scrollamount="6.0" className="cursor-default font-bold text-amber-900 block font-mono select-none">
               {alerts.join(" | ")}
             </marquee>
           </div>
-          <button 
-            onClick={() => onShowInfo?.({
-              title: "Daftar Warning & Petunjuk Penanganan Defisit",
-              content: alerts.map((a, idx) => `${idx + 1}. ${a}`).join("\n\n") + "\n\nLangkah Penanganan:\n1. Segera lakukan penyesuaian/revisi DPA melalui menu RKA belanja jika terdapat defisit belanja kas.\n2. Hubungi operator penanggung jawab daerah setempat untuk memvalidasi kelengkapan berkas fisik SP2D.\n3. Cocokkan sisa DPA agar rasio tetap berada di zona hijau.",
-              type: 'alert'
-            })}
-            className="px-2 py-0.5 bg-amber-100 hover:bg-amber-205 text-[#7a4805] text-[10px] font-extrabold rounded cursor-pointer transition shrink-0 self-end sm:self-auto hover:bg-amber-200"
-          >
-            Detail Tindak
-          </button>
         </div>
       )}
 
