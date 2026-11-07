@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   collection, 
   onSnapshot, 
@@ -202,6 +202,21 @@ export default function App() {
   const [isOnlineSessionsModalOpen, setIsOnlineSessionsModalOpen] = useState<boolean>(false);
   const [forceDisconnectedNotice, setForceDisconnectedNotice] = useState<string | null>(null);
 
+  // Inactivity Auto-Logout Configurations (30 Menit Tidak Aktif)
+  const INACTIVITY_TIMEOUT_MS = 30 * 60 * 1000; // 30 menit = 1.800.000 ms
+  const INACTIVITY_WARNING_MS = 2 * 60 * 1000;  // Peringatan hitung mundur 2 menit sebelum logout
+  const [inactivityNotice, setInactivityNotice] = useState<string | null>(null);
+  const [idleWarningSeconds, setIdleWarningSeconds] = useState<number | null>(null);
+  const lastActivityRef = useRef<number>(Date.now());
+
+  const handleExtendSession = () => {
+    const now = Date.now();
+    lastActivityRef.current = now;
+    localStorage.setItem('sirekap_last_activity', String(now));
+    setIdleWarningSeconds(null);
+    showToast("Sesi aktif Anda telah diperpanjang.", "success");
+  };
+
   // Fetch client IP on mount
   useEffect(() => {
     getClientIp().then(ip => {
@@ -292,6 +307,118 @@ export default function App() {
 
     return () => unsubMySession();
   }, [user, sessionId]);
+
+  // Otomatis keluar / logout jika pengguna tidak aktif dalam waktu 30 menit
+  useEffect(() => {
+    if (!user) {
+      setIdleWarningSeconds(null);
+      return;
+    }
+
+    // Inisialisasi waktu aktivitas saat user login
+    const initTime = Date.now();
+    lastActivityRef.current = initTime;
+    localStorage.setItem('sirekap_last_activity', String(initTime));
+
+    let lastRecordThrottle = initTime;
+    const registerUserActivity = () => {
+      const now = Date.now();
+      // Throttle pembaruan storage & ref setiap minimal 2 detik untuk performa responsif
+      if (now - lastRecordThrottle > 2000) {
+        lastRecordThrottle = now;
+        lastActivityRef.current = now;
+        localStorage.setItem('sirekap_last_activity', String(now));
+      }
+      // Jika peringatan hitung mundur sedang tampil, gerak mouse/ketik memperpanjang sesi
+      setIdleWarningSeconds((prev) => (prev !== null ? null : null));
+    };
+
+    const userActivityEvents = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'click', 'wheel'];
+    userActivityEvents.forEach(evt => {
+      window.addEventListener(evt, registerUserActivity, { passive: true });
+    });
+
+    const performInactivityLogout = async () => {
+      const currentSession = sessionId;
+      const currentEmail = user?.email || 'pengguna@sirekap.com';
+      const currentRole = userRole;
+
+      try {
+        if (currentSession) {
+          await setDoc(doc(db, COLL_PRESENCE, currentSession), {
+            status: 'logged_out',
+            last_active: Date.now(),
+            disconnected_by: 'Sistem (Inaktivitas 30 Menit)',
+            disconnected_at: Date.now()
+          }, { merge: true }).catch(() => {});
+        }
+      } catch (e) {}
+
+      createAuditLog(
+        currentEmail,
+        currentRole,
+        "LOGOUT OTOMATIS (INAKTIVITAS 30 MENIT)",
+        "AUTENTIKASI",
+        { sessionId: currentSession },
+        { status: 'LOGGED_OUT', alasan: 'Pengguna tidak aktif selama 30 menit', waktu: new Date().toISOString() }
+      ).catch(() => {});
+
+      localStorage.removeItem('nama_pengguna_aktif');
+      localStorage.removeItem('sirekap_last_activity');
+      sessionStorage.removeItem('sibiru_session_id');
+      sessionStorage.removeItem('sibiru_session_login_at');
+      setNamaPenggunaInput('');
+      setNamaPenggunaAktif('');
+      setIdleWarningSeconds(null);
+
+      await signOut(auth).catch(() => {});
+      setUser(null);
+      setInactivityNotice(
+        "Aplikasi telah keluar (logout) otomatis karena Anda tidak aktif selama 30 menit demi keamanan data. Silakan masuk (login) kembali untuk melanjutkan pekerjaan Anda."
+      );
+    };
+
+    // Pengecekan inaktivitas berkala setiap 2 detik
+    const inactivityInterval = setInterval(() => {
+      const storedTime = Number(localStorage.getItem('sirekap_last_activity') || 0);
+      const latestActivity = Math.max(lastActivityRef.current, storedTime);
+      const elapsed = Date.now() - latestActivity;
+
+      if (elapsed >= INACTIVITY_TIMEOUT_MS) {
+        clearInterval(inactivityInterval);
+        performInactivityLogout();
+      } else if (elapsed >= (INACTIVITY_TIMEOUT_MS - INACTIVITY_WARNING_MS)) {
+        const remainingMs = INACTIVITY_TIMEOUT_MS - elapsed;
+        const remainingSec = Math.max(1, Math.ceil(remainingMs / 1000));
+        setIdleWarningSeconds(remainingSec);
+      } else {
+        setIdleWarningSeconds(null);
+      }
+    }, 2000);
+
+    // Deteksi saat tab kembali aktif atau laptop dibuka kembali dari keadaan tidur (sleep)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        const storedTime = Number(localStorage.getItem('sirekap_last_activity') || 0);
+        const latestActivity = Math.max(lastActivityRef.current, storedTime);
+        if (Date.now() - latestActivity >= INACTIVITY_TIMEOUT_MS) {
+          clearInterval(inactivityInterval);
+          performInactivityLogout();
+        }
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleVisibilityChange);
+
+    return () => {
+      userActivityEvents.forEach(evt => {
+        window.removeEventListener(evt, registerUserActivity);
+      });
+      clearInterval(inactivityInterval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleVisibilityChange);
+    };
+  }, [user, sessionId, userRole]);
 
   // Live Real-time Clock updating every second
   useEffect(() => {
@@ -597,6 +724,8 @@ export default function App() {
 
     setIsLoggingIn(true);
     setLoginError('');
+    setInactivityNotice(null);
+    setForceDisconnectedNotice(null);
 
     const emailClean = emailInput.trim().toLowerCase();
 
@@ -621,6 +750,8 @@ export default function App() {
       localStorage.setItem('nama_pengguna_aktif', namaPenggunaInput.trim());
       setNamaPenggunaAktif(namaPenggunaInput.trim());
       setUserDisplayName(namaPenggunaInput.trim());
+      lastActivityRef.current = Date.now();
+      localStorage.setItem('sirekap_last_activity', String(Date.now()));
 
       // 3. Fetch from Firestore sibiru_pengguna now that user is signed in
       try {
@@ -656,10 +787,13 @@ export default function App() {
       }
     } catch (e) {}
     localStorage.removeItem('nama_pengguna_aktif');
+    localStorage.removeItem('sirekap_last_activity');
     sessionStorage.removeItem('sibiru_session_id');
     sessionStorage.removeItem('sibiru_session_login_at');
     setNamaPenggunaInput('');
     setNamaPenggunaAktif('');
+    setIdleWarningSeconds(null);
+    setInactivityNotice(null);
     signOut(auth);
   };
 
@@ -778,7 +912,26 @@ export default function App() {
 
         <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md z-10" id="login-form-box">
           <div className="bg-white/95 backdrop-blur-md py-8 px-8 shadow-2xl rounded-3xl border border-slate-100 space-y-6">
-            
+            {inactivityNotice && (
+              <div className="p-3.5 bg-amber-50 border border-amber-200 text-amber-950 rounded-xl text-xs font-semibold flex items-start gap-2.5 shadow-xs animate-fade-in">
+                <Clock size={18} className="text-amber-600 flex-shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <p className="font-bold text-amber-900 text-xs">Sesi Berakhir Otomatis (Inaktivitas 30 Menit)</p>
+                  <p className="text-[11px] text-amber-800 mt-0.5 leading-relaxed">{inactivityNotice}</p>
+                </div>
+              </div>
+            )}
+
+            {forceDisconnectedNotice && (
+              <div className="p-3.5 bg-rose-50 border border-rose-200 text-rose-950 rounded-xl text-xs font-semibold flex items-start gap-2.5 shadow-xs animate-fade-in">
+                <PowerOff size={18} className="text-rose-600 flex-shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <p className="font-bold text-rose-900 text-xs">Koneksi Sesi Diputuskan</p>
+                  <p className="text-[11px] text-rose-800 mt-0.5 leading-relaxed">{forceDisconnectedNotice}</p>
+                </div>
+              </div>
+            )}
+
             {loginError && (
               <div className="p-3 bg-red-50 border border-red-100 text-red-900 rounded-xl text-xs font-bold flex items-center gap-2">
                 <AlertCircle size={16} className="text-red-700 flex-shrink-0" />
@@ -1323,6 +1476,53 @@ export default function App() {
           currentUserEmail={user?.email || ''}
           onDisconnectSession={handleDisconnectSession}
         />
+      )}
+
+      {/* Inactivity Warning Countdown Modal (Peringatan saat pengguna tidak aktif selama 28 menit, 2 menit sebelum logout otomatis) */}
+      {idleWarningSeconds !== null && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4 z-[9999] animate-fade-in antialiased">
+          <div className="bg-white rounded-2xl border border-amber-300 shadow-2xl max-w-md w-full p-6 text-center space-y-4">
+            <div className="w-14 h-14 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center mx-auto border border-amber-200">
+              <Clock size={28} className="animate-pulse" />
+            </div>
+            <div>
+              <h3 className="text-base font-black text-slate-900 uppercase tracking-tight">Peringatan Inaktivitas Sesi</h3>
+              <p className="text-xs text-slate-600 mt-1 font-medium leading-relaxed">
+                Tidak ada aktivitas pengguna yang terdeteksi. Demi keamanan data anggaran pertanahan, sesi Anda akan keluar otomatis dalam:
+              </p>
+            </div>
+
+            {/* Countdown display */}
+            <div className="py-3 px-5 bg-amber-50 border border-amber-200 rounded-xl inline-block mx-auto shadow-2xs">
+              <span className="text-3xl font-black font-mono text-amber-700 tracking-wider">
+                {Math.floor(idleWarningSeconds / 60).toString().padStart(2, '0')}:
+                {(idleWarningSeconds % 60).toString().padStart(2, '0')}
+              </span>
+              <span className="block text-[10px] uppercase font-bold text-amber-800 tracking-widest mt-0.5">Menit : Detik</span>
+            </div>
+
+            <p className="text-[11px] text-slate-500 font-medium">
+              Gerakkan mouse, ketik, atau klik tombol di bawah untuk tetap masuk dan melanjutkan pekerjaan Anda.
+            </p>
+
+            <div className="flex gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={handleExtendSession}
+                className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs uppercase tracking-wider transition shadow-xs cursor-pointer"
+              >
+                Lanjutkan Sesi (Saya Masih Aktif)
+              </button>
+              <button
+                type="button"
+                onClick={handleSignOut}
+                className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs uppercase tracking-wider transition cursor-pointer"
+              >
+                Keluar
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Force Disconnected Notice Alert Modal */}
