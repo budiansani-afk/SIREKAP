@@ -119,6 +119,22 @@ export default function AnalisisView({
   const bulanSekarang = new Date().getMonth() + 1;
   const sisaBulan = 12 - bulanSekarang;
 
+  const formatYAxisTick = (val: number) => {
+    if (val === 0) return '0';
+    if (Math.abs(val) >= 1_000_000_000) {
+      const formatted = (val / 1_000_000_000).toFixed(val % 1_000_000_000 === 0 ? 0 : 1);
+      return `${formatted.replace('.', ',')} M`;
+    }
+    if (Math.abs(val) >= 1_000_000) {
+      const formatted = (val / 1_000_000).toFixed(val % 1_000_000 === 0 ? 0 : 1);
+      return `${formatted.replace('.', ',')} Jt`;
+    }
+    if (Math.abs(val) >= 1_000) {
+      return `${(val / 1_000).toFixed(0)} Rb`;
+    }
+    return String(val);
+  };
+
   return (
     <div className="space-y-6" id="analisis-module-root">
       
@@ -217,7 +233,7 @@ export default function AnalisisView({
                   </linearGradient>
                 </defs>
                 <XAxis dataKey="name" stroke="#64748b" style={{ fontSize: '10px', fontWeight: 'bold' }} />
-                <YAxis stroke="#64748b" style={{ fontSize: '10px' }} />
+                <YAxis stroke="#64748b" style={{ fontSize: '10px' }} tickFormatter={formatYAxisTick} width={55} />
                 <Tooltip formatter={(value) => [formatRupiah(Number(value)), 'Realisasi']} />
                 <Area type="monotone" dataKey="Realisasi" stroke="#10b981" strokeWidth={2.5} fillOpacity={1} fill="url(#colorRealisasi)" />
               </AreaChart>
@@ -232,11 +248,10 @@ export default function AnalisisView({
               <PieIcon size={14} className="text-blue-800" />
               Alokasi Pagu vs Realisasi per Program Kegiatan
             </h4>
-            <span className="text-[10px] bg-blue-100/60 text-blue-900 border border-blue-200 px-2 py-0.5 rounded font-black font-mono">DPA TERVAKID</span>
           </div>
           <div className="h-64 w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={programChartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+              <BarChart data={programChartData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
                 <defs>
                   <linearGradient id="paguGrad" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor="#1d4ed8" />
@@ -248,7 +263,7 @@ export default function AnalisisView({
                   </linearGradient>
                 </defs>
                 <XAxis dataKey="name" stroke="#64748b" style={{ fontSize: '10px', fontWeight: 'bold' }} />
-                <YAxis stroke="#64748b" style={{ fontSize: '10px' }} />
+                <YAxis stroke="#64748b" style={{ fontSize: '10px' }} tickFormatter={formatYAxisTick} width={55} />
                 <Tooltip 
                   content={({ active, payload, label }) => {
                     if (active && payload && payload.length) {
