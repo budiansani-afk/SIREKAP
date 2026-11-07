@@ -71,7 +71,8 @@ export interface Realisasi {
   sisa_anggaran: number;
   pagu_anggaran_terpantau?: number;
   keterangan: string;
-  bukti_transaksi?: string; // Base64 data url or name
+  bukti_transaksi?: string; // Firebase Storage download url or legacy
+  bukti_transaksi_storage_path?: string; // Firebase Storage relative path
   bukti_transaksi_public_id?: string; // Cloudinary public_id for real-time deletion
   tahun?: number;
   id_pihak_ketiga?: string;
@@ -90,7 +91,8 @@ export interface BelanjaPihakKetiga {
   masa_kerja_selesai: string;
   realisasi: number;
   catatan: string;
-  foto_kegiatan?: string; // Base64 or Cloudinary secure URL
+  foto_kegiatan?: string; // Firebase Storage download url or legacy
+  foto_kegiatan_storage_path?: string; // Firebase Storage relative path
   foto_kegiatan_public_id?: string; // Cloudinary public_id
   tahun?: number;
   id_realisasi_sp2d?: string;
@@ -103,7 +105,8 @@ export interface DokumenArsip {
   tanggal_upload: string;
   tipe_file: string;
   ukuran_file: string;
-  data_url: string; // Base64 string or Cloudinary secure URL
+  data_url: string; // Firebase Storage download url or legacy
+  storage_path?: string; // Firebase Storage relative path
   cloudinary_public_id?: string; // Cloudinary public ID
 }
 
@@ -114,6 +117,24 @@ export interface Pengguna {
   role: UserRole;
   aktif: boolean;
   password?: string;
+}
+
+export interface SesiPenggunaOnline {
+  id: string; // session ID
+  email: string;
+  nama: string;
+  role: string;
+  device: string; // e.g. "Desktop - Windows (Chrome)"
+  device_type: 'desktop' | 'mobile' | 'tablet';
+  browser: string;
+  os: string;
+  ip_address: string;
+  login_at: number; // timestamp in epoch ms
+  waktu_masuk_format?: string;
+  last_active: number; // timestamp in epoch ms
+  status: 'online' | 'idle' | 'force_disconnected' | 'logged_out';
+  disconnected_by?: string;
+  disconnected_at?: number;
 }
 
 export interface LogAktivitas {
@@ -143,7 +164,8 @@ export interface PengaturanSistem {
   id: string; // e.g., "aktif"
   tahun_anggaran_aktif: number;
   nama_instansi: string;
-  logo_instansi: string; // base64 logo or Cloudinary secure URL
+  logo_instansi: string; // Firebase Storage secure URL or legacy
+  logo_instansi_storage_path?: string;
   logo_instansi_public_id?: string;
   nama_pejabat_ttd?: string;
   jabatan_pejabat_ttd?: string;

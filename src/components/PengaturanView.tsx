@@ -19,11 +19,28 @@ import {
   Eye,
   EyeOff,
   UserCheck,
-  AlertCircle
+  AlertCircle,
+  HardDrive,
+  RefreshCw,
+  FolderCheck,
+  Monitor,
+  Smartphone,
+  Tablet,
+  Globe,
+  Clock,
+  PowerOff,
+  Activity
 } from 'lucide-react';
-import { AppSettings, UserRole, Pengguna } from '../types';
+import { AppSettings, UserRole, Pengguna, SesiPenggunaOnline } from '../types';
 import { backupDatabaseToJSON, restoreDatabaseFromJSON, createAuditLog } from '../dbService';
 import { uploadFile, deleteFile } from '../cloudinaryService';
+import { 
+  uploadFileToFirebaseStorage, 
+  deleteFileFromFirebaseStorage, 
+  isFirebaseStorageUrl 
+} from '../firebaseStorageService';
+import { runFirebaseStorageMigration, MigrationProgressData } from '../migrationStorageService';
+import { formatDuration, formatWaktuMasuk } from '../utils/deviceHelper';
 import { db } from '../firebase';
 import { doc, setDoc, deleteDoc } from 'firebase/firestore';
 
@@ -33,6 +50,10 @@ interface PengaturanViewProps {
   currentUserEmail: string;
   onUpdateSettings: (newSettings: Partial<AppSettings>) => Promise<void>;
   penggunas?: Pengguna[];
+  onlineSessions?: SesiPenggunaOnline[];
+  currentSessionId?: string;
+  onDisconnectSession?: (sessionId: string, targetEmail: string, targetName: string) => Promise<void>;
+  onOpenOnlineSessionsModal?: () => void;
 }
 
 export default function PengaturanView({
@@ -40,8 +61,63 @@ export default function PengaturanView({
   currentUserRole,
   currentUserEmail,
   onUpdateSettings,
-  penggunas = []
+  penggunas = [],
+  onlineSessions = [],
+  currentSessionId = '',
+  onDisconnectSession,
+  onOpenOnlineSessionsModal
 }: PengaturanViewProps) {
+  const [now, setNow] = useState<number>(Date.now());
+  const [sessionSearchText, setSessionSearchText] = useState('');
+  const [disconnectingSessionId, setDisconnectingSessionId] = useState<string | null>(null);
+
+  // Live duration ticker
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const activeOnlineSessions = useMemo(() => {
+    return onlineSessions.filter(s => {
+      if (s.status === 'force_disconnected' || s.status === 'logged_out') return false;
+      return (now - (s.last_active || 0)) < 60000;
+    });
+  }, [onlineSessions, now]);
+
+  const filteredOnlineSessions = useMemo(() => {
+    const q = sessionSearchText.toLowerCase().trim();
+    if (!q) return activeOnlineSessions;
+    return activeOnlineSessions.filter(s => 
+      s.email.toLowerCase().includes(q) ||
+      (s.nama && s.nama.toLowerCase().includes(q)) ||
+      (s.device && s.device.toLowerCase().includes(q)) ||
+      (s.ip_address && s.ip_address.toLowerCase().includes(q))
+    );
+  }, [activeOnlineSessions, sessionSearchText]);
+
+  const handleDisconnectFromPengaturan = async (session: SesiPenggunaOnline) => {
+    if (session.id === currentSessionId) {
+      alert("PERINGATAN: Anda tidak dapat memutuskan sesi Anda sendiri dari panel ini.");
+      return;
+    }
+    const confirmMsg = `PUTUSKAN KONEKSI PENGGUNA:\n\n` +
+      `Akun: ${session.nama || session.email} (${session.email})\n` +
+      `Perangkat: ${session.device}\n` +
+      `Alamat IP: ${session.ip_address}\n` +
+      `Waktu Masuk: ${formatWaktuMasuk(session.login_at)}\n\n` +
+      `Apakah Anda yakin ingin memutuskan koneksi pengguna ini sekarang? Pengguna akan otomatis dikeluarkan dari aplikasi.`;
+
+    if (!window.confirm(confirmMsg)) return;
+
+    if (onDisconnectSession) {
+      setDisconnectingSessionId(session.id);
+      try {
+        await onDisconnectSession(session.id, session.email, session.nama);
+      } finally {
+        setDisconnectingSessionId(null);
+      }
+    }
+  };
   const [instNama, setInstNama] = useState('');
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [existingLogoUrl, setExistingLogoUrl] = useState('');
@@ -89,6 +165,11 @@ export default function PengaturanView({
   const [backupFileUrl, setBackupFileUrl] = useState('');
   const [restoreMessage, setRestoreMessage] = useState<string | null>(null);
 
+  // Firebase Storage Migration state
+  const [isMigrating, setIsMigrating] = useState(false);
+  const [migrationProgress, setMigrationProgress] = useState<MigrationProgressData | null>(null);
+  const [migrationStatusLog, setMigrationStatusLog] = useState<string[]>([]);
+
   const canEdit = currentUserRole === UserRole.ADMIN;
 
   // Handle Logo Upload
@@ -116,13 +197,20 @@ export default function PengaturanView({
 
     setIsSaving(true);
     try {
-      let cloudinaryUrl = existingLogoUrl;
+      let finalLogoUrl = existingLogoUrl;
+      let finalStoragePath = settings?.logo_instansi_storage_path || '';
       let cloudinaryPublicId = settings?.logo_instansi_public_id || '';
 
       // If a new physical logo is uploaded
       if (logoFile) {
-        // If there is an old photo on Cloudinary, delete it first
-        if (settings?.logo_instansi_public_id) {
+        // If there is an old photo on Firebase Storage, clean it up
+        if (settings?.logo_instansi_storage_path || (settings?.logo_instansi && isFirebaseStorageUrl(settings.logo_instansi))) {
+          try {
+            await deleteFileFromFirebaseStorage(settings.logo_instansi_storage_path || settings.logo_instansi);
+          } catch (delErr) {
+            console.warn("Gagal menghapus logo instansi lama di Firebase Storage:", delErr);
+          }
+        } else if (settings?.logo_instansi_public_id) {
           try {
             await deleteFile(settings.logo_instansi_public_id);
           } catch (cloudinaryErr) {
@@ -130,17 +218,19 @@ export default function PengaturanView({
           }
         }
 
-        // Upload the new logo to Cloudinary with dynamic name based on instansi logo setting
+        // Upload new logo to Firebase Storage under sirekap/pengaturan/logo/
         const originalExtension = logoFile.name.split('.').pop() || 'png';
-        const customFileName = `logo_instansi.${originalExtension}`;
-        const uploadRes = await uploadFile(logoFile, "sirekap", customFileName);
-        cloudinaryUrl = uploadRes.secure_url;
-        cloudinaryPublicId = uploadRes.public_id;
+        const customFileName = `logo_instansi_${Date.now()}.${originalExtension}`;
+        const targetPath = `sirekap/pengaturan/logo/${customFileName}`;
+        const uploadRes = await uploadFileToFirebaseStorage(logoFile, targetPath);
+        finalLogoUrl = uploadRes.downloadUrl;
+        finalStoragePath = uploadRes.storagePath;
       }
 
       await onUpdateSettings({
         nama_instansi: instNama.trim(),
-        logo_instansi: cloudinaryUrl,
+        logo_instansi: finalLogoUrl,
+        logo_instansi_storage_path: finalStoragePath,
         logo_instansi_public_id: cloudinaryPublicId,
         tahun_anggaran_aktif: fiscalYear,
         nama_pejabat_ttd: namaPejabatTtd.trim(),
@@ -160,8 +250,8 @@ export default function PengaturanView({
         settings,
         {
           nama_instansi: instNama,
-          logo_instansi: cloudinaryUrl ? 'TERLAMPIR_CDN' : 'KOSONG',
-          logo_instansi_public_id: cloudinaryPublicId,
+          logo_instansi: finalLogoUrl ? 'TERLAMPIR_FIREBASE_STORAGE' : 'KOSONG',
+          logo_instansi_storage_path: finalStoragePath,
           tahun_anggaran_aktif: fiscalYear,
           nama_pejabat_ttd: namaPejabatTtd,
           jabatan_pejabat_ttd: jabatanPejabatTtd,
@@ -172,11 +262,43 @@ export default function PengaturanView({
         }
       );
 
-      alert("[NOTIFIKASI DATA BERUBAH]\nPengaturan Berhasil Disimpan & Sinkronisasi Sistem Berhasil! Audit log dicatat.");
+      alert("[NOTIFIKASI DATA BERUBAH]\nPengaturan Berhasil Disimpan ke Firebase Storage & Sinkronisasi Sistem Berhasil! Audit log dicatat.");
     } catch (err) {
       alert("Gagal merubah parameter: " + (err instanceof Error ? err.message : String(err)));
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  // Run on-demand Firebase Storage Migration and verification
+  const handleRunMigration = async () => {
+    const isConfirmed = window.confirm(
+      "Apakah Anda ingin memulai sinkronisasi & verifikasi pemindahan semua foto/berkas ke storage bidang-pertanahan.firebasestorage.app/sirekap?\n\nProses ini akan memeriksa seluruh berkas di database (Realisasi, Belanja Pihak Ketiga, Dokumen, dan Pengaturan Logo) dan memindahkannya ke hierarki folder Firebase Storage."
+    );
+    if (!isConfirmed) return;
+
+    setIsMigrating(true);
+    setMigrationStatusLog([]);
+    try {
+      const res = await runFirebaseStorageMigration((prog) => {
+        setMigrationProgress({ ...prog });
+        setMigrationStatusLog(prev => {
+          const next = [...prev, `[${prog.currentCollection}] ${prog.log}`];
+          return next.slice(-10);
+        });
+      });
+
+      alert(
+        `[MIGRASI FIREBASE STORAGE SELESAI]\n` +
+        `Total Berkas Diperiksa: ${res.totalFiles}\n` +
+        `Berhasil Dipindahkan: ${res.migratedCount}\n` +
+        `Sudah di Firebase Storage: ${res.alreadyFirebaseCount}\n` +
+        `Gagal: ${res.failedCount}`
+      );
+    } catch (err: any) {
+      alert("Gagal menjalankan migrasi: " + (err?.message || String(err)));
+    } finally {
+      setIsMigrating(false);
     }
   };
 
@@ -521,7 +643,7 @@ export default function PengaturanView({
                 <img src={logoFile ? URL.createObjectURL(logoFile) : existingLogoUrl} alt="Preview_Logo" className="w-12 h-12 object-contain bg-white p-1 rounded" referrerPolicy="no-referrer" />
                 <div>
                   <p className="font-bold text-slate-850">Preview Logo Terlampir</p>
-                  <p className="text-[10px] text-slate-400 font-semibold font-mono">Penyimpanan: Cloudinary Secure CDN</p>
+                  <p className="text-[10px] text-blue-700 font-semibold font-mono">Penyimpanan: Firebase Storage (bidang-pertanahan.firebasestorage.app)</p>
                 </div>
               </div>
             )}
@@ -536,7 +658,7 @@ export default function PengaturanView({
                   {isSaving ? (
                     <>
                       <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
-                      Menyimak...
+                      Menyimpan...
                     </>
                   ) : (
                     "Simpan Kustomisasi Brand"
@@ -547,61 +669,141 @@ export default function PengaturanView({
           </form>
         </div>
 
-        {/* Database Disaster Backup & Recovery Panel */}
-        <div className="bg-white p-5 rounded-xl border border-slate-100 shadow-sm space-y-4" id="db-recoveries">
-          <h4 className="text-xs font-bold text-slate-800 border-b border-dashed pb-2 flex items-center gap-1.5">
-            <Database size={14} className="text-emerald-800" />
-            Database Backup & Recovery Control (JSON)
-          </h4>
+        {/* Right Column: Database Backup & Firebase Storage Management */}
+        <div className="space-y-6">
+          {/* Database Disaster Backup & Recovery Panel */}
+          <div className="bg-white p-5 rounded-xl border border-slate-100 shadow-sm space-y-4" id="db-recoveries">
+            <h4 className="text-xs font-bold text-slate-800 border-b border-dashed pb-2 flex items-center gap-1.5">
+              <Database size={14} className="text-emerald-800" />
+              Database Backup & Recovery Control (JSON)
+            </h4>
 
-          <div className="space-y-4 text-xs">
-            <div className="p-4 bg-emerald-50 border border-emerald-100 text-emerald-950 rounded-lg flex flex-col justify-between">
-              <div>
-                <p className="font-black flex items-center gap-1 text-emerald-900">
+            <div className="space-y-4 text-xs">
+              <div className="p-4 bg-emerald-50 border border-emerald-100 text-emerald-950 rounded-lg flex flex-col justify-between">
+                <div>
+                  <p className="font-black flex items-center gap-1 text-emerald-900">
+                    <Download size={14} />
+                    Satu Tombol Pencadangan (Full Export)
+                  </p>
+                  <p className="text-[11px] text-emerald-800 mt-1">Mengunduh seluruh isi data sistem <b>SIREKAP TANAH</b> (koleksi program, kegiatan, rka, dan realisasi) dalam bentuk berkas tunggal JSON ramah-ke-disk lokal.</p>
+                </div>
+                <button 
+                  onClick={handleExportBackup}
+                  className="mt-4 px-4 py-2 bg-emerald-800 hover:bg-emerald-950 text-white font-bold rounded-lg shadow-xs flex items-center gap-1.5 self-start"
+                >
                   <Download size={14} />
-                  Satu Tombol Pencadangan (Full Export)
-                </p>
-                <p className="text-[11px] text-emerald-800 mt-1">Mengunduh seluruh isi data sistem <b>SIREKAP TANAH</b> (koleksi program, kegiatan, rka, dan realisasi) dalam bentuk berkas tunggal JSON ramah-ke-disk lokal.</p>
+                  Ekspor Semua Basis Data (JSON)
+                </button>
               </div>
-              <button 
-                onClick={handleExportBackup}
-                className="mt-4 px-4 py-2 bg-emerald-800 hover:bg-emerald-950 text-white font-bold rounded-lg shadow-xs flex items-center gap-1.5 self-start"
-              >
-                <Download size={14} />
-                Ekspor Semua Basis Data (JSON)
-              </button>
-            </div>
 
-            {/* Database Restore Action Box */}
-            {canEdit ? (
-              <div className="p-4 bg-orange-50 border border-orange-100 text-orange-950 rounded-lg">
-                <p className="font-black flex items-center gap-1 text-orange-950">
-                  <Upload size={14} />
-                  Pemulihan Basis Data (Restore Recovery)
+              {/* Database Restore Action Box */}
+              {canEdit ? (
+                <div className="p-4 bg-orange-50 border border-orange-100 text-orange-950 rounded-lg">
+                  <p className="font-black flex items-center gap-1 text-orange-950">
+                    <Upload size={14} />
+                    Pemulihan Basis Data (Restore Recovery)
+                  </p>
+                  <p className="text-[11px] text-orange-800 mt-1">Pilih file JSON hasil backup sebelumnya untuk memulihkan seluruh struktur data belanja satker pertanahan Bima.</p>
+                  
+                  <div className="mt-4 relative overflow-hidden bg-white hover:bg-orange-100/50 border border-orange-200 px-4 py-2 rounded-lg cursor-pointer flex items-center justify-center gap-1.5 font-bold self-start max-w-xs transition">
+                    <Database size={13} className="text-orange-900" />
+                    <span>Pilih File Backup (.json)</span>
+                    <input 
+                      type="file" 
+                      accept=".json"
+                      onChange={handleRestoreFileSelected}
+                      className="absolute inset-0 opacity-0 cursor-pointer"
+                    />
+                  </div>
+
+                  {restoreMessage && (
+                    <p className="mt-2 text-[10px] font-mono font-bold text-orange-950 uppercase">{restoreMessage}</p>
+                  )}
+                </div>
+              ) : (
+                <div className="p-4 bg-slate-50 rounded-lg border text-slate-500 font-bold flex items-center gap-1">
+                  <Crown size={14} className="text-amber-600 animate-pulse" />
+                  Hanya Administrator yang memiliki akses Disaster Recovery Pemulihan Database.
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Firebase Storage Management Panel */}
+          <div className="bg-white p-5 rounded-xl border border-slate-100 shadow-sm space-y-4" id="firebase-storage-panel">
+            <h4 className="text-xs font-bold text-slate-800 border-b border-dashed pb-2 flex items-center justify-between">
+              <span className="flex items-center gap-1.5">
+                <HardDrive size={14} className="text-blue-700" />
+                Penyimpanan Berkas (Firebase Storage Cloud)
+              </span>
+              <span className="text-[10px] bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full font-mono font-semibold">
+                bidang-pertanahan.firebasestorage.app
+              </span>
+            </h4>
+
+            <div className="space-y-3 text-xs">
+              <div className="p-3.5 bg-blue-50/70 border border-blue-100 text-slate-800 rounded-lg space-y-2">
+                <p className="font-bold text-blue-950 flex items-center gap-1.5">
+                  <FolderCheck size={14} className="text-blue-700" />
+                  Struktur Hierarki Folder Berkas:
                 </p>
-                <p className="text-[11px] text-orange-800 mt-1">Pilih file JSON hasil backup sebelumnya untuk memulihkan seluruh struktur data belanja satker pertanahan Bima.</p>
-                
-                <div className="mt-4 relative overflow-hidden bg-white hover:bg-orange-100/50 border border-orange-200 px-4 py-2 rounded-lg cursor-pointer flex items-center justify-center gap-1.5 font-bold self-start max-w-xs transition">
-                  <Database size={13} className="text-orange-900" />
-                  <span>Pilih File Backup (.json)</span>
-                  <input 
-                    type="file" 
-                    accept=".json"
-                    onChange={handleRestoreFileSelected}
-                    className="absolute inset-0 opacity-0 cursor-pointer"
-                  />
+                <div className="font-mono text-[11px] bg-white p-2.5 rounded border border-blue-100 text-slate-700 space-y-1">
+                  <div className="text-blue-900 font-bold">sirekap/{'{tahun}'}/{'{program}'}/{'{kegiatan}'}/{'{subkegiatan}'}/{'{jenis_belanja}'}/</div>
+                  <div className="text-slate-500 text-[10px] pl-3">↳ Bukti SP2D Realisasi & Foto Belanja Pihak Ketiga</div>
+                  <div className="text-blue-900 font-bold mt-1">sirekap/{'{tahun}'}/dokumen/{'{kategori}'}/</div>
+                  <div className="text-slate-500 text-[10px] pl-3">↳ Arsip Dokumen Pendukung & Laporan</div>
+                  <div className="text-blue-900 font-bold mt-1">sirekap/pengaturan/logo/</div>
+                  <div className="text-slate-500 text-[10px] pl-3">↳ Logo Resmi Instansi Pemda</div>
+                </div>
+              </div>
+
+              {/* Migration Status & Execution */}
+              <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-bold text-slate-900">Sinkronisasi & Verifikasi Storage</p>
+                    <p className="text-[11px] text-slate-600">Pindahkan & pastikan semua foto/berkas di database tersimpan pada Firebase Storage.</p>
+                  </div>
+                  {canEdit && (
+                    <button
+                      type="button"
+                      onClick={handleRunMigration}
+                      disabled={isMigrating}
+                      className="px-3.5 py-2 bg-blue-700 hover:bg-blue-800 disabled:bg-blue-300 text-white font-bold rounded-lg shadow-sm flex items-center gap-1.5 transition whitespace-nowrap text-xs"
+                    >
+                      <RefreshCw size={13} className={isMigrating ? "animate-spin" : ""} />
+                      {isMigrating ? "Memindahkan..." : "Sinkronkan Sekarang"}
+                    </button>
+                  )}
                 </div>
 
-                {restoreMessage && (
-                  <p className="mt-2 text-[10px] font-mono font-bold text-orange-950 uppercase">{restoreMessage}</p>
+                {/* Progress bar if migrating */}
+                {isMigrating && migrationProgress && (
+                  <div className="space-y-1.5 pt-2 border-t border-slate-200">
+                    <div className="flex justify-between text-[11px] font-bold">
+                      <span className="text-blue-700 capitalize">Koleksi: {migrationProgress.currentCollection}</span>
+                      <span className="text-slate-600">{migrationProgress.completedCount} / {migrationProgress.totalCount}</span>
+                    </div>
+                    <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
+                      <div 
+                        className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                        style={{ width: `${Math.round((migrationProgress.completedCount / (migrationProgress.totalCount || 1)) * 100)}%` }}
+                      />
+                    </div>
+                    <p className="text-[10px] font-mono text-slate-500 truncate">{migrationProgress.log}</p>
+                  </div>
+                )}
+
+                {/* Status messages stream */}
+                {migrationStatusLog.length > 0 && (
+                  <div className="bg-slate-900 text-emerald-400 p-2 rounded text-[10px] font-mono space-y-0.5 max-h-24 overflow-y-auto">
+                    {migrationStatusLog.map((logMsg, idx) => (
+                      <div key={idx} className="truncate">{logMsg}</div>
+                    ))}
+                  </div>
                 )}
               </div>
-            ) : (
-              <div className="p-4 bg-slate-50 rounded-lg border text-slate-500 font-bold flex items-center gap-1">
-                <Crown size={14} className="text-amber-600 animate-pulse" />
-                Hanya Administrator yang memiliki akses Disaster Recovery Pemulihan Database.
-              </div>
-            )}
+            </div>
           </div>
         </div>
 
@@ -854,6 +1056,202 @@ export default function PengaturanView({
             </p>
           </div>
 
+        </div>
+      </div>
+
+      {/* Sesi Pengguna Sedang Masuk & Online (Kontrol Akses) Panel */}
+      <div className="bg-white p-6 rounded-xl border border-slate-100 shadow-sm space-y-5" id="online-sessions-panel">
+        <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-dashed pb-3 gap-3">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-lg bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-600 shrink-0">
+              <Activity className="animate-pulse" size={18} />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider">
+                  Sesi Pengguna Sedang Masuk & Online (Kontrol Akses)
+                </h3>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping"></span>
+                  {activeOnlineSessions.length} Akun Online
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-500">
+                Administrator dapat melihat nama akun, perangkat, alamat IP, waktu masuk, lama durasi aktif, dan berwenang memutuskan koneksi secara seketika.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2.5 text-xs">
+            <input 
+              type="text"
+              placeholder="Cari akun, perangkat, atau IP..."
+              value={sessionSearchText}
+              onChange={(e) => setSessionSearchText(e.target.value)}
+              className="p-1.5 px-3 border border-slate-200 rounded-lg outline-blue-600 focus:bg-white text-slate-900 bg-slate-50 font-semibold max-w-xs"
+            />
+            {onOpenOnlineSessionsModal && (
+              <button
+                type="button"
+                onClick={onOpenOnlineSessionsModal}
+                className="px-3 py-1.5 bg-blue-700 hover:bg-blue-800 text-white font-bold rounded-lg shadow-3xs flex items-center gap-1.5 transition text-xs shrink-0 cursor-pointer"
+              >
+                <Users size={13} />
+                Buka Layar Penuh
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Sessions Table */}
+        <div className="overflow-x-auto text-[11px] border border-slate-200 rounded-xl shadow-3xs">
+          <table className="min-w-full divide-y divide-slate-150">
+            <thead className="bg-slate-50 text-slate-700 font-extrabold uppercase tracking-wider text-[10px]">
+              <tr>
+                <th className="px-3.5 py-2.5 text-left">Akun & Pengguna</th>
+                <th className="px-3.5 py-2.5 text-left">Perangkat & Browser</th>
+                <th className="px-3.5 py-2.5 text-left">Alamat IP</th>
+                <th className="px-3.5 py-2.5 text-left">Waktu Masuk</th>
+                <th className="px-3.5 py-2.5 text-left">Lama Durasi</th>
+                <th className="px-3.5 py-2.5 text-center">Status</th>
+                <th className="px-3.5 py-2.5 text-right">Aksi</th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-slate-100 font-semibold text-slate-800">
+              {filteredOnlineSessions.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-4 py-8 text-center text-slate-400 italic">
+                    Tidak ada sesi pengguna online yang ditemukan saat ini.
+                  </td>
+                </tr>
+              ) : (
+                filteredOnlineSessions.map((session) => {
+                  const isCurrent = session.id === currentSessionId;
+                  const isDisconnecting = disconnectingSessionId === session.id;
+                  const isIdle = (now - (session.last_active || 0)) > 30000;
+
+                  return (
+                    <tr 
+                      key={session.id} 
+                      className={`hover:bg-blue-50/30 transition-colors ${isCurrent ? 'bg-blue-50/20' : ''}`}
+                    >
+                      {/* Akun & Pengguna */}
+                      <td className="px-3.5 py-2.5">
+                        <div className="flex items-center gap-2">
+                          <div className={`w-7 h-7 rounded-full flex items-center justify-center font-black text-[10px] shrink-0 ${
+                            session.role === UserRole.ADMIN 
+                              ? 'bg-purple-100 text-purple-700 border border-purple-200' 
+                              : session.role === UserRole.PIMPINAN 
+                              ? 'bg-amber-100 text-amber-800 border border-amber-200' 
+                              : 'bg-blue-100 text-blue-700 border border-blue-200'
+                          }`}>
+                            {(session.nama || session.email).substring(0, 2).toUpperCase()}
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-bold text-slate-900">{session.nama || session.email}</span>
+                              {isCurrent && (
+                                <span className="px-1.5 py-0.2 rounded text-[9px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300">
+                                  Sesi Anda
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-[10px] text-slate-500 font-mono block">{session.email}</span>
+                            <span className="inline-block mt-0.5 px-1.5 py-0.2 rounded text-[9px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
+                              {session.role}
+                            </span>
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* Perangkat & Browser */}
+                      <td className="px-3.5 py-2.5">
+                        <div className="flex items-center gap-1.5 font-bold text-slate-800">
+                          {session.device_type === 'mobile' ? (
+                            <Smartphone size={14} className="text-orange-600 shrink-0" />
+                          ) : session.device_type === 'tablet' ? (
+                            <Tablet size={14} className="text-purple-600 shrink-0" />
+                          ) : (
+                            <Monitor size={14} className="text-blue-600 shrink-0" />
+                          )}
+                          <span>{session.os || 'Perangkat'}</span>
+                        </div>
+                        <span className="text-[10px] text-slate-500 font-medium block">
+                          {session.browser || 'Browser'}
+                        </span>
+                        <span className="text-[9px] text-slate-400 font-mono block truncate max-w-[200px]" title={session.device}>
+                          {session.device}
+                        </span>
+                      </td>
+
+                      {/* Alamat IP */}
+                      <td className="px-3.5 py-2.5 font-mono">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-100 border border-slate-200 text-slate-800 font-bold text-[10px]">
+                          <Globe size={10} className="text-slate-500" />
+                          {session.ip_address || '127.0.0.1'}
+                        </span>
+                      </td>
+
+                      {/* Waktu Masuk */}
+                      <td className="px-3.5 py-2.5">
+                        <div className="flex items-center gap-1 text-slate-700">
+                          <Clock size={12} className="text-slate-400 shrink-0" />
+                          <span className="text-[10px] font-semibold">{formatWaktuMasuk(session.login_at)}</span>
+                        </div>
+                      </td>
+
+                      {/* Lama Durasi Masuk (Live ticking) */}
+                      <td className="px-3.5 py-2.5">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-50 border border-blue-200 text-blue-900 font-mono font-bold text-[10px]">
+                          <Activity size={10} className="text-blue-600 animate-pulse" />
+                          {formatDuration(session.login_at, now)}
+                        </span>
+                      </td>
+
+                      {/* Status */}
+                      <td className="px-3.5 py-2.5 text-center">
+                        {isIdle ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                            Idle
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping"></span>
+                            Online
+                          </span>
+                        )}
+                      </td>
+
+                      {/* Aksi: Putuskan Koneksi */}
+                      <td className="px-3.5 py-2.5 text-right whitespace-nowrap">
+                        {canEdit ? (
+                          isCurrent ? (
+                            <span className="text-[10px] text-slate-400 italic">
+                              Sesi Anda
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleDisconnectFromPengaturan(session)}
+                              disabled={isDisconnecting}
+                              className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 disabled:bg-rose-300 text-white font-bold rounded-lg shadow-3xs flex items-center gap-1 ml-auto text-[10px] transition cursor-pointer"
+                              title="Putuskan koneksi akun ini"
+                            >
+                              <PowerOff size={11} className={isDisconnecting ? 'animate-spin' : ''} />
+                              {isDisconnecting ? "Memutuskan..." : "Putuskan Koneksi"}
+                            </button>
+                          )
+                        ) : (
+                          <span className="text-[10px] text-slate-400">Hanya Admin</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
 

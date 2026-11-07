@@ -30,7 +30,8 @@ import {
   COLL_RKA,
   createAuditLog, 
   synchronizeCalculations,
-  clearDatabase 
+  clearDatabase,
+  syncSubKegiatanCodeChangeToAll
 } from '../dbService';
 
 interface ProgramViewProps {
@@ -543,6 +544,10 @@ export default function ProgramView({
           console.log(`[DEBUG_HAPUS] OLD DOC DELETED SUCCESSFULLY: ${editItem.id}`);
         } catch (err) {
           console.error(`[DEBUG_HAPUS] FAILED TO DELETE OLD DOC: ${editItem.id}`, err);
+        }
+
+        if (activeTab === 'sub_kegiatan') {
+          await syncSubKegiatanCodeChangeToAll(editItem.kode_sub_kegiatan || editItem.id, baseCode);
         }
       } else {
         console.log(`[DEBUG_HAPUS] NO DELETION: editItem.id=${editItem?.id}, docId=${docId}`);

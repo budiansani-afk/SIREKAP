@@ -144,23 +144,44 @@ export default function LaporanView({
         }));
       case "bulanan":
         const filteredRealM = realisasis.filter(r => selectedMonth === "Semua" || r.bulan === selectedMonth);
-        return filteredRealM.map(r => ({
-          kode: r.tanggal,
-          nama: `${r.kode_sub_kegiatan} - ${r.uraian_belanja}`,
-          pagu: rkaList.find(a => a.uraian_belanja === r.uraian_belanja)?.jumlah || 0,
-          realisasi: r.nominal_realisasi,
-          sisa: (rkaList.find(a => a.uraian_belanja === r.uraian_belanja)?.jumlah || 0) - r.nominal_realisasi,
-          persen: r.persentase_realisasi
-        }));
+        return filteredRealM.map(r => {
+          const matchedRka = rkaList.find(a => 
+            a.kode_sub_kegiatan === r.kode_sub_kegiatan && 
+            a.uraian_belanja.trim().toLowerCase() === (r.uraian_belanja || '').trim().toLowerCase()
+          ) || rkaList.find(a => a.uraian_belanja.trim().toLowerCase() === (r.uraian_belanja || '').trim().toLowerCase());
+          const paguVal = matchedRka ? matchedRka.jumlah : (subKegiatans.find(s => s.kode_sub_kegiatan === r.kode_sub_kegiatan)?.pagu || 0);
+          const sisaVal = paguVal - r.nominal_realisasi;
+          const persenVal = paguVal > 0 ? (r.nominal_realisasi / paguVal) * 100 : r.persentase_realisasi;
+
+          return {
+            kode: r.tanggal,
+            nama: `${r.kode_sub_kegiatan} - ${r.uraian_belanja}`,
+            pagu: paguVal,
+            realisasi: r.nominal_realisasi,
+            sisa: sisaVal,
+            persen: parseFloat(persenVal.toFixed(2))
+          };
+        });
       case "belanja_pihak_ketiga":
-        return pihakKetigas.map(m => ({
-          kode: m.tanggal,
-          nama: m.uraian_belanja,
-          pagu: 0, // Not applicable for PK
-          realisasi: m.realisasi,
-          sisa: 0, // Not applicable for PK
-          persen: 0
-        }));
+        return pihakKetigas.map(m => {
+          const matchedRka = rkaList.find(a => 
+            a.kode_sub_kegiatan === m.kode_sub_kegiatan && 
+            a.uraian_belanja.trim().toLowerCase() === (m.uraian_belanja || '').trim().toLowerCase()
+          );
+          const paguVal = matchedRka ? matchedRka.jumlah : (subKegiatans.find(s => s.kode_sub_kegiatan === m.kode_sub_kegiatan)?.pagu || 0);
+          const realVal = Number(m.realisasi) || 0;
+          const sisaVal = paguVal - realVal;
+          const persenVal = paguVal > 0 ? (realVal / paguVal) * 100 : 0;
+
+          return {
+            kode: m.nomor_kontrak || m.tanggal,
+            nama: `${m.nama_pelaksana ? m.nama_pelaksana + ' | ' : ''}${m.uraian_belanja}`,
+            pagu: paguVal,
+            realisasi: realVal,
+            sisa: sisaVal,
+            persen: parseFloat(persenVal.toFixed(2))
+          };
+        });
       case "tahunan":
       default:
         // Combined master summary

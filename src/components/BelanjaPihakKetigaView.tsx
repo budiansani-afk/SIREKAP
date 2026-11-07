@@ -24,6 +24,11 @@ import { db, handleFirestoreError, OperationType } from '../firebase';
 import { doc, setDoc, deleteDoc } from 'firebase/firestore';
 import { COLL_BELANJA_PIHAK_KETIGA, createAuditLog, syncPihakKetigaToSp2d, synchronizeCalculations } from '../dbService';
 import { uploadFile, deleteFile } from '../cloudinaryService';
+import { 
+  uploadFileToFirebaseStorage, 
+  deleteFileFromFirebaseStorage,
+  isFirebaseStorageUrl 
+} from '../firebaseStorageService';
 
 interface BelanjaPihakKetigaProps {
   pihakKetigas: BelanjaPihakKetiga[];
@@ -60,6 +65,8 @@ export default function BelanjaPihakKetigaView({
   const [formTanggal, setFormTanggal] = useState<string>(new Date().toISOString().substring(0, 10));
   const [formSubKeg, setFormSubKeg] = useState<string>('');
   const [formDetailBelanja, setFormDetailBelanja] = useState<string>('');
+  const [formDetailBelanjaIsManual, setFormDetailBelanjaIsManual] = useState<boolean>(false);
+  const [manualDetailBelanjaVal, setManualDetailBelanjaVal] = useState<string>('');
   const [formNamaPelaksana, setFormNamaPelaksana] = useState<string>('');
   const [formNomorKontrak, setFormNomorKontrak] = useState<string>('');
   const [formMasaKerjaMulai, setFormMasaKerjaMulai] = useState<string>('');
@@ -78,8 +85,10 @@ export default function BelanjaPihakKetigaView({
   const [selectedStatus, setSelectedStatus] = useState<string>('');
 
   // Helper to match and get SP2D realisasis for a specific Pihak Ketiga item
-  const getMatchedSp2dList = (m: { kode_sub_kegiatan: string; uraian_belanja?: string }) => {
+  const getMatchedSp2dList = (m: { id?: string; kode_sub_kegiatan: string; uraian_belanja?: string }) => {
     return realisasis.filter(r => {
+      if (m.id && r.id_pihak_ketiga === m.id) return true;
+      if (m.id && r.id === `sp2d_pihak_ketiga_${m.id}`) return true;
       if (r.kode_sub_kegiatan !== m.kode_sub_kegiatan) return false;
       if (m.uraian_belanja && r.uraian_belanja) {
         const u1 = m.uraian_belanja.trim().toLowerCase();
@@ -185,6 +194,8 @@ export default function BelanjaPihakKetigaView({
     setFormTanggal(new Date().toISOString().substring(0, 10));
     setFormSubKeg('');
     setFormDetailBelanja('');
+    setFormDetailBelanjaIsManual(false);
+    setManualDetailBelanjaVal('');
     setFormNamaPelaksana('');
     setFormNomorKontrak('');
     setFormMasaKerjaMulai('');
@@ -202,6 +213,9 @@ export default function BelanjaPihakKetigaView({
     setFormTanggal(item.tanggal);
     setFormSubKeg(item.kode_sub_kegiatan);
     setFormDetailBelanja(item.uraian_belanja);
+    const inRka = rkaList.some(r => r.kode_sub_kegiatan === item.kode_sub_kegiatan && r.uraian_belanja === item.uraian_belanja);
+    setFormDetailBelanjaIsManual(!inRka && Boolean(item.uraian_belanja));
+    setManualDetailBelanjaVal(!inRka ? (item.uraian_belanja || '') : '');
     setFormNamaPelaksana(item.nama_pelaksana);
     setFormNomorKontrak(item.nomor_kontrak);
     setFormMasaKerjaMulai(item.masa_kerja_mulai);
@@ -233,13 +247,20 @@ export default function BelanjaPihakKetigaView({
 
     setIsSaving(true);
     try {
-      let cloudinaryUrl = existingFotoUrl;
+      let storageUrl = existingFotoUrl;
+      let storagePath = editItem?.foto_kegiatan_storage_path || '';
       let cloudinaryPublicId = editItem?.foto_kegiatan_public_id || '';
 
       // If a new physical file is selected
       if (formFotoFile) {
-        // If there is an old photo on Cloudinary, delete it first
-        if (editItem?.foto_kegiatan_public_id) {
+        // If there is an old photo on Firebase Storage or Cloudinary, delete it first
+        if (editItem?.foto_kegiatan_storage_path) {
+          try {
+            await deleteFileFromFirebaseStorage(editItem.foto_kegiatan_storage_path);
+          } catch (storageErr) {
+            console.warn("Gagal menghapus foto lama dari Firebase Storage:", storageErr);
+          }
+        } else if (editItem?.foto_kegiatan_public_id) {
           try {
             await deleteFile(editItem.foto_kegiatan_public_id);
           } catch (cloudinaryErr) {
@@ -247,20 +268,39 @@ export default function BelanjaPihakKetigaView({
           }
         }
 
-        // Upload the new image to Cloudinary
+        // Upload the new image to Firebase Storage with exact hierarchy:
+        // sirekap/{tahun}/{program}/{kegiatan}/{subkegiatan}/{jenis_belanja}/{fileName}
         const originalExtension = formFotoFile.name.split('.').pop() || 'png';
         const customFileName = `Foto_Belanja_${formSubKeg || 'pihak_ketiga'}_${Date.now()}.${originalExtension}`;
-        const uploadRes = await uploadFile(formFotoFile, "sirekap_pihak_ketiga", customFileName);
-        cloudinaryUrl = uploadRes.secure_url;
-        cloudinaryPublicId = uploadRes.public_id;
-      } else if (!existingFotoUrl && editItem?.foto_kegiatan_public_id) {
+        const uploadRes = await uploadFileToFirebaseStorage(formFotoFile, {
+          tahun: editItem?.tahun || selectedYear,
+          program: linkedSub?.kode_program || editItem?.kode_program || 'program',
+          kegiatan: linkedSub?.kode_kegiatan || editItem?.kode_kegiatan || 'kegiatan',
+          subkegiatan: formSubKeg || 'subkegiatan',
+          jenisBelanja: formDetailBelanja ? formDetailBelanja.trim() : 'jenis_belanja',
+          fileName: customFileName,
+          module: 'pihak_ketiga'
+        });
+        storageUrl = uploadRes.downloadUrl;
+        storagePath = uploadRes.storagePath;
+        cloudinaryPublicId = '';
+      } else if (!existingFotoUrl) {
         // If the user removed the image completely
-        try {
-          await deleteFile(editItem.foto_kegiatan_public_id);
-        } catch (cloudinaryErr) {
-          console.warn("Gagal menghapus asset Cloudinary lama:", cloudinaryErr);
+        if (editItem?.foto_kegiatan_storage_path) {
+          try {
+            await deleteFileFromFirebaseStorage(editItem.foto_kegiatan_storage_path);
+          } catch (storageErr) {
+            console.warn("Gagal menghapus foto lama dari Firebase Storage:", storageErr);
+          }
+        } else if (editItem?.foto_kegiatan_public_id) {
+          try {
+            await deleteFile(editItem.foto_kegiatan_public_id);
+          } catch (cloudinaryErr) {
+            console.warn("Gagal menghapus asset Cloudinary lama:", cloudinaryErr);
+          }
         }
-        cloudinaryUrl = '';
+        storageUrl = '';
+        storagePath = '';
         cloudinaryPublicId = '';
       }
 
@@ -279,14 +319,15 @@ export default function BelanjaPihakKetigaView({
         masa_kerja_selesai: formMasaKerjaSelesai || '',
         realisasi: Number(formRealisasi) || 0,
         catatan: formCatatan ? formCatatan.trim() : '',
-        foto_kegiatan: cloudinaryUrl || '',
+        foto_kegiatan: storageUrl || '',
+        foto_kegiatan_storage_path: storagePath || '',
         foto_kegiatan_public_id: cloudinaryPublicId || ''
       };
 
       await setDoc(doc(db, COLL_BELANJA_PIHAK_KETIGA, docId), payload).catch(err => handleFirestoreError(err, OperationType.WRITE, `${COLL_BELANJA_PIHAK_KETIGA}/${docId}`));
 
       // Sinkronisasi otomatis ke modul Realisasi SP2D & Perhitungan Anggaran
-      await syncPihakKetigaToSp2d(payload, linkedSub, rkaList, false);
+      await syncPihakKetigaToSp2d(payload, linkedSub, rkaList, false, editItem || undefined);
       await synchronizeCalculations();
 
       // Handle audit logging
@@ -316,8 +357,15 @@ export default function BelanjaPihakKetigaView({
     if (!isConfirmed) return;
 
     try {
-      // Clean up Cloudinary asset
-      if (item.foto_kegiatan_public_id) {
+      // Clean up Storage asset (Firebase Storage or legacy Cloudinary)
+      if (item.foto_kegiatan_storage_path || (item.foto_kegiatan && isFirebaseStorageUrl(item.foto_kegiatan))) {
+        try {
+          await deleteFileFromFirebaseStorage(item.foto_kegiatan_storage_path || item.foto_kegiatan);
+          console.log(`Berhasil menghapus foto kegiatan dari Firebase Storage: ${item.foto_kegiatan_storage_path}`);
+        } catch (storageErr) {
+          console.warn("Gagal menghapus foto dari Firebase Storage:", storageErr);
+        }
+      } else if (item.foto_kegiatan_public_id) {
         try {
           await deleteFile(item.foto_kegiatan_public_id);
           console.log(`Berhasil menghapus foto kegiatan dari Cloudinary: ${item.foto_kegiatan_public_id}`);
@@ -615,16 +663,23 @@ export default function BelanjaPihakKetigaView({
               </div>
 
               <div>
-                <label className="block text-slate-700 font-bold mb-1">Detail Belanja (E-RKA)</label>
+                <label className="block text-slate-700 font-bold mb-1">Jenis / Detail Belanja (Dari E-RKA atau Kustom) *</label>
                 <select
-                  value={formDetailBelanja}
+                  value={formDetailBelanjaIsManual ? 'kustom_manual' : formDetailBelanja}
                   onChange={(e) => {
-                    setFormDetailBelanja(e.target.value);
-                    const sp2ds = getMatchedSp2dList({ kode_sub_kegiatan: formSubKeg, uraian_belanja: e.target.value });
-                    const autoReal = sp2ds.reduce((sum, r) => sum + (Number(r.nominal_realisasi) || 0), 0);
-                    if (autoReal > 0) setFormRealisasi(autoReal);
+                    const val = e.target.value;
+                    if (val === 'kustom_manual') {
+                      setFormDetailBelanjaIsManual(true);
+                      setFormDetailBelanja(manualDetailBelanjaVal);
+                    } else {
+                      setFormDetailBelanjaIsManual(false);
+                      setFormDetailBelanja(val);
+                      const sp2ds = getMatchedSp2dList({ kode_sub_kegiatan: formSubKeg, uraian_belanja: val });
+                      const autoReal = sp2ds.reduce((sum, r) => sum + (Number(r.nominal_realisasi) || 0), 0);
+                      if (autoReal > 0) setFormRealisasi(autoReal);
+                    }
                   }}
-                  className="w-full p-2.5 border border-slate-200 rounded-lg focus:outline-blue-600"
+                  className="w-full p-2.5 border border-slate-200 rounded-lg focus:outline-blue-600 font-medium text-slate-800"
                 >
                   <option value="">-- Pilih Detail Belanja E-RKA --</option>
                   {rkaList
@@ -632,7 +687,25 @@ export default function BelanjaPihakKetigaView({
                     .map((r, idx) => (
                       <option key={idx} value={r.uraian_belanja}>{r.uraian_belanja} - {formatRupiah(r.jumlah)}</option>
                     ))}
+                  <option value="kustom_manual">-- Masukkan Manual / Jenis Belanja Baru --</option>
                 </select>
+
+                {formDetailBelanjaIsManual && (
+                  <div className="mt-2.5 animate-fade-in">
+                    <label className="block text-[11px] text-slate-500 font-bold mb-1">Input Jenis Belanja Kustom / Baru *</label>
+                    <input 
+                      type="text"
+                      placeholder="Masukkan nama jenis belanja / kontrak pekerjaan..."
+                      value={manualDetailBelanjaVal}
+                      onChange={(e) => {
+                        setManualDetailBelanjaVal(e.target.value);
+                        setFormDetailBelanja(e.target.value);
+                      }}
+                      required
+                      className="w-full p-2.5 rounded-lg border border-slate-200 outline-blue-600 font-semibold text-slate-900"
+                    />
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-3">

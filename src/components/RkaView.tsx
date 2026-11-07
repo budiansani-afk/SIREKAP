@@ -320,7 +320,17 @@ export default function RkaView({
           editItem.uraian_belanja,
           payload.kode_sub_kegiatan,
           payload.uraian_belanja,
-          payload.jumlah
+          payload.jumlah,
+          false
+        );
+      } else if (!editItem) {
+        await syncRkaChangesToAll(
+          payload.kode_sub_kegiatan,
+          payload.uraian_belanja,
+          payload.kode_sub_kegiatan,
+          payload.uraian_belanja,
+          payload.jumlah,
+          false
         );
       }
 
@@ -352,6 +362,16 @@ export default function RkaView({
     try {
       await deleteDoc(doc(db, COLL_RKA, item.id)).catch(err => handleFirestoreError(err, OperationType.DELETE, `${COLL_RKA}/${item.id}`));
       
+      // Sinkronisasi penghapusan RKA ke Realisasi dan Belanja Pihak Ketiga
+      await syncRkaChangesToAll(
+        item.kode_sub_kegiatan,
+        item.uraian_belanja,
+        item.kode_sub_kegiatan,
+        item.uraian_belanja,
+        0,
+        true
+      );
+
       await createAuditLog(
         currentUserEmail,
         currentUserRole,

@@ -17,6 +17,11 @@ import { db, handleFirestoreError, OperationType } from '../firebase';
 import { doc, setDoc, deleteDoc } from 'firebase/firestore';
 import { COLL_DOKUMEN, createAuditLog } from '../dbService';
 import { uploadFile, deleteFile } from '../cloudinaryService';
+import { 
+  uploadFileToFirebaseStorage, 
+  deleteFileFromFirebaseStorage,
+  isFirebaseStorageUrl 
+} from '../firebaseStorageService';
 
 interface DokumenViewProps {
   dokumens: DokumenArsip[];
@@ -227,23 +232,23 @@ export default function DokumenView({
         ? `${finalCleanName}.${originalExtension}`
         : finalCleanName;
 
-      const cloudinaryRes = await uploadFile(fileToUpload, "sirekap", customFileName);
-
-      // Extract back the exact final public_id from Cloudinary response (without directory/folder prefix)
-      const fullPublicId = cloudinaryRes.public_id || '';
-      const lastSlashIdx = fullPublicId.lastIndexOf('/');
-      const finalMappedName = lastSlashIdx !== -1 ? fullPublicId.substring(lastSlashIdx + 1) : fullPublicId;
+      const uploadResult = await uploadFileToFirebaseStorage(fileToUpload, {
+        tahun: 2026,
+        kategori: formKategori,
+        fileName: customFileName,
+        module: 'dokumen'
+      });
 
       const docId = `dok_${Date.now()}`;
       const payload: DokumenArsip = {
         id: docId,
-        nama_dokumen: finalMappedName, // Explicitly map to the exact finalized Cloudinary public_id name
+        nama_dokumen: finalCleanName,
         kategori: formKategori,
         tanggal_upload: new Date().toISOString().substring(0, 10),
         tipe_file: fileType,
         ukuran_file: fileSizeStr,
-        data_url: cloudinaryRes.secure_url,
-        cloudinary_public_id: cloudinaryRes.public_id
+        data_url: uploadResult.downloadUrl,
+        storage_path: uploadResult.storagePath
       };
 
       await setDoc(doc(db, COLL_DOKUMEN, docId), payload).catch(err => handleFirestoreError(err, OperationType.WRITE, `${COLL_DOKUMEN}/${docId}`));
@@ -252,21 +257,21 @@ export default function DokumenView({
       await createAuditLog(
         currentUserEmail,
         currentUserRole,
-        "UPLOAD ARSIP DOKUMEN (CLOUDINARY)",
+        "UPLOAD ARSIP DOKUMEN (FIREBASE STORAGE)",
         "DOKUMEN_ARSIP",
         null,
         payload
       );
 
       // Notify the user about data change
-      alert(`[NOTIFIKASI DATA BERUBAH]\nBerhasil mengunggah foto "${payload.nama_dokumen}" ke Cloudinary!\nURL: ${payload.data_url}`);
+      alert(`[NOTIFIKASI DATA BERUBAH]\nBerhasil mengunggah dokumen "${payload.nama_dokumen}" ke Firebase Storage!\nPath: ${payload.storage_path}`);
 
       setShowUploadModal(false);
       setFormNamaDokumen('');
       setFileToUpload(null);
       setFileName('');
     } catch (err) {
-      alert("Gagal mengunggah dokumen ke Cloudinary: " + (err instanceof Error ? err.message : String(err)));
+      alert("Gagal mengunggah dokumen ke Firebase Storage: " + (err instanceof Error ? err.message : String(err)));
     } finally {
       setIsUploading(false);
     }
@@ -274,79 +279,33 @@ export default function DokumenView({
 
   // Delete document
   const handleDelete = async (item: DokumenArsip) => {
-    const isConfirmed = window.confirm(`Hapus dokumen arsip "${item.nama_dokumen}" dari sistem dan Cloudinary secara permanen?`);
+    const isConfirmed = window.confirm(`Hapus dokumen arsip "${item.nama_dokumen}" dari sistem dan storage secara permanen?`);
     if (!isConfirmed) return;
 
     setDeletingId(item.id);
     try {
-      // Determine deletion target: prefer raw public ID, fallback to Cloudinary URL parsing if present
-      const deleteTarget = item.cloudinary_public_id || (item.data_url?.includes("res.cloudinary.com") ? item.data_url : null);
-
-      if (deleteTarget) {
-        console.log(`[DEBUG_HAPUS] Memulai proses penghapusan asset Cloudinary.`);
-        console.log(`[DEBUG_HAPUS] Parameter / URL yang akan dikirim: "${deleteTarget}"`);
+      // 1. If stored in Firebase Storage, delete from Firebase Storage
+      if (item.storage_path || (item.data_url && isFirebaseStorageUrl(item.data_url))) {
+        const targetPath = item.storage_path || item.data_url;
+        console.log(`[STORAGE_HAPUS] Menghapus dokumen dari Firebase Storage:`, targetPath);
+        await deleteFileFromFirebaseStorage(targetPath);
+      } 
+      // 2. Legacy fallback: Cloudinary
+      else if (item.cloudinary_public_id || (item.data_url?.includes("res.cloudinary.com"))) {
+        const deleteTarget = item.cloudinary_public_id || item.data_url;
+        console.log(`[DEBUG_HAPUS] Menghapus asset legacy Cloudinary:`, deleteTarget);
         try {
-          // Call the secure server-side deletion route directly passing public_id from Firestore document
-          const response = await fetch("/api/cloudinary/delete", {
+          await fetch("/api/cloudinary/delete", {
             method: "POST",
-            headers: {
-              "Content-Type": "application/json"
-            },
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               public_id: item.cloudinary_public_id || deleteTarget,
               url: item.data_url
             })
           });
-
-          if (!response.ok) {
-            const errInfo = await response.json().catch(() => ({}));
-            const errCodeStr = errInfo.errorCode ? ` [Error Code: ${errInfo.errorCode}]` : "";
-            console.error(`[DEBUG_HAPUS] Error terdeteksi dari endpoint server:${errCodeStr}`, errInfo);
-            throw new Error((errInfo.error || `Server responded with status: ${response.status}`) + errCodeStr);
-          }
-
-          const delResult = await response.json();
-          console.log(`[DEBUG_HAPUS] Berhasil memproses permintaan hapus Cloudinary secara tuntas.`, delResult);
-          
-          if (delResult && delResult.success === false) {
-            const errCodeStr = delResult.errorCode ? ` [Error Code: ${delResult.errorCode}]` : "";
-            console.error(`[DEBUG_HAPUS] Gagal menghapus aset Cloudinary:${errCodeStr}`, delResult);
-            
-            if (delResult.errorCode === "ASSET_NOT_FOUND" || delResult.result === "not found") {
-              console.warn(`[DEBUG_HAPUS] Cloudinary melaporkan asset tidak ditemukan ("not found"). Melanjutkan ke penghapusan database.`);
-            } else {
-              throw new Error((delResult.error || "Gagal menghapus aset dari Cloudinary server") + errCodeStr);
-            }
-          }
-          
-          if (delResult && delResult.result === "not found") {
-            console.warn(`[DEBUG_HAPUS] Cloudinary melaporkan asset tidak ditemukan ("not found"). Melanjutkan ke penghapusan database.`);
-          }
         } catch (cloudinaryErr: any) {
-          console.error("[DEBUG_HAPUS] Terjadi kesalahan saat memanggil fungsi hapus Cloudinary!");
-          console.error("[DEBUG_HAPUS] Detail Error Object:", cloudinaryErr);
-          
-          const errMsg = cloudinaryErr?.message || String(cloudinaryErr);
-          const isNotFoundError = errMsg.toLowerCase().includes("not found") || 
-                                 errMsg.toLowerCase().includes("not_found") || 
-                                 errMsg.includes("ASSET_NOT_FOUND");
-
-          if (isNotFoundError) {
-            console.warn(`[DEBUG_HAPUS] Deteksi NOT_FOUND pada Cloudinary (${errMsg}). Melompati validasi blocker untuk mencegah record Firestore yatim (orphaned).`);
-          } else {
-            const forceConfirm = window.confirm(
-              `KONEKSI CLOUDINARY GAGAL UNTUK TARGET: "${deleteTarget}"\n\n` +
-              `Detail Error:\n${errMsg}\n\n` +
-              `Apakah Anda ingin tetap memaksa menghapus record dokumen ini secara permanen dari database Firestore?`
-            );
-            if (!forceConfirm) {
-              console.log("[DEBUG_HAPUS] Proses penghapusan dibatalkan oleh pengguna karena kegagalan Cloudinary.");
-              return; // Abort deletion
-            }
-          }
+          console.warn("[DEBUG_HAPUS] Gagal menghapus file legacy Cloudinary:", cloudinaryErr);
         }
-      } else {
-        console.log(`[DEBUG_HAPUS] Dokumen tidak memiliki metadata penyimpanan Cloudinary, langsung menghapus dari Firestore.`);
       }
 
       await deleteDoc(doc(db, COLL_DOKUMEN, item.id)).catch(err => handleFirestoreError(err, OperationType.DELETE, `${COLL_DOKUMEN}/${item.id}`));
@@ -354,13 +313,13 @@ export default function DokumenView({
       await createAuditLog(
         currentUserEmail,
         currentUserRole,
-        "HAPUS ARSIP DOKUMEN (CLOUDINARY)",
+        "HAPUS ARSIP DOKUMEN",
         "DOKUMEN_ARSIP",
         item,
         null
       );
 
-      alert(`[NOTIFIKASI DATA BERUBAH]\nBerhasil menghapus data arsip "${item.nama_dokumen}" secara permanen dari database & Cloudinary.`);
+      alert(`[NOTIFIKASI DATA BERUBAH]\nBerhasil menghapus data arsip "${item.nama_dokumen}" secara permanen.`);
     } catch (err) {
       alert("Gagal menghapus: " + (err instanceof Error ? err.message : String(err)));
     } finally {

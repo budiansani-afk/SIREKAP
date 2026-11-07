@@ -15,7 +15,8 @@ import {
   ShieldAlert,
   X,
   Ban,
-  Activity
+  Activity,
+  Briefcase
 } from 'lucide-react';
 import { Realisasi, Program, Kegiatan, SubKegiatan, UserRole, RKA, BelanjaPihakKetiga } from '../types';
 import { formatRupiah, exportToCSV } from '../utils/helpers';
@@ -23,6 +24,11 @@ import { db, handleFirestoreError, OperationType } from '../firebase';
 import { doc, setDoc, deleteDoc } from 'firebase/firestore';
 import { COLL_REALISASI, createAuditLog, synchronizeCalculations, syncSp2dToPihakKetiga } from '../dbService';
 import { uploadFile, deleteFile } from '../cloudinaryService';
+import { 
+  uploadFileToFirebaseStorage, 
+  deleteFileFromFirebaseStorage,
+  isFirebaseStorageUrl 
+} from '../firebaseStorageService';
 
 interface RealisasiViewProps {
   realisasis: Realisasi[];
@@ -419,32 +425,58 @@ export default function RealisasiView({
 
     setIsSaving(true);
     try {
-      let cloudinaryUrl = existingBuktiUrl;
+      let storageUrl = existingBuktiUrl;
+      let storagePath = editItem?.bukti_transaksi_storage_path || '';
       let cloudinaryPublicId = editItem?.bukti_transaksi_public_id || '';
 
       // If a new physical file is selected
       if (formBuktiFile) {
-        // If there is an old photo on Cloudinary, delete it first
-        if (editItem?.bukti_transaksi_public_id) {
+        // If there is an old photo on Firebase Storage or Cloudinary, delete it first
+        if (editItem?.bukti_transaksi_storage_path) {
+          try {
+            await deleteFileFromFirebaseStorage(editItem.bukti_transaksi_storage_path);
+          } catch (storageErr) {
+            console.warn("Gagal menghapus berkas lama dari Firebase Storage:", storageErr);
+          }
+        } else if (editItem?.bukti_transaksi_public_id) {
           try {
             await deleteFile(editItem.bukti_transaksi_public_id);
           } catch (cloudinaryErr) {
-            console.warn("Sedang menghapus, Gagal menghapus asset Cloudinary lama:", cloudinaryErr);
+            console.warn("Gagal menghapus asset Cloudinary lama:", cloudinaryErr);
           }
         }
 
-        // Upload the new image to Cloudinary using original filename
-        const uploadRes = await uploadFile(formBuktiFile, "sirekap", formBuktiFile.name);
-        cloudinaryUrl = uploadRes.secure_url;
-        cloudinaryPublicId = uploadRes.public_id;
-      } else if (!existingBuktiUrl && editItem?.bukti_transaksi_public_id) {
+        // Upload the new file directly to Firebase Storage with exact hierarchy:
+        // sirekap/{tahun}/{program}/{kegiatan}/{subkegiatan}/{jenis_belanja}/{fileName}
+        const uploadRes = await uploadFileToFirebaseStorage(formBuktiFile, {
+          tahun: editItem?.tahun || selectedYear,
+          program: linkedSub.kode_program,
+          kegiatan: linkedSub.kode_kegiatan,
+          subkegiatan: formSubKeg,
+          jenisBelanja: formUraian.trim(),
+          fileName: formBuktiFile.name,
+          module: 'realisasi'
+        });
+        storageUrl = uploadRes.downloadUrl;
+        storagePath = uploadRes.storagePath;
+        cloudinaryPublicId = '';
+      } else if (!existingBuktiUrl) {
         // If the user removed the image completely
-        try {
-          await deleteFile(editItem.bukti_transaksi_public_id);
-        } catch (cloudinaryErr) {
-          console.warn("Gagal menghapus asset Cloudinary lama:", cloudinaryErr);
+        if (editItem?.bukti_transaksi_storage_path) {
+          try {
+            await deleteFileFromFirebaseStorage(editItem.bukti_transaksi_storage_path);
+          } catch (storageErr) {
+            console.warn("Gagal menghapus berkas dari Firebase Storage:", storageErr);
+          }
+        } else if (editItem?.bukti_transaksi_public_id) {
+          try {
+            await deleteFile(editItem.bukti_transaksi_public_id);
+          } catch (cloudinaryErr) {
+            console.warn("Gagal menghapus asset Cloudinary lama:", cloudinaryErr);
+          }
         }
-        cloudinaryUrl = '';
+        storageUrl = '';
+        storagePath = '';
         cloudinaryPublicId = '';
       }
 
@@ -472,7 +504,8 @@ export default function RealisasiView({
         sisa_anggaran: computedSisaValue,
         pagu_anggaran_terpantau: paguAmt,
         keterangan: formKeterangan.trim(),
-        bukti_transaksi: cloudinaryUrl || undefined,
+        bukti_transaksi: storageUrl || undefined,
+        bukti_transaksi_storage_path: storagePath || undefined,
         bukti_transaksi_public_id: cloudinaryPublicId || undefined,
         id_pihak_ketiga: formPihakKetigaId || editItem?.id_pihak_ketiga || undefined
       };
@@ -480,7 +513,7 @@ export default function RealisasiView({
       await setDoc(doc(db, COLL_REALISASI, docId), payload).catch(err => handleFirestoreError(err, OperationType.WRITE, `${COLL_REALISASI}/${docId}`));
 
       // Sinkronisasi otomatis ke modul Belanja Pihak Ketiga
-      await syncSp2dToPihakKetiga(payload, false);
+      await syncSp2dToPihakKetiga(payload, false, editItem || undefined);
 
       // Audit trail
       await createAuditLog(
@@ -512,8 +545,14 @@ export default function RealisasiView({
     if (!isConfirmed) return;
 
     try {
-      // Clean up Cloudinary asset
-      if (item.bukti_transaksi_public_id) {
+      // Clean up Storage asset (Firebase Storage or legacy Cloudinary)
+      if (item.bukti_transaksi_storage_path || (item.bukti_transaksi && isFirebaseStorageUrl(item.bukti_transaksi))) {
+        try {
+          await deleteFileFromFirebaseStorage(item.bukti_transaksi_storage_path || item.bukti_transaksi);
+        } catch (storageErr) {
+          console.warn("Gagal menghapus bukti dari Firebase Storage:", storageErr);
+        }
+      } else if (item.bukti_transaksi_public_id) {
         try {
           await deleteFile(item.bukti_transaksi_public_id);
           console.log(`Berhasil menghapus bukti transaksi dari Cloudinary: ${item.bukti_transaksi_public_id}`);
@@ -1014,6 +1053,62 @@ export default function RealisasiView({
                         </p>
                       )}
                     </div>
+                  )}
+                </div>
+              )}
+
+              {/* Koneksi opsional / otomatis ke Belanja Pihak Ketiga */}
+              {availablePihakKetigas.length > 0 && (
+                <div className="p-3 bg-blue-50/80 border border-blue-200 rounded-lg animate-fade-in">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-xs font-bold text-blue-900 flex items-center gap-1.5">
+                      <Briefcase size={14} className="text-blue-700" />
+                      Kaitkan dengan Kontrak Pihak Ketiga (Opsional)
+                    </label>
+                    {formPihakKetigaId && (
+                      <button
+                        type="button"
+                        onClick={() => setFormPihakKetigaId('')}
+                        className="text-[10px] text-red-600 hover:underline font-bold"
+                      >
+                        Lepas Kaitan
+                      </button>
+                    )}
+                  </div>
+                  <select
+                    value={formPihakKetigaId}
+                    onChange={(e) => {
+                      const pkId = e.target.value;
+                      setFormPihakKetigaId(pkId);
+                      if (pkId) {
+                        const selectedPk = availablePihakKetigas.find(p => p.id === pkId);
+                        if (selectedPk) {
+                          setFormUraian(selectedPk.uraian_belanja);
+                          const inRka = matchingRkasForSub.some(r => r.uraian_belanja === selectedPk.uraian_belanja);
+                          setFormUraianIsManual(!inRka);
+                          setManualUraianVal(!inRka ? selectedPk.uraian_belanja : '');
+                          if (selectedPk.realisasi && selectedPk.realisasi > 0 && formNominal === 0) {
+                            setFormNominal(selectedPk.realisasi);
+                          }
+                          if (!formKeterangan && selectedPk.nama_pelaksana) {
+                            setFormKeterangan(`Kontrak: ${selectedPk.nomor_kontrak || '-'} | Pelaksana: ${selectedPk.nama_pelaksana}`);
+                          }
+                        }
+                      }
+                    }}
+                    className="w-full p-2 bg-white rounded-lg border border-blue-200 text-xs font-medium text-slate-800 focus:outline-blue-600"
+                  >
+                    <option value="">-- Bukan Belanja Pihak Ketiga / Pilih Kontrak --</option>
+                    {availablePihakKetigas.map((pk, idx) => (
+                      <option key={idx} value={pk.id}>
+                        {pk.nama_pelaksana ? `${pk.nama_pelaksana} - ` : ''}{pk.uraian_belanja} (Kontrak: {pk.nomor_kontrak || '-'})
+                      </option>
+                    ))}
+                  </select>
+                  {formPihakKetigaId && (
+                    <p className="text-[10px] text-blue-700 mt-1 italic">
+                      ✓ Realisasi SP2D ini otomatis tersinkron dengan data Belanja Pihak Ketiga & Uraian Belanja.
+                    </p>
                   )}
                 </div>
               )}

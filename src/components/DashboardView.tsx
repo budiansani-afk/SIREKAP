@@ -17,7 +17,8 @@ import {
   X,
   CheckCircle2,
   ExternalLink,
-  BellRing
+  BellRing,
+  Building
 } from 'lucide-react';
 import { Program, Kegiatan, SubKegiatan, Realisasi, BelanjaPihakKetiga, DokumenArsip, RKA } from '../types';
 import { formatRupiah, formatPercent } from '../utils/helpers';
@@ -127,9 +128,11 @@ interface StatCardProps {
   value: string;
   subtitle: string;
   color: 'blue' | 'emerald' | 'amber' | 'rose';
+  onClick?: () => void;
+  actionText?: string;
 }
 
-const StatCard = ({ title, value, subtitle, color }: StatCardProps) => {
+const StatCard = ({ title, value, subtitle, color, onClick, actionText = 'Buka →' }: StatCardProps) => {
   const colorMap = {
     blue: 'bg-white border-slate-200 text-blue-700',
     emerald: 'bg-white border-slate-200 text-emerald-700',
@@ -137,10 +140,30 @@ const StatCard = ({ title, value, subtitle, color }: StatCardProps) => {
     rose: 'bg-white border-red-200 text-rose-700'
   };
   return (
-    <div className={`p-4 rounded-xl border shadow-sm hover:shadow transition-all ${colorMap[color]}`}>
-      <p className="text-slate-400 text-[10px] font-bold uppercase tracking-wider block truncate">{title}</p>
-      <h3 className={`text-lg font-black mt-1 truncate ${color === 'rose' ? 'text-red-600' : 'text-slate-950'}`} title={value}>{value}</h3>
-      <p className="text-[10px] mt-0.5 font-bold">{subtitle}</p>
+    <div 
+      onClick={onClick}
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={onClick ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } } : undefined}
+      className={`p-4 rounded-xl border shadow-2xs transition-all ${colorMap[color]} ${
+        onClick 
+          ? 'cursor-pointer hover:border-blue-500 hover:shadow-md hover:ring-2 hover:ring-blue-100 hover:scale-[1.01] active:scale-[0.99] group' 
+          : ''
+      }`}
+      title={onClick ? `Klik untuk membuka informasi ${title}` : value}
+    >
+      <div className="flex items-center justify-between gap-1">
+        <p className="text-slate-500 text-[10px] font-bold uppercase tracking-wider block truncate">{title}</p>
+        {onClick && (
+          <span className="text-[10px] font-extrabold text-blue-600 bg-blue-50 group-hover:bg-blue-600 group-hover:text-white px-2 py-0.5 rounded transition-colors flex items-center gap-0.5 shrink-0 shadow-2xs">
+            <span>{actionText}</span>
+          </span>
+        )}
+      </div>
+      <h3 className={`text-lg font-black mt-1.5 truncate ${color === 'rose' ? 'text-red-600' : 'text-slate-950'}`} title={value}>{value}</h3>
+      <div className="text-[10.5px] mt-1 font-bold text-slate-600 flex items-center justify-between">
+        <span>{subtitle}</span>
+      </div>
     </div>
   );
 };
@@ -163,7 +186,11 @@ export default function DashboardView({
   const totalPaguSub = useMemo(() => subKegiatans.reduce((sum, s) => sum + (s.pagu || 0), 0), [subKegiatans]);
   const totalPaguAll = totalPaguRka > 0 ? totalPaguRka : totalPaguSub;
 
-  const totalRealisasiAll = useMemo(() => subKegiatans.reduce((sum, s) => sum + (s.realisasi || 0), 0), [subKegiatans]);
+  const totalRealisasiAll = useMemo(() => {
+    const sumRealList = realisasis.reduce((sum, r) => sum + (Number(r.nominal_realisasi) || 0), 0);
+    const sumSub = subKegiatans.reduce((sum, s) => sum + (s.realisasi || 0), 0);
+    return sumRealList > 0 ? sumRealList : sumSub;
+  }, [realisasis, subKegiatans]);
 
   const programChartData = useMemo(() => {
     return programs.map(p => ({
@@ -173,18 +200,39 @@ export default function DashboardView({
       Realisasi: p.realisasi || 0
     }));
   }, [programs]);
+
+  // Helper identik dengan getMatchedSp2dList di menu Belanja Pihak Ketiga
+  const getMatchedSp2dListForPk = (m: { id?: string; kode_sub_kegiatan: string; uraian_belanja?: string }) => {
+    return realisasis.filter(r => {
+      if (m.id && r.id_pihak_ketiga === m.id) return true;
+      if (m.id && r.id === `sp2d_pihak_ketiga_${m.id}`) return true;
+      if (r.kode_sub_kegiatan !== m.kode_sub_kegiatan) return false;
+      if (m.uraian_belanja && r.uraian_belanja) {
+        const u1 = m.uraian_belanja.trim().toLowerCase();
+        const u2 = r.uraian_belanja.trim().toLowerCase();
+        return u1 === u2 || u1.includes(u2) || u2.includes(u1);
+      }
+      return true;
+    });
+  };
+
+  const getPkItemRealisasi = (m: BelanjaPihakKetiga) => {
+    const list = getMatchedSp2dListForPk(m);
+    const sumSp2d = list.reduce((acc, r) => acc + (Number(r.nominal_realisasi) || 0), 0);
+    return sumSp2d > 0 ? sumSp2d : (Number(m.realisasi) || 0);
+  };
   
   const totalPaguPK = useMemo(() => {
     if (!pihakKetigas || pihakKetigas.length === 0) return 0;
 
     const matchedRkaKeys = new Set<string>();
-    const matchedSubKeys = new Set<string>();
     let total = 0;
 
     for (const p of pihakKetigas) {
+      const pUraian = (p.uraian_belanja || '').trim().toLowerCase();
       const rkaMatch = rkaList.find(r => 
-        (r.kode_sub_kegiatan === p.kode_sub_kegiatan && r.uraian_belanja === p.uraian_belanja) ||
-        (p.uraian_belanja && r.uraian_belanja === p.uraian_belanja)
+        (r.kode_sub_kegiatan === p.kode_sub_kegiatan && (r.uraian_belanja || '').trim().toLowerCase() === pUraian) ||
+        (pUraian && (r.uraian_belanja || '').trim().toLowerCase() === pUraian)
       );
 
       if (rkaMatch) {
@@ -199,16 +247,10 @@ export default function DashboardView({
           .reduce((acc, curr) => acc + (curr.jumlah || 0), 0);
 
         if (rkaSumForSub > 0) {
-          if (!matchedSubKeys.has(p.kode_sub_kegiatan)) {
-            matchedSubKeys.add(p.kode_sub_kegiatan);
-            total += rkaSumForSub;
-          }
+          total += rkaSumForSub;
         } else {
-          if (!matchedSubKeys.has(p.kode_sub_kegiatan)) {
-            matchedSubKeys.add(p.kode_sub_kegiatan);
-            const sub = subKegiatans.find(s => s.kode_sub_kegiatan === p.kode_sub_kegiatan);
-            total += (sub?.pagu || 0);
-          }
+          const linkedSub = subKegiatans.find(s => s.kode_sub_kegiatan === p.kode_sub_kegiatan);
+          total += (linkedSub?.pagu || 0);
         }
       }
     }
@@ -223,11 +265,11 @@ export default function DashboardView({
     return total;
   }, [pihakKetigas, rkaList, subKegiatans]);
   
-  // Realisasi Pihak Ketiga dihitung langsung dari total belanja/kontrak pihak ketiga
-  const totalRealisasiPK = useMemo(() => 
-    pihakKetigas.reduce((sum, p) => sum + (Number(p.realisasi) || 0), 0),
-    [pihakKetigas]
-  );
+  // Realisasi Pihak Ketiga dihitung 100% konsisten sesuai data dalam menu Belanja Pihak Ketiga
+  const totalRealisasiPK = useMemo(() => {
+    if (!pihakKetigas || pihakKetigas.length === 0) return 0;
+    return pihakKetigas.reduce((sum, p) => sum + getPkItemRealisasi(p), 0);
+  }, [pihakKetigas, realisasis]);
   
   const totalPaguNonPK = Math.max(0, totalPaguAll - totalPaguPK);
   const totalRealisasiNonPK = Math.max(0, totalRealisasiAll - totalRealisasiPK);
@@ -362,6 +404,7 @@ export default function DashboardView({
   }, [rkaList, realisasis, subKegiatans]);
 
   const [selectedOverbudgetDetail, setSelectedOverbudgetDetail] = useState<OverbudgetItem | null>(null);
+  const [showPkDetailModal, setShowPkDetailModal] = useState<boolean>(false);
 
   const handleOpenBelanjaInRka = (item: OverbudgetItem) => {
     setSelectedOverbudgetDetail(null);
@@ -512,9 +555,16 @@ export default function DashboardView({
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
-          <div className="bg-white/10 backdrop-blur-xs p-3 rounded-xl border border-white/10 space-y-1">
+          <div 
+            onClick={() => onNavigate?.('rka')}
+            className="bg-white/10 hover:bg-white/15 backdrop-blur-xs p-3 rounded-xl border border-white/10 hover:border-white/30 space-y-1 cursor-pointer transition-all group"
+            title="Klik untuk membuka informasi E-RKA Anggaran"
+          >
             <div className="flex justify-between text-slate-300 text-[11px] font-bold">
-              <span>Keseluruhan Pagu</span>
+              <span className="flex items-center gap-1 group-hover:text-emerald-300 transition-colors">
+                Keseluruhan Pagu
+                <ArrowRight size={11} className="opacity-0 group-hover:opacity-100 transition-opacity" />
+              </span>
               <span className="text-emerald-400 font-mono">{persentaseSerapanAll.toFixed(1)}%</span>
             </div>
             <p className="text-base font-black font-mono text-white">{formatRupiah(totalPaguAll)}</p>
@@ -527,9 +577,16 @@ export default function DashboardView({
             </div>
           </div>
 
-          <div className="bg-white/10 backdrop-blur-xs p-3 rounded-xl border border-white/10 space-y-1">
+          <div 
+            onClick={() => onNavigate?.('realisasi')}
+            className="bg-white/10 hover:bg-white/15 backdrop-blur-xs p-3 rounded-xl border border-white/10 hover:border-white/30 space-y-1 cursor-pointer transition-all group"
+            title="Klik untuk membuka informasi Realisasi SP2D Non-PK"
+          >
             <div className="flex justify-between text-slate-300 text-[11px] font-bold">
-              <span>Pagu Non-Pihak Ketiga</span>
+              <span className="flex items-center gap-1 group-hover:text-blue-300 transition-colors">
+                Pagu Non-Pihak Ketiga
+                <ArrowRight size={11} className="opacity-0 group-hover:opacity-100 transition-opacity" />
+              </span>
               <span className="text-blue-300 font-mono">{persentaseSerapanNonPK.toFixed(1)}%</span>
             </div>
             <p className="text-base font-black font-mono text-white">{formatRupiah(totalPaguNonPK)}</p>
@@ -542,9 +599,18 @@ export default function DashboardView({
             </div>
           </div>
 
-          <div className="bg-white/10 backdrop-blur-xs p-3 rounded-xl border border-white/10 space-y-1">
+          <div 
+            onClick={() => setShowPkDetailModal(true)}
+            className="bg-white/10 hover:bg-white/20 backdrop-blur-xs p-3 rounded-xl border border-white/10 hover:border-amber-400/60 space-y-1 cursor-pointer transition-all group shadow-2xs"
+            title="Klik untuk melihat rincian alokasi & kontrak Belanja Pihak Ketiga"
+          >
             <div className="flex justify-between text-slate-300 text-[11px] font-bold">
-              <span>Pagu Pihak Ketiga</span>
+              <span className="flex items-center gap-1 text-white group-hover:text-amber-300 transition-colors">
+                Pagu Pihak Ketiga
+                <span className="text-[9px] bg-amber-400/20 text-amber-300 px-1.5 py-0.2 rounded border border-amber-400/30 flex items-center gap-0.5">
+                  Detail <ArrowRight size={10} />
+                </span>
+              </span>
               <span className="text-amber-300 font-mono">{persentaseSerapanPK.toFixed(1)}%</span>
             </div>
             <p className="text-base font-black font-mono text-white">{formatRupiah(totalPaguPK)}</p>
@@ -563,44 +629,92 @@ export default function DashboardView({
       <div className="space-y-4" id="stats-grid">
         {/* Row 1: Overall */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <StatCard title="Total Pagu" value={formatRupiah(totalPaguAll)} subtitle="Total Anggaran" color="blue" />
-          <StatCard title="Total Realisasi" value={formatRupiah(totalRealisasiAll)} subtitle={`${persentaseSerapanAll.toFixed(1)}% Serapan`} color="emerald" />
+          <StatCard 
+            title="Total Pagu" 
+            value={formatRupiah(totalPaguAll)} 
+            subtitle="Total Anggaran DPA" 
+            color="blue" 
+            onClick={() => onNavigate?.('rka')}
+            actionText="E-RKA →"
+          />
+          <StatCard 
+            title="Total Realisasi" 
+            value={formatRupiah(totalRealisasiAll)} 
+            subtitle={`${persentaseSerapanAll.toFixed(1)}% Serapan`} 
+            color="emerald" 
+            onClick={() => onNavigate?.('realisasi')}
+            actionText="SP2D →"
+          />
           <StatCard 
             title="Sisa Anggaran" 
             value={formatRupiah(totalSisaAll)} 
             subtitle={totalSisaAll < 0 ? "Defisit Anggaran" : "Dana Tersisa"} 
             color={totalSisaAll < 0 ? "rose" : "amber"} 
+            onClick={() => onNavigate?.('laporan')}
+            actionText="Laporan →"
           />
         </div>
         {/* Row 2: Non-PK */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <StatCard title="Pagu Non-PK" value={formatRupiah(totalPaguNonPK)} subtitle="Total Anggaran Non-PK" color="blue" />
-          <StatCard title="Realisasi Non-PK" value={formatRupiah(totalRealisasiNonPK)} subtitle={`${persentaseSerapanNonPK.toFixed(1)}% Serapan`} color="emerald" />
+          <StatCard 
+            title="Pagu Non-PK" 
+            value={formatRupiah(totalPaguNonPK)} 
+            subtitle="Total Anggaran Non-PK" 
+            color="blue" 
+            onClick={() => onNavigate?.('rka')}
+            actionText="E-RKA →"
+          />
+          <StatCard 
+            title="Realisasi Non-PK" 
+            value={formatRupiah(totalRealisasiNonPK)} 
+            subtitle={`${persentaseSerapanNonPK.toFixed(1)}% Serapan`} 
+            color="emerald" 
+            onClick={() => onNavigate?.('realisasi')}
+            actionText="SP2D →"
+          />
           <StatCard 
             title="Sisa Anggaran Non-PK" 
             value={formatRupiah(totalSisaNonPK)} 
             subtitle={totalSisaNonPK < 0 ? "Defisit Anggaran Non-PK" : "Dana Tersisa Non-PK"} 
             color={totalSisaNonPK < 0 ? "rose" : "amber"} 
+            onClick={() => onNavigate?.('laporan')}
+            actionText="Laporan →"
           />
         </div>
         {/* Row 3: PK */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <StatCard title="Pagu Pihak Ketiga" value={formatRupiah(totalPaguPK)} subtitle="Total Anggaran PK" color="blue" />
-          <StatCard title="Realisasi Pihak Ketiga" value={formatRupiah(totalRealisasiPK)} subtitle={`${persentaseSerapanPK.toFixed(1)}% Serapan`} color="emerald" />
+          <StatCard 
+            title="Pagu Pihak Ketiga" 
+            value={formatRupiah(totalPaguPK)} 
+            subtitle="Total Anggaran PK" 
+            color="blue" 
+            onClick={() => setShowPkDetailModal(true)}
+            actionText="Lihat Rincian →"
+          />
+          <StatCard 
+            title="Realisasi Pihak Ketiga" 
+            value={formatRupiah(totalRealisasiPK)} 
+            subtitle={`${persentaseSerapanPK.toFixed(1)}% Serapan`} 
+            color="emerald" 
+            onClick={() => setShowPkDetailModal(true)}
+            actionText="Lihat Rincian →"
+          />
           <StatCard 
             title="Sisa Anggaran PK" 
             value={formatRupiah(totalSisaPK)} 
             subtitle={totalSisaPK < 0 ? "Defisit Anggaran PK" : "Dana Tersisa PK"} 
             color={totalSisaPK < 0 ? "rose" : "amber"} 
+            onClick={() => setShowPkDetailModal(true)}
+            actionText="Lihat Rincian →"
           />
         </div>
       </div>
 
       {/* Structural Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 animate-fade-in" id="stats-mini-grid">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 animate-fade-in" id="stats-mini-grid">
         <div 
           onClick={() => onNavigate?.('program', 'program')}
-          className="bg-white p-4 rounded-xl border border-slate-200 text-center hover:bg-blue-50/50 hover:border-blue-400 cursor-pointer shadow-2xs group transition-all duration-200 animate-fade-in"
+          className="bg-white p-3.5 rounded-xl border border-slate-200 text-center hover:bg-blue-50/50 hover:border-blue-400 cursor-pointer shadow-2xs group transition-all duration-200"
           title="Klik untuk langsung menuju informasi Program"
         >
           <Layers size={18} className="mx-auto text-slate-500 mb-1 group-hover:text-blue-600 transition-colors" />
@@ -611,7 +725,7 @@ export default function DashboardView({
         </div>
         <div 
           onClick={() => onNavigate?.('program', 'kegiatan')}
-          className="bg-white p-4 rounded-xl border border-slate-200 text-center hover:bg-blue-50/50 hover:border-blue-400 cursor-pointer shadow-2xs group transition-all duration-200 animate-fade-in"
+          className="bg-white p-3.5 rounded-xl border border-slate-200 text-center hover:bg-blue-50/50 hover:border-blue-400 cursor-pointer shadow-2xs group transition-all duration-200"
           title="Klik untuk langsung menuju informasi Kegiatan"
         >
           <Briefcase size={18} className="mx-auto text-slate-500 mb-1 group-hover:text-blue-600 transition-colors" />
@@ -622,7 +736,7 @@ export default function DashboardView({
         </div>
         <div 
           onClick={() => onNavigate?.('program', 'sub_kegiatan')}
-          className="bg-white p-4 rounded-xl border border-slate-200 text-center hover:bg-blue-50/50 hover:border-blue-400 cursor-pointer shadow-2xs group transition-all duration-200 animate-fade-in"
+          className="bg-white p-3.5 rounded-xl border border-slate-200 text-center hover:bg-blue-50/50 hover:border-blue-400 cursor-pointer shadow-2xs group transition-all duration-200"
           title="Klik untuk langsung menuju informasi Sub-Kegiatan"
         >
           <Layers size={18} className="mx-auto text-slate-500 mb-1 group-hover:text-blue-600 transition-colors" />
@@ -632,8 +746,19 @@ export default function DashboardView({
           </p>
         </div>
         <div 
+          onClick={() => setShowPkDetailModal(true)}
+          className="bg-white p-3.5 rounded-xl border border-amber-200 text-center hover:bg-amber-50/50 hover:border-amber-400 cursor-pointer shadow-2xs group transition-all duration-200"
+          title="Klik untuk melihat rincian informasi Belanja Pihak Ketiga"
+        >
+          <Building size={18} className="mx-auto text-amber-600 mb-1 group-hover:text-amber-700 transition-colors" />
+          <h4 className="text-amber-950 text-lg font-black">{pihakKetigas.length}</h4>
+          <p className="text-amber-800 text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1">
+            Info Pihak Ketiga <span className="text-[10px] text-amber-600 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">→</span>
+          </p>
+        </div>
+        <div 
           onClick={() => onNavigate?.('dokumen')}
-          className="bg-white p-4 rounded-xl border border-slate-200 text-center hover:bg-blue-50/50 hover:border-blue-400 cursor-pointer shadow-2xs group transition-all duration-200 animate-fade-in"
+          className="bg-white p-3.5 rounded-xl border border-slate-200 text-center hover:bg-blue-50/50 hover:border-blue-400 cursor-pointer shadow-2xs group transition-all duration-200"
           title="Klik untuk langsung menuju bagian arsip dokumen"
         >
           <FileCheck size={18} className="mx-auto text-slate-500 mb-1 group-hover:text-blue-600 transition-colors" />
@@ -1100,6 +1225,222 @@ export default function DashboardView({
                 >
                   <TrendingUp size={14} />
                   Buka di Realisasi SP2D
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL RINCIAN BELANJA PIHAK KETIGA */}
+      {showPkDetailModal && (
+        <div 
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 animate-fade-in overflow-y-auto"
+          onClick={() => setShowPkDetailModal(false)}
+        >
+          <div 
+            className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden my-auto animate-scale-up"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="p-4 sm:p-5 bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 text-white flex items-start justify-between gap-3 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-blue-600/40 text-blue-200 border border-blue-400/30 rounded-xl">
+                  <Briefcase size={22} className="text-blue-300" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-[10px] font-mono font-black tracking-widest text-amber-300 bg-amber-950/80 px-2 py-0.5 rounded-full border border-amber-600/40 uppercase">
+                      Informasi Pihak Ketiga TA {selectedYear}
+                    </span>
+                    <span className="text-[10px] bg-white/10 px-2 py-0.5 rounded text-slate-300">
+                      {pihakKetigas.length} Kontrak Terdata
+                    </span>
+                  </div>
+                  <h3 className="text-lg font-black text-white mt-1">
+                    Rincian Alokasi &amp; Realisasi Belanja Pihak Ketiga
+                  </h3>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowPkDetailModal(false)}
+                className="p-1.5 hover:bg-white/20 text-slate-300 hover:text-white rounded-lg transition cursor-pointer"
+                title="Tutup Modal"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-4 sm:p-5 space-y-4 overflow-y-auto flex-1">
+              {/* 4 Ringkasan Angka Utama */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+                <div className="bg-blue-50 border border-blue-200 p-3 rounded-xl text-left">
+                  <span className="text-[10px] text-blue-700 font-bold block uppercase tracking-wider">Total Pagu PK</span>
+                  <span className="font-mono font-black text-blue-950 text-sm mt-0.5 block">{formatRupiah(totalPaguPK)}</span>
+                  <span className="text-[10px] text-blue-600 font-medium">Alokasi Kontrak/DPA</span>
+                </div>
+                <div className="bg-emerald-50 border border-emerald-200 p-3 rounded-xl text-left">
+                  <span className="text-[10px] text-emerald-700 font-bold block uppercase tracking-wider">Realisasi SP2D</span>
+                  <span className="font-mono font-black text-emerald-950 text-sm mt-0.5 block">{formatRupiah(totalRealisasiPK)}</span>
+                  <span className="text-[10px] text-emerald-600 font-medium">Sudah Dicairkan</span>
+                </div>
+                <div className={`p-3 rounded-xl border text-left ${totalSisaPK < 0 ? 'bg-red-50 border-red-200' : 'bg-amber-50 border-amber-200'}`}>
+                  <span className={`text-[10px] font-bold block uppercase tracking-wider ${totalSisaPK < 0 ? 'text-red-700' : 'text-amber-700'}`}>
+                    Sisa Anggaran PK
+                  </span>
+                  <span className={`font-mono font-black text-sm mt-0.5 block ${totalSisaPK < 0 ? 'text-red-700' : 'text-amber-950'}`}>
+                    {formatRupiah(totalSisaPK)}
+                  </span>
+                  <span className={`text-[10px] font-medium ${totalSisaPK < 0 ? 'text-red-600' : 'text-amber-600'}`}>
+                    {totalSisaPK < 0 ? 'Defisit Anggaran' : 'Sisa Belum Cair'}
+                  </span>
+                </div>
+                <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl text-left">
+                  <span className="text-[10px] text-slate-700 font-bold block uppercase tracking-wider">Tingkat Serapan</span>
+                  <span className="font-mono font-black text-slate-900 text-sm mt-0.5 block">{persentaseSerapanPK.toFixed(1)}%</span>
+                  <div className="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden mt-1.5">
+                    <div className="bg-blue-600 h-full rounded-full" style={{ width: `${Math.min(persentaseSerapanPK, 100)}%` }} />
+                  </div>
+                </div>
+              </div>
+
+              {/* Tabel Daftar Kontrak Pihak Ketiga */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <h4 className="font-extrabold text-slate-800 text-xs flex items-center gap-1.5">
+                    <Building size={14} className="text-blue-700" />
+                    Daftar Rekanan &amp; Kontrak Belanja Pihak Ketiga ({pihakKetigas.length} Kontrak)
+                  </h4>
+                  <span className="text-[11px] text-slate-500">
+                    Data sinkron otomatis dengan menu Belanja Pihak Ketiga
+                  </span>
+                </div>
+
+                <div className="border border-slate-200 rounded-xl overflow-hidden shadow-2xs max-h-60 overflow-y-auto">
+                  <table className="w-full text-left text-[11px] border-collapse">
+                    <thead className="bg-slate-100 text-slate-600 font-bold sticky top-0 border-b border-slate-200">
+                      <tr>
+                        <th className="p-2.5 pl-3">No.</th>
+                        <th className="p-2.5">Pelaksana / Perusahaan</th>
+                        <th className="p-2.5">Sub Kegiatan &amp; Uraian</th>
+                        <th className="p-2.5 text-right">Nilai Kontrak</th>
+                        <th className="p-2.5 text-right">Realisasi SP2D</th>
+                        <th className="p-2.5 text-right">Sisa Kontrak</th>
+                        <th className="p-2.5 text-center pr-3">Serapan</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 text-slate-700">
+                      {pihakKetigas.length === 0 ? (
+                        <tr>
+                          <td colSpan={7} className="p-6 text-center text-slate-400 italic">
+                            Belum ada kontrak atau pekerjaan belanja pihak ketiga yang terdaftar untuk Tahun Anggaran {selectedYear}.
+                          </td>
+                        </tr>
+                      ) : (
+                        pihakKetigas.map((p, idx) => {
+                          const rkaMatch = rkaList.find(r => 
+                            r.kode_sub_kegiatan === p.kode_sub_kegiatan && 
+                            r.uraian_belanja === p.uraian_belanja
+                          );
+                          const rkaSumForSub = rkaList
+                            .filter(r => r.kode_sub_kegiatan === p.kode_sub_kegiatan)
+                            .reduce((acc, curr) => acc + (curr.jumlah || 0), 0);
+                          const linkedSub = subKegiatans.find(s => s.kode_sub_kegiatan === p.kode_sub_kegiatan);
+                          const paguItem = rkaMatch?.jumlah 
+                            ? rkaMatch.jumlah 
+                            : (rkaSumForSub > 0 ? rkaSumForSub : (linkedSub?.pagu || p.realisasi || 0));
+                          const realisasiItem = getPkItemRealisasi(p);
+                          const sisa = paguItem - realisasiItem;
+                          const persen = paguItem > 0 ? (realisasiItem / paguItem) * 100 : 0;
+                          return (
+                            <tr key={p.id || idx} className="hover:bg-slate-50 transition-colors">
+                              <td className="p-2.5 pl-3 font-mono text-slate-500">{idx + 1}</td>
+                              <td className="p-2.5">
+                                <span className="font-extrabold text-slate-900 block">{p.nama_pelaksana || '-'}</span>
+                                <span className="text-[10px] font-mono text-slate-500 block">No: {p.nomor_kontrak || '-'}</span>
+                              </td>
+                              <td className="p-2.5 max-w-[240px]">
+                                <span className="text-[10px] font-mono text-blue-700 bg-blue-50 px-1 py-0.5 rounded border border-blue-100 block truncate" title={p.kode_sub_kegiatan}>
+                                  {p.kode_sub_kegiatan}
+                                </span>
+                                <span className="text-slate-700 font-medium block truncate mt-0.5" title={p.uraian_belanja}>
+                                  {p.uraian_belanja || '-'}
+                                </span>
+                              </td>
+                              <td className="p-2.5 text-right font-mono font-bold text-slate-900">
+                                {formatRupiah(paguItem)}
+                              </td>
+                              <td className="p-2.5 text-right font-mono font-bold text-emerald-700">
+                                {formatRupiah(realisasiItem)}
+                              </td>
+                              <td className={`p-2.5 text-right font-mono font-bold ${sisa < 0 ? 'text-red-700' : 'text-amber-800'}`}>
+                                {formatRupiah(sisa)}
+                              </td>
+                              <td className="p-2.5 text-center pr-3">
+                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold inline-block ${
+                                  persen >= 100 
+                                    ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' 
+                                    : persen > 0 
+                                    ? 'bg-blue-100 text-blue-800 border border-blue-200'
+                                    : 'bg-slate-100 text-slate-600 border border-slate-200'
+                                }`}>
+                                  {persen.toFixed(1)}%
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Petunjuk Aksi Navigasi */}
+              <div className="bg-blue-50/70 border border-blue-200/70 p-3 rounded-xl flex items-center justify-between gap-3 text-xs text-blue-900">
+                <div className="flex items-center gap-2">
+                  <span className="text-base">💡</span>
+                  <p className="text-[11px] leading-relaxed">
+                    Untuk menambah, mengedit kontrak, atau mencocokkan rincian pembayaran SP2D dengan rekanan, silakan buka menu <b>Belanja Pihak Ketiga</b> atau <b>Realisasi SP2D</b>.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Actions Footer */}
+            <div className="p-4 bg-slate-50 border-t border-slate-200 flex flex-wrap items-center justify-between gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowPkDetailModal(false)}
+                className="px-4 py-2 bg-white hover:bg-slate-100 text-slate-700 font-bold rounded-xl border border-slate-200 transition text-xs cursor-pointer"
+              >
+                Tutup
+              </button>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowPkDetailModal(false);
+                    onNavigate?.('realisasi');
+                  }}
+                  className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl border border-slate-300 transition text-xs flex items-center gap-1.5 cursor-pointer"
+                >
+                  <TrendingUp size={14} className="text-emerald-600" />
+                  Buka Realisasi SP2D
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowPkDetailModal(false);
+                    onNavigate?.('pihakKetiga');
+                  }}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-extrabold rounded-xl shadow-xs transition text-xs flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Briefcase size={14} />
+                  Buka Menu Belanja Pihak Ketiga Lengkap →
                 </button>
               </div>
             </div>

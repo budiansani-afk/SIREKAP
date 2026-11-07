@@ -36,7 +36,8 @@ import {
   RotateCcw,
   AlertCircle,
   AlertTriangle,
-  Clock
+  Clock,
+  PowerOff
 } from 'lucide-react';
 import { auth, db } from './firebase';
 import { 
@@ -49,9 +50,11 @@ import {
   COLL_DOKUMEN, 
   COLL_LOG_AKTIVITAS, 
   COLL_PENGATURAN, 
+  COLL_PRESENCE,
   seedInitialDataIfEmpty,
   synchronizeCalculations,
-  createAuditLog
+  createAuditLog,
+  forceDisconnectSession
 } from './dbService';
 import { 
   Program, 
@@ -64,7 +67,8 @@ import {
   ActivityLog, 
   AppSettings, 
   UserRole,
-  Pengguna
+  Pengguna,
+  SesiPenggunaOnline
 } from './types';
 
 // Importing Views
@@ -78,6 +82,8 @@ import LaporanView from './components/LaporanView';
 import AnalisisView from './components/AnalisisView';
 import LogView from './components/LogView';
 import PengaturanView from './components/PengaturanView';
+import OnlineSessionsModal from './components/OnlineSessionsModal';
+import { getDeviceDetails, getClientIp } from './utils/deviceHelper';
 
 type ViewPage = 
   | "dashboard" 
@@ -175,7 +181,33 @@ export default function App() {
 
   const [totalVisits, setTotalVisits] = useState<number>(0);
   const [activeUsersCount, setActiveUsersCount] = useState<number>(1);
-  const [sessionId] = useState(() => `session_${Date.now()}_${Math.random().toString(36).substring(2)}`);
+  const [sessionId] = useState<string>(() => {
+    const saved = sessionStorage.getItem('sibiru_session_id');
+    if (saved) return saved;
+    const fresh = `session_${Date.now()}_${Math.random().toString(36).substring(2)}`;
+    sessionStorage.setItem('sibiru_session_id', fresh);
+    return fresh;
+  });
+
+  const [loginAt] = useState<number>(() => {
+    const saved = sessionStorage.getItem('sibiru_session_login_at');
+    if (saved) return Number(saved);
+    const fresh = Date.now();
+    sessionStorage.setItem('sibiru_session_login_at', String(fresh));
+    return fresh;
+  });
+
+  const [clientIp, setClientIp] = useState<string>('127.0.0.1');
+  const [onlineSessions, setOnlineSessions] = useState<SesiPenggunaOnline[]>([]);
+  const [isOnlineSessionsModalOpen, setIsOnlineSessionsModalOpen] = useState<boolean>(false);
+  const [forceDisconnectedNotice, setForceDisconnectedNotice] = useState<string | null>(null);
+
+  // Fetch client IP on mount
+  useEffect(() => {
+    getClientIp().then(ip => {
+      if (ip) setClientIp(ip);
+    }).catch(() => {});
+  }, []);
 
   // Real-time Visit session registration and Presence heartbeat
   useEffect(() => {
@@ -195,11 +227,23 @@ export default function App() {
     // 2. Presence Heartbeat Timer (every 10 seconds to keep it super fresh)
     const updatePresence = async () => {
       try {
-        await setDoc(doc(db, 'sibiru_presence', sessionId), {
+        const deviceInfo = getDeviceDetails();
+        const displayName = userDisplayName || (penggunas.find(p => p.email === user.email)?.nama) || (user.email ? user.email.split('@')[0] : 'Pengguna');
+
+        await setDoc(doc(db, COLL_PRESENCE, sessionId), {
+          id: sessionId,
           email: user.email || 'guest@sirekap_bima.com',
-          lastActive: Date.now(),
+          nama: displayName,
+          role: userRole,
+          device: deviceInfo.deviceString,
+          device_type: deviceInfo.deviceType,
+          browser: deviceInfo.browser,
+          os: deviceInfo.os,
+          ip_address: clientIp,
+          login_at: loginAt,
+          last_active: Date.now(),
           status: 'online'
-        });
+        }, { merge: true });
       } catch (err) {
         console.warn('Gagal update presensi:', err);
       }
@@ -211,7 +255,10 @@ export default function App() {
     // Clean up presence when component unmounts or user logs out / closes tab
     const handleUnload = () => {
       try {
-        deleteDoc(doc(db, 'sibiru_presence', sessionId));
+        setDoc(doc(db, COLL_PRESENCE, sessionId), {
+          status: 'logged_out',
+          last_active: Date.now()
+        }, { merge: true }).catch(() => {});
       } catch (e) {}
     };
 
@@ -220,8 +267,30 @@ export default function App() {
     return () => {
       clearInterval(presenceInterval);
       window.removeEventListener('beforeunload', handleUnload);
-      handleUnload();
     };
+  }, [user, sessionId, userRole, userDisplayName, penggunas, clientIp, loginAt]);
+
+  // Listener on current user's session document to detect forced disconnection by Administrator
+  useEffect(() => {
+    if (!user || !sessionId) return;
+
+    const unsubMySession = onSnapshot(doc(db, COLL_PRESENCE, sessionId), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (data.status === 'force_disconnected') {
+          const disconnectedBy = data.disconnected_by || 'Administrator';
+          sessionStorage.removeItem('sibiru_session_id');
+          sessionStorage.removeItem('sibiru_session_login_at');
+          signOut(auth).catch(() => {});
+          setUser(null);
+          setForceDisconnectedNotice(
+            `Koneksi akun Anda telah diputuskan oleh Administrator (${disconnectedBy}). Silakan hubungi admin atau masuk kembali jika diizinkan.`
+          );
+        }
+      }
+    });
+
+    return () => unsubMySession();
   }, [user, sessionId]);
 
   // Live Real-time Clock updating every second
@@ -408,14 +477,41 @@ export default function App() {
       console.warn('Error listening visits:', err);
     });
 
-    const unsubPresence = onSnapshot(collection(db, 'sibiru_presence'), (snap) => {
+    const unsubPresence = onSnapshot(collection(db, COLL_PRESENCE), (snap) => {
       const now = Date.now();
-      const activeDocs = snap.docs.filter(docVal => {
-        const d = docVal.data();
-        // Fallback or heartbeat validation: 30 seconds
-        return (now - (d.lastActive || 0)) < 30000;
+      const list: SesiPenggunaOnline[] = [];
+      let activeCount = 0;
+
+      snap.docs.forEach(docVal => {
+        const d = docVal.data() as any;
+        const lastActive = d.last_active || d.lastActive || 0;
+        const isOnline = (now - lastActive) < 60000 && d.status !== 'force_disconnected' && d.status !== 'logged_out';
+
+        if (isOnline) {
+          activeCount++;
+        }
+
+        list.push({
+          id: docVal.id,
+          email: d.email || 'unknown',
+          nama: d.nama || d.email || 'Pengguna',
+          role: d.role || UserRole.OPERATOR,
+          device: d.device || 'Perangkat Web',
+          device_type: d.device_type || 'desktop',
+          browser: d.browser || 'Browser',
+          os: d.os || 'OS',
+          ip_address: d.ip_address || '127.0.0.1',
+          login_at: d.login_at || lastActive,
+          last_active: lastActive,
+          status: d.status || (isOnline ? 'online' : 'idle'),
+          disconnected_by: d.disconnected_by,
+          disconnected_at: d.disconnected_at
+        });
       });
-      setActiveUsersCount(Math.max(1, activeDocs.length));
+
+      list.sort((a, b) => (b.last_active || 0) - (a.last_active || 0));
+      setOnlineSessions(list);
+      setActiveUsersCount(Math.max(1, activeCount));
     }, (err) => {
       console.warn('Error listening presence:', err);
     });
@@ -550,11 +646,35 @@ export default function App() {
     }
   };
 
-  const handleSignOut = () => {
+  const handleSignOut = async () => {
+    try {
+      if (sessionId) {
+        await setDoc(doc(db, COLL_PRESENCE, sessionId), {
+          status: 'logged_out',
+          last_active: Date.now()
+        }, { merge: true });
+      }
+    } catch (e) {}
     localStorage.removeItem('nama_pengguna_aktif');
+    sessionStorage.removeItem('sibiru_session_id');
+    sessionStorage.removeItem('sibiru_session_login_at');
     setNamaPenggunaInput('');
     setNamaPenggunaAktif('');
     signOut(auth);
+  };
+
+  // Disconnect active user session by Administrator
+  const handleDisconnectSession = async (targetSessionId: string, targetEmail: string, targetName: string) => {
+    if (userRole !== UserRole.ADMIN) {
+      showToast("Hanya Administrator yang memiliki hak memutuskan sesi pengguna.", "error");
+      return;
+    }
+    try {
+      await forceDisconnectSession(targetSessionId, user?.email || 'admin@sirekap.com', targetEmail, targetName);
+      showToast(`Koneksi sesi akun ${targetEmail} berhasil diputuskan.`, "success");
+    } catch (err: any) {
+      showToast("Gagal memutuskan sesi: " + (err?.message || String(err)), "error");
+    }
   };
 
   // Prefill login input shortcut helper
@@ -898,6 +1018,10 @@ export default function App() {
             currentUserEmail={user?.email || ''}
             onUpdateSettings={handleUpdateSettings} 
             penggunas={penggunas}
+            onlineSessions={onlineSessions}
+            currentSessionId={sessionId}
+            onDisconnectSession={handleDisconnectSession}
+            onOpenOnlineSessionsModal={() => setIsOnlineSessionsModalOpen(true)}
           />
         );
       default:
@@ -1084,14 +1208,28 @@ export default function App() {
                     <span>• Jumlah Kunjungan</span>
                     <span className="font-bold text-slate-100 font-mono">: {new Intl.NumberFormat('id-ID').format(totalVisits)} Kali</span>
                   </div>
-                  <div className="flex justify-between">
+                  <div className="flex justify-between items-center group">
                     <span>• Pengguna Aktif</span>
-                    <span className="font-bold text-emerald-400 font-mono flex items-center gap-1">
+                    <span 
+                      onClick={() => setIsOnlineSessionsModalOpen(true)}
+                      className="font-bold text-emerald-400 font-mono flex items-center gap-1 hover:text-emerald-300 hover:underline cursor-pointer transition select-none"
+                      title="Klik untuk melihat akun mana saja yang sedang masuk, perangkat, IP, durasi, dan kontrol koneksi"
+                    >
                       : {activeUsersCount} Aktif
                       <span className="w-1.5 h-1.5 rounded-full bg-[#10b981] animate-ping inline-block"></span>
+                      <span className="text-[8px] bg-emerald-500/20 text-emerald-300 px-1 py-0.2 rounded border border-emerald-500/30 group-hover:bg-emerald-500/30">Lihat</span>
                     </span>
                   </div>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => setIsOnlineSessionsModalOpen(true)}
+                  className="w-full mt-1.5 pt-1.5 border-t border-blue-950/40 text-center text-[9px] font-black uppercase tracking-wider text-orange-400 hover:text-orange-300 flex items-center justify-center gap-1 transition cursor-pointer"
+                  title="Pantau detail sesi pengguna yang sedang online"
+                >
+                  <Activity size={10} className="animate-pulse" />
+                  <span>Pantau Sesi Online ({activeUsersCount})</span>
+                </button>
               </div>
             )}
 
@@ -1178,6 +1316,39 @@ export default function App() {
                 Tutup Informasi
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Online Active Sessions Modal */}
+      <OnlineSessionsModal 
+        isOpen={isOnlineSessionsModalOpen}
+        onClose={() => setIsOnlineSessionsModalOpen(false)}
+        sessions={onlineSessions}
+        currentSessionId={sessionId}
+        currentUserRole={userRole}
+        currentUserEmail={user?.email || ''}
+        onDisconnectSession={handleDisconnectSession}
+      />
+
+      {/* Force Disconnected Notice Alert Modal */}
+      {forceDisconnectedNotice && (
+        <div className="fixed inset-0 bg-slate-900/75 backdrop-blur-xs flex items-center justify-center p-4 z-[9999] animate-fade-in antialiased">
+          <div className="bg-white rounded-2xl border border-red-200 shadow-2xl max-w-md w-full p-6 text-center space-y-4">
+            <div className="w-14 h-14 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center mx-auto border border-rose-200">
+              <PowerOff size={28} />
+            </div>
+            <h3 className="text-base font-black text-slate-800 uppercase tracking-tight">Koneksi Sesi Diputuskan</h3>
+            <p className="text-xs text-slate-600 font-semibold leading-relaxed">
+              {forceDisconnectedNotice}
+            </p>
+            <button
+              type="button"
+              onClick={() => setForceDisconnectedNotice(null)}
+              className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs uppercase tracking-wider transition shadow cursor-pointer"
+            >
+              Mengerti & Kembali ke Halaman Masuk
+            </button>
           </div>
         </div>
       )}

@@ -37,6 +37,7 @@ export const COLL_DOKUMEN = 'sibiru_dokumen';
 export const COLL_LOG_AKTIVITAS = 'sibiru_log_aktivitas';
 export const COLL_PENGGUNA = 'sibiru_pengguna';
 export const COLL_PENGATURAN = 'sibiru_pengaturan';
+export const COLL_PRESENCE = 'sibiru_presence';
 
 // Standard User-Agent / IP helper for client
 const getClientMeta = () => {
@@ -93,19 +94,79 @@ export async function syncPihakKetigaToSp2d(
   item: BelanjaPihakKetiga,
   linkedSub?: SubKegiatan,
   rkaList: RKA[] = [],
-  isDelete: boolean = false
+  isDelete: boolean = false,
+  oldItem?: BelanjaPihakKetiga
 ) {
   try {
     const sp2dId = `sp2d_pihak_ketiga_${item.id}`;
-    if (isDelete || !item.realisasi || Number(item.realisasi) <= 0) {
+
+    // A. Jika terjadi perubahan jenis belanja (uraian_belanja) atau sub kegiatan pada pihak ketiga
+    if (oldItem && (oldItem.uraian_belanja !== item.uraian_belanja || oldItem.kode_sub_kegiatan !== item.kode_sub_kegiatan)) {
+      const oldUraianClean = (oldItem.uraian_belanja || '').trim().toLowerCase();
+      const qExisting = await getDocs(
+        query(
+          collection(db, COLL_REALISASI),
+          where("kode_sub_kegiatan", "==", oldItem.kode_sub_kegiatan)
+        )
+      ).catch(() => null);
+
+      if (qExisting && !qExisting.empty) {
+        for (const docSnap of qExisting.docs) {
+          const rData = docSnap.data() as Realisasi;
+          const isDirectLink = rData.id_pihak_ketiga === item.id || docSnap.id === sp2dId;
+          const isUraianMatch = (rData.uraian_belanja || '').trim().toLowerCase() === oldUraianClean;
+
+          if (isDirectLink || isUraianMatch) {
+            const matchedRkaNew = rkaList.find(r => 
+              r.kode_sub_kegiatan === item.kode_sub_kegiatan && 
+              r.uraian_belanja.trim().toLowerCase() === (item.uraian_belanja || '').trim().toLowerCase()
+            );
+            const paguAmt = matchedRkaNew ? matchedRkaNew.jumlah : (linkedSub?.pagu || 0);
+            const nom = rData.nominal_realisasi || 0;
+            const persentase = paguAmt > 0 ? (nom / paguAmt) * 100 : 0;
+
+            await updateDoc(doc(db, COLL_REALISASI, docSnap.id), {
+              kode_sub_kegiatan: item.kode_sub_kegiatan,
+              kode_program: linkedSub?.kode_program || item.kode_program || rData.kode_program,
+              kode_kegiatan: linkedSub?.kode_kegiatan || item.kode_kegiatan || rData.kode_kegiatan,
+              uraian_belanja: item.uraian_belanja || 'Belanja Pihak Ketiga',
+              pagu_anggaran_terpantau: paguAmt,
+              persentase_realisasi: parseFloat(persentase.toFixed(2)),
+              sisa_anggaran: paguAmt - nom,
+              id_pihak_ketiga: item.id
+            }).catch(e => console.warn("Failed updating linked SP2D on uraian change:", e));
+          }
+        }
+      }
+    }
+
+    // B. Handle Hapus (Deletion)
+    if (isDelete) {
       const sp2dDocRef = doc(db, COLL_REALISASI, sp2dId);
       const snap = await getDoc(sp2dDocRef).catch(() => null);
       if (snap && snap.exists()) {
         await deleteDoc(sp2dDocRef).catch(err => console.warn("Notice: gagal menghapus sp2d linked:", err));
       }
+
+      const qLinked = await getDocs(
+        query(
+          collection(db, COLL_REALISASI),
+          where("id_pihak_ketiga", "==", item.id)
+        )
+      ).catch(() => null);
+
+      if (qLinked && !qLinked.empty) {
+        for (const docSnap of qLinked.docs) {
+          if (docSnap.id === sp2dId) continue;
+          await updateDoc(doc(db, COLL_REALISASI, docSnap.id), {
+            id_pihak_ketiga: null
+          }).catch(e => console.warn("Failed unlinking SP2D:", e));
+        }
+      }
       return;
     }
 
+    // C. Handle Tambah / Update Belanja Pihak Ketiga
     const matchedRka = rkaList.find(r => 
       r.kode_sub_kegiatan === item.kode_sub_kegiatan && 
       (r.uraian_belanja.trim().toLowerCase() === (item.uraian_belanja || '').trim().toLowerCase())
@@ -117,26 +178,55 @@ export async function syncPihakKetigaToSp2d(
     const bulan = getNamaBulanFromDate(item.tanggal);
     const tahun = item.tahun || (item.tanggal ? new Date(item.tanggal).getFullYear() : 2026);
 
-    const sp2dPayload: Realisasi = {
-      id: sp2dId,
-      tanggal: item.tanggal || new Date().toISOString().substring(0, 10),
-      bulan: bulan,
-      tahun: tahun,
-      kode_program: linkedSub?.kode_program || item.kode_program || '',
-      kode_kegiatan: linkedSub?.kode_kegiatan || item.kode_kegiatan || '',
-      kode_sub_kegiatan: item.kode_sub_kegiatan,
-      uraian_belanja: item.uraian_belanja || 'Belanja Pihak Ketiga',
-      nominal_realisasi: nominal,
-      persentase_realisasi: parseFloat(persentase.toFixed(2)),
-      sisa_anggaran: sisa,
-      pagu_anggaran_terpantau: paguAmt,
-      keterangan: `[Belanja Pihak Ketiga] ${item.nama_pelaksana ? item.nama_pelaksana + ' | ' : ''}Kontrak: ${item.nomor_kontrak || '-'}${item.catatan ? ' | ' + item.catatan : ''}`,
-      bukti_transaksi: item.foto_kegiatan || undefined,
-      bukti_transaksi_public_id: item.foto_kegiatan_public_id || undefined,
-      id_pihak_ketiga: item.id
-    };
+    // Periksa apakah ada SP2D kustom yang terhubung ke item.id selain sp2dId
+    const qCustomSp2d = await getDocs(
+      query(
+        collection(db, COLL_REALISASI),
+        where("id_pihak_ketiga", "==", item.id)
+      )
+    ).catch(() => null);
 
-    await setDoc(doc(db, COLL_REALISASI, sp2dId), sp2dPayload, { merge: true });
+    const customDocs = qCustomSp2d ? qCustomSp2d.docs.filter(d => d.id !== sp2dId) : [];
+
+    if (customDocs.length > 0) {
+      // Ada SP2D kustom yang dibuat pengguna di menu Realisasi SP2D
+      for (const cDoc of customDocs) {
+        await updateDoc(doc(db, COLL_REALISASI, cDoc.id), {
+          kode_sub_kegiatan: item.kode_sub_kegiatan,
+          uraian_belanja: item.uraian_belanja || 'Belanja Pihak Ketiga',
+          pagu_anggaran_terpantau: paguAmt
+        }).catch(e => console.warn("Update custom SP2D linked warning:", e));
+      }
+    } else {
+      // SP2D bawaan otomatis
+      if (nominal > 0) {
+        const sp2dPayload: Realisasi = {
+          id: sp2dId,
+          tanggal: item.tanggal || new Date().toISOString().substring(0, 10),
+          bulan: bulan,
+          tahun: tahun,
+          kode_program: linkedSub?.kode_program || item.kode_program || '',
+          kode_kegiatan: linkedSub?.kode_kegiatan || item.kode_kegiatan || '',
+          kode_sub_kegiatan: item.kode_sub_kegiatan,
+          uraian_belanja: item.uraian_belanja || 'Belanja Pihak Ketiga',
+          nominal_realisasi: nominal,
+          persentase_realisasi: parseFloat(persentase.toFixed(2)),
+          sisa_anggaran: sisa,
+          pagu_anggaran_terpantau: paguAmt,
+          keterangan: `[Belanja Pihak Ketiga] ${item.nama_pelaksana ? item.nama_pelaksana + ' | ' : ''}Kontrak: ${item.nomor_kontrak || '-'}${item.catatan ? ' | ' + item.catatan : ''}`,
+          bukti_transaksi: item.foto_kegiatan || undefined,
+          bukti_transaksi_public_id: item.foto_kegiatan_public_id || undefined,
+          id_pihak_ketiga: item.id
+        };
+        await setDoc(doc(db, COLL_REALISASI, sp2dId), sp2dPayload, { merge: true });
+      } else {
+        const sp2dDocRef = doc(db, COLL_REALISASI, sp2dId);
+        const snap = await getDoc(sp2dDocRef).catch(() => null);
+        if (snap && snap.exists()) {
+          await deleteDoc(sp2dDocRef).catch(() => null);
+        }
+      }
+    }
   } catch (err) {
     console.warn("syncPihakKetigaToSp2d warning:", err);
   }
@@ -145,24 +235,59 @@ export async function syncPihakKetigaToSp2d(
 // Sinkronisasi Realisasi SP2D ke Belanja Pihak Ketiga
 export async function syncSp2dToPihakKetiga(
   real: Realisasi,
-  isDelete: boolean = false
+  isDelete: boolean = false,
+  oldReal?: Realisasi
 ) {
   try {
-    // 1. Jika terhubung langsung via id_pihak_ketiga
+    const cleanRealUraian = (real.uraian_belanja || '').trim().toLowerCase();
+    const cleanOldUraian = (oldReal?.uraian_belanja || '').trim().toLowerCase();
+
+    // A. Jika terjadi perubahan jenis belanja (uraian_belanja) pada SP2D
+    if (oldReal && oldReal.uraian_belanja !== real.uraian_belanja) {
+      const targetPksToRename: string[] = [];
+      if (real.id_pihak_ketiga) {
+        targetPksToRename.push(real.id_pihak_ketiga);
+      }
+      if (cleanOldUraian) {
+        const qPkOld = await getDocs(
+          query(
+            collection(db, COLL_BELANJA_PIHAK_KETIGA),
+            where("kode_sub_kegiatan", "==", oldReal.kode_sub_kegiatan || real.kode_sub_kegiatan)
+          )
+        ).catch(() => null);
+
+        if (qPkOld && !qPkOld.empty) {
+          qPkOld.docs.forEach(d => {
+            const pkUraian = (d.data().uraian_belanja || '').trim().toLowerCase();
+            if (pkUraian === cleanOldUraian) {
+              if (!targetPksToRename.includes(d.id)) {
+                targetPksToRename.push(d.id);
+              }
+            }
+          });
+        }
+      }
+
+      for (const pkId of targetPksToRename) {
+        await updateDoc(doc(db, COLL_BELANJA_PIHAK_KETIGA, pkId), {
+          uraian_belanja: real.uraian_belanja.trim(),
+          kode_sub_kegiatan: real.kode_sub_kegiatan
+        }).catch(e => console.warn("Rename pihak ketiga from SP2D warning:", e));
+      }
+    }
+
+    // B. Cari semua Pihak Ketiga yang relevan untuk kalkulasi ulang realisasinya
+    const targetPkDocs: { id: string; uraian_belanja: string; kode_sub_kegiatan: string }[] = [];
+
     if (real.id_pihak_ketiga) {
       const pkRef = doc(db, COLL_BELANJA_PIHAK_KETIGA, real.id_pihak_ketiga);
       const pkSnap = await getDoc(pkRef).catch(() => null);
       if (pkSnap && pkSnap.exists()) {
-        await updateDoc(pkRef, {
-          realisasi: isDelete ? 0 : real.nominal_realisasi,
-          foto_kegiatan: real.bukti_transaksi || '',
-          foto_kegiatan_public_id: real.bukti_transaksi_public_id || ''
-        }).catch(err => console.warn("Failed updating pihak ketiga by id:", err));
+        const d = pkSnap.data();
+        targetPkDocs.push({ id: pkSnap.id, uraian_belanja: d.uraian_belanja || real.uraian_belanja, kode_sub_kegiatan: d.kode_sub_kegiatan || real.kode_sub_kegiatan });
       }
-      return;
     }
 
-    // 2. Jika tidak ada id_pihak_ketiga langsung, cari kecocokan sub kegiatan & uraian belanja
     const qPk = await getDocs(
       query(
         collection(db, COLL_BELANJA_PIHAK_KETIGA),
@@ -171,39 +296,86 @@ export async function syncSp2dToPihakKetiga(
     ).catch(() => null);
 
     if (qPk && !qPk.empty) {
-      const cleanRealUraian = (real.uraian_belanja || '').trim().toLowerCase();
-      const matchedDoc = qPk.docs.find(d => {
-        const u = (d.data().uraian_belanja || '').trim().toLowerCase();
-        return u === cleanRealUraian || u.includes(cleanRealUraian) || cleanRealUraian.includes(u);
+      qPk.docs.forEach(d => {
+        const pkData = d.data();
+        const u = (pkData.uraian_belanja || '').trim().toLowerCase();
+        if (u === cleanRealUraian || (cleanOldUraian && u === cleanOldUraian)) {
+          if (!targetPkDocs.some(t => t.id === d.id)) {
+            targetPkDocs.push({ id: d.id, uraian_belanja: pkData.uraian_belanja, kode_sub_kegiatan: pkData.kode_sub_kegiatan });
+          }
+        }
       });
+    }
 
-      if (matchedDoc) {
-        // Hitung total realisasi SP2D untuk pihak ketiga ini
-        const qAllReal = await getDocs(
-          query(
-            collection(db, COLL_REALISASI),
-            where("kode_sub_kegiatan", "==", real.kode_sub_kegiatan)
-          )
-        ).catch(() => null);
+    // C. Untuk setiap target Pihak Ketiga, hitung total akumulasi SP2D yang aktif
+    if (targetPkDocs.length > 0) {
+      const qAllReal = await getDocs(
+        query(
+          collection(db, COLL_REALISASI),
+          where("kode_sub_kegiatan", "==", real.kode_sub_kegiatan)
+        )
+      ).catch(() => null);
 
-        let totalForMatched = 0;
-        if (qAllReal && !qAllReal.empty) {
-          qAllReal.docs.forEach(docSnap => {
-            const d = docSnap.data() as Realisasi;
-            if (isDelete && docSnap.id === real.id) return;
-            const u = (d.uraian_belanja || '').trim().toLowerCase();
-            if (u === cleanRealUraian || u.includes(cleanRealUraian) || cleanRealUraian.includes(u)) {
-              totalForMatched += (d.nominal_realisasi || 0);
+      const allRealList: { id: string; data: Realisasi }[] = [];
+      if (qAllReal && !qAllReal.empty) {
+        qAllReal.docs.forEach(d => {
+          allRealList.push({ id: d.id, data: d.data() as Realisasi });
+        });
+      }
+
+      for (const targetPk of targetPkDocs) {
+        const targetUraianClean = (targetPk.uraian_belanja || real.uraian_belanja).trim().toLowerCase();
+        let totalRealisasi = 0;
+        let lastFoto = '';
+        let lastFotoId = '';
+
+        allRealList.forEach(({ id: rId, data: rData }) => {
+          if (isDelete && rId === real.id) return;
+
+          const isCurrentDoc = rId === real.id;
+          const currentNominal = isCurrentDoc ? real.nominal_realisasi : (rData.nominal_realisasi || 0);
+          const currentUraian = (isCurrentDoc ? real.uraian_belanja : (rData.uraian_belanja || '')).trim().toLowerCase();
+          const currentPihakId = isCurrentDoc ? real.id_pihak_ketiga : rData.id_pihak_ketiga;
+
+          const isDirectLink = currentPihakId === targetPk.id || rId === `sp2d_pihak_ketiga_${targetPk.id}`;
+          const isUraianMatch = currentUraian === targetUraianClean || currentUraian === cleanRealUraian;
+
+          if (isDirectLink || isUraianMatch) {
+            totalRealisasi += Number(currentNominal) || 0;
+            if (isCurrentDoc && real.bukti_transaksi) {
+              lastFoto = real.bukti_transaksi;
+              lastFotoId = real.bukti_transaksi_public_id || '';
+            } else if (rData.bukti_transaksi) {
+              lastFoto = rData.bukti_transaksi;
+              lastFotoId = rData.bukti_transaksi_public_id || '';
             }
-          });
-        }
-        if (!isDelete && !qAllReal?.docs.some(d => d.id === real.id)) {
-          totalForMatched += real.nominal_realisasi;
+          }
+        });
+
+        if (!isDelete && !allRealList.some(r => r.id === real.id)) {
+          const isDirectLink = real.id_pihak_ketiga === targetPk.id || real.id === `sp2d_pihak_ketiga_${targetPk.id}`;
+          const isUraianMatch = cleanRealUraian === targetUraianClean;
+          if (isDirectLink || isUraianMatch) {
+            totalRealisasi += Number(real.nominal_realisasi) || 0;
+            if (real.bukti_transaksi) {
+              lastFoto = real.bukti_transaksi;
+              lastFotoId = real.bukti_transaksi_public_id || '';
+            }
+          }
         }
 
-        await updateDoc(doc(db, COLL_BELANJA_PIHAK_KETIGA, matchedDoc.id), {
-          realisasi: totalForMatched
-        }).catch(err => console.warn("Failed updating pihak ketiga realisasi:", err));
+        const updatePayload: any = {
+          realisasi: totalRealisasi,
+          uraian_belanja: real.uraian_belanja.trim()
+        };
+        if (lastFoto) {
+          updatePayload.foto_kegiatan = lastFoto;
+          updatePayload.foto_kegiatan_public_id = lastFotoId;
+        }
+
+        await updateDoc(doc(db, COLL_BELANJA_PIHAK_KETIGA, targetPk.id), updatePayload).catch(err => {
+          console.warn("Failed updating pihak ketiga realisasi & uraian:", err);
+        });
       }
     }
   } catch (err) {
@@ -217,7 +389,8 @@ export async function syncRkaChangesToAll(
   oldUraian: string,
   newSubKeg: string,
   newUraian: string,
-  newJumlah: number
+  newJumlah: number,
+  isDelete: boolean = false
 ) {
   try {
     const cleanOldUraian = oldUraian.trim().toLowerCase();
@@ -236,14 +409,22 @@ export async function syncRkaChangesToAll(
         const d = rDoc.data() as Realisasi;
         if ((d.uraian_belanja || '').trim().toLowerCase() === cleanOldUraian) {
           const nominal = d.nominal_realisasi || 0;
-          const persentase = newJumlah > 0 ? (nominal / newJumlah) * 100 : 0;
-          await updateDoc(doc(db, COLL_REALISASI, rDoc.id), {
-            kode_sub_kegiatan: newSubKeg,
-            uraian_belanja: cleanNewUraian,
-            pagu_anggaran_terpantau: newJumlah,
-            persentase_realisasi: parseFloat(persentase.toFixed(2)),
-            sisa_anggaran: newJumlah - nominal
-          }).catch(e => console.warn("Update realisasi after RKA change warning:", e));
+          if (isDelete) {
+            await updateDoc(doc(db, COLL_REALISASI, rDoc.id), {
+              pagu_anggaran_terpantau: 0,
+              persentase_realisasi: 0,
+              sisa_anggaran: 0 - nominal
+            }).catch(e => console.warn("Update realisasi after RKA deletion warning:", e));
+          } else {
+            const persentase = newJumlah > 0 ? (nominal / newJumlah) * 100 : 0;
+            await updateDoc(doc(db, COLL_REALISASI, rDoc.id), {
+              kode_sub_kegiatan: newSubKeg,
+              uraian_belanja: cleanNewUraian,
+              pagu_anggaran_terpantau: newJumlah,
+              persentase_realisasi: parseFloat(persentase.toFixed(2)),
+              sisa_anggaran: newJumlah - nominal
+            }).catch(e => console.warn("Update realisasi after RKA change warning:", e));
+          }
         }
       }
     }
@@ -260,15 +441,44 @@ export async function syncRkaChangesToAll(
       for (const pkDoc of qPk.docs) {
         const d = pkDoc.data() as BelanjaPihakKetiga;
         if ((d.uraian_belanja || '').trim().toLowerCase() === cleanOldUraian) {
-          await updateDoc(doc(db, COLL_BELANJA_PIHAK_KETIGA, pkDoc.id), {
-            kode_sub_kegiatan: newSubKeg,
-            uraian_belanja: cleanNewUraian
-          }).catch(e => console.warn("Update pihak ketiga after RKA change warning:", e));
+          if (!isDelete) {
+            await updateDoc(doc(db, COLL_BELANJA_PIHAK_KETIGA, pkDoc.id), {
+              kode_sub_kegiatan: newSubKeg,
+              uraian_belanja: cleanNewUraian
+            }).catch(e => console.warn("Update pihak ketiga after RKA change warning:", e));
+          }
         }
       }
     }
   } catch (err) {
     console.warn("syncRkaChangesToAll warning:", err);
+  }
+}
+
+// Sinkronisasi jika kode sub kegiatan diganti
+export async function syncSubKegiatanCodeChangeToAll(oldKode: string, newKode: string) {
+  if (!oldKode || !newKode || oldKode === newKode) return;
+  try {
+    const qRka = await getDocs(query(collection(db, COLL_RKA), where("kode_sub_kegiatan", "==", oldKode))).catch(() => null);
+    if (qRka && !qRka.empty) {
+      for (const docSnap of qRka.docs) {
+        await updateDoc(doc(db, COLL_RKA, docSnap.id), { kode_sub_kegiatan: newKode }).catch(() => null);
+      }
+    }
+    const qReal = await getDocs(query(collection(db, COLL_REALISASI), where("kode_sub_kegiatan", "==", oldKode))).catch(() => null);
+    if (qReal && !qReal.empty) {
+      for (const docSnap of qReal.docs) {
+        await updateDoc(doc(db, COLL_REALISASI, docSnap.id), { kode_sub_kegiatan: newKode }).catch(() => null);
+      }
+    }
+    const qPk = await getDocs(query(collection(db, COLL_BELANJA_PIHAK_KETIGA), where("kode_sub_kegiatan", "==", oldKode))).catch(() => null);
+    if (qPk && !qPk.empty) {
+      for (const docSnap of qPk.docs) {
+        await updateDoc(doc(db, COLL_BELANJA_PIHAK_KETIGA, docSnap.id), { kode_sub_kegiatan: newKode }).catch(() => null);
+      }
+    }
+  } catch (e) {
+    console.warn("syncSubKegiatanCodeChangeToAll warning:", e);
   }
 }
 
@@ -616,3 +826,30 @@ export async function seedInitialDataIfEmpty() {
     console.warn("Notice during initial data check/cleanup:", error);
   }
 }
+
+/**
+ * Force disconnects an active user session by Administrator
+ */
+export async function forceDisconnectSession(
+  sessionId: string,
+  adminEmail: string,
+  targetEmail: string,
+  targetName?: string
+): Promise<void> {
+  const sessionRef = doc(db, COLL_PRESENCE, sessionId);
+  await updateDoc(sessionRef, {
+    status: 'force_disconnected',
+    disconnected_by: adminEmail,
+    disconnected_at: Date.now()
+  });
+
+  await createAuditLog(
+    adminEmail,
+    'ADMIN',
+    `PUTUSKAN KONEKSI PENGGUNA (${targetEmail})`,
+    'MANAJEMEN_SESI',
+    { sessionId, targetEmail, targetName },
+    { status: 'FORCE_DISCONNECTED', disconnected_by: adminEmail, disconnected_at: new Date().toISOString() }
+  );
+}
+
