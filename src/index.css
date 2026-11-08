@@ -100,6 +100,18 @@
     margin-bottom: 2rem !important;
   }
 
+  #kop-surat img {
+    display: inline-block !important;
+    visibility: visible !important;
+    width: 64px !important;
+    height: 64px !important;
+    max-width: 64px !important;
+    max-height: 64px !important;
+    object-fit: contain !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
   #report-centered-header {
     page-break-inside: avoid !important;
     break-inside: avoid !important;

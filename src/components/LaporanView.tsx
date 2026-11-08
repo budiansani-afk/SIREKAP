@@ -1,5 +1,7 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import * as XLSX from 'xlsx';
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas-pro';
 import { 
   Printer, 
   FileSpreadsheet, 
@@ -9,7 +11,13 @@ import {
   CheckCircle,
   TrendingDown,
   Building,
-  Activity
+  Activity,
+  Sliders,
+  Maximize2,
+  FileDown,
+  Loader2,
+  Compass,
+  FileCheck
 } from 'lucide-react';
 import { Program, Kegiatan, SubKegiatan, Realisasi, BelanjaPihakKetiga, AppSettings, UserRole, ActivityLog, RKA } from '../types';
 import { formatRupiah, formatPercent } from '../utils/helpers';
@@ -72,6 +80,52 @@ export default function LaporanView({
   const [selectedMonth, setSelectedMonth] = useState<string>("Semua");
   const [selectedSubKegFilter, setSelectedSubKegFilter] = useState<string>("Semua");
   const [showPdfModal, setShowPdfModal] = useState(false);
+  const [pdfPaperSize, setPdfPaperSize] = useState<'A4' | 'F4' | 'Letter' | 'Legal' | 'A3'>('A4');
+  const [pdfOrientation, setPdfOrientation] = useState<'landscape' | 'portrait'>('landscape');
+  const [pdfScale, setPdfScale] = useState<number>(100);
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const [logoBase64, setLogoBase64] = useState<string>('/logo_kab_bima.png');
+
+  // Pre-load and convert logo to Base64 to guarantee 100% reliable export in html2canvas and printing
+  useEffect(() => {
+    let isMounted = true;
+    const loadLogoAsBase64 = async () => {
+      const targetUrl = settings?.logo_instansi && !settings.logo_instansi.includes('logo_sibiru') 
+        ? settings.logo_instansi 
+        : '/logo_kab_bima.png';
+
+      try {
+        const response = await fetch(targetUrl);
+        if (!response.ok) throw new Error("Gagal mengambil logo");
+        const blob = await response.blob();
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          if (isMounted && typeof reader.result === 'string') {
+            setLogoBase64(reader.result);
+          }
+        };
+        reader.readAsDataURL(blob);
+      } catch (err) {
+        // Fallback ke aset lokal yang pasti ada
+        try {
+          const fallbackRes = await fetch('/logo_kab_bima.png');
+          const fallbackBlob = await fallbackRes.blob();
+          const fallbackReader = new FileReader();
+          fallbackReader.onloadend = () => {
+            if (isMounted && typeof fallbackReader.result === 'string') {
+              setLogoBase64(fallbackReader.result);
+            }
+          };
+          fallbackReader.readAsDataURL(fallbackBlob);
+        } catch (fallbackErr) {
+          if (isMounted) setLogoBase64('/logo_kab_bima.png');
+        }
+      }
+    };
+
+    loadLogoAsBase64();
+    return () => { isMounted = false; };
+  }, [settings?.logo_instansi]);
 
   const monthsList = [
     "Januari", "Februari", "Maret", "April", "Mei", "Juni", 
@@ -338,8 +392,151 @@ export default function LaporanView({
     return `SIREKAP/PERTANAHAN/${urutanJenis}/${seqStr}/${currentMonthCode}/${currentYearCode}`;
   }, [currentSeq, urutanJenis, currentMonthCode, currentYearCode]);
 
+  // Dynamic CSS @page injection for native browser print orientation & paper sizing
+  const updatePrintPageStyle = (paperSize: string, orientation: string) => {
+    let styleEl = document.getElementById('dynamic-page-size-style');
+    if (!styleEl) {
+      styleEl = document.createElement('style');
+      styleEl.id = 'dynamic-page-size-style';
+      document.head.appendChild(styleEl);
+    }
+    const paperSizes: Record<string, string> = {
+      A4: 'A4',
+      F4: '215mm 330mm',
+      Letter: 'letter',
+      Legal: 'legal',
+      A3: 'A3'
+    };
+    const sizeValue = paperSizes[paperSize] || 'A4';
+    styleEl.textContent = `@page { size: ${sizeValue} ${orientation}; margin: 8mm; }`;
+  };
+
+  // Direct PDF binary file generation & download using html2canvas & jsPDF
+  const handleDownloadDirectPdf = async () => {
+    const element = document.getElementById('formal-print-sheet');
+    if (!element) return;
+
+    setIsGeneratingPdf(true);
+    try {
+      // Record audit log
+      try {
+        await createAuditLog(
+          currentUserEmail || "Guest User",
+          currentUserRole || "Pimpinan",
+          "EKSPOR_PDF",
+          "LAPORAN",
+          null,
+          {
+            jenis_laporan: selectedLaporan,
+            kode_dokumen: currentDocCode,
+            judul_laporan: reportTitle,
+            ukuran_kertas: pdfPaperSize,
+            orientasi: pdfOrientation,
+            skala: `${pdfScale}%`,
+            waktu_cetak: new Date().toISOString(),
+            data_rows_hash: currentReportContentSignature,
+            seq: currentSeq
+          }
+        );
+      } catch (err) {
+        console.warn("Gagal mencatat log ekspor:", err);
+      }
+
+      // Capture element to canvas
+      const canvas = await html2canvas(element, {
+        scale: 2,
+        useCORS: true,
+        allowTaint: true,
+        logging: false,
+        backgroundColor: '#ffffff'
+      });
+
+      const paperDimensions: Record<string, [number, number]> = {
+        A4: [210, 297],
+        F4: [215, 330],
+        Letter: [215.9, 279.4],
+        Legal: [215.9, 355.6],
+        A3: [297, 420]
+      };
+
+      const baseDim = paperDimensions[pdfPaperSize] || [210, 297];
+      const pageWidth = pdfOrientation === 'landscape' ? baseDim[1] : baseDim[0];
+      const pageHeight = pdfOrientation === 'landscape' ? baseDim[0] : baseDim[1];
+
+      const margin = 8; // 8mm margin
+      const printableWidth = pageWidth - (margin * 2);
+      const printableHeight = pageHeight - (margin * 2);
+
+      const scaleFactor = pdfScale / 100;
+      const contentWidthMm = printableWidth * scaleFactor;
+      const contentHeightMm = (canvas.height / canvas.width) * contentWidthMm;
+
+      const pdf = new jsPDF({
+        orientation: pdfOrientation,
+        unit: 'mm',
+        format: [pageWidth, pageHeight],
+        compress: true
+      });
+
+      const pixelsPerMm = canvas.width / contentWidthMm;
+      const pageCanvasHeight = printableHeight * pixelsPerMm;
+
+      if (contentHeightMm <= printableHeight) {
+        const imgData = canvas.toDataURL('image/jpeg', 0.95);
+        const xPos = margin + Math.max(0, (printableWidth - contentWidthMm) / 2);
+        pdf.addImage(imgData, 'JPEG', xPos, margin, contentWidthMm, contentHeightMm, undefined, 'FAST');
+      } else {
+        let remainingHeight = canvas.height;
+        let sourceY = 0;
+        let pageIndex = 0;
+
+        while (remainingHeight > 0) {
+          if (pageIndex > 0) {
+            pdf.addPage([pageWidth, pageHeight], pdfOrientation);
+          }
+
+          const sliceHeight = Math.min(pageCanvasHeight, remainingHeight);
+          const pageCanvas = document.createElement('canvas');
+          pageCanvas.width = canvas.width;
+          pageCanvas.height = sliceHeight;
+
+          const ctx = pageCanvas.getContext('2d');
+          if (ctx) {
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
+            ctx.drawImage(
+              canvas,
+              0, sourceY, canvas.width, sliceHeight,
+              0, 0, canvas.width, sliceHeight
+            );
+
+            const sliceData = pageCanvas.toDataURL('image/jpeg', 0.95);
+            const sliceHeightMm = sliceHeight / pixelsPerMm;
+            const xPos = margin + Math.max(0, (printableWidth - contentWidthMm) / 2);
+            pdf.addImage(sliceData, 'JPEG', xPos, margin, contentWidthMm, sliceHeightMm, undefined, 'FAST');
+          }
+
+          sourceY += sliceHeight;
+          remainingHeight -= sliceHeight;
+          pageIndex++;
+        }
+      }
+
+      const cleanTitle = selectedLaporan.replace(/_/g, '_');
+      pdf.save(`SIREKAP_${cleanTitle}_${selectedYear}.pdf`);
+      setShowPdfModal(false);
+    } catch (error) {
+      console.error("Gagal mengekspor file PDF:", error);
+      updatePrintPageStyle(pdfPaperSize, pdfOrientation);
+      window.print();
+    } finally {
+      setIsGeneratingPdf(false);
+    }
+  };
+
   // Handle direct print trigger
   const handlePrint = async () => {
+    updatePrintPageStyle(pdfPaperSize, pdfOrientation);
     try {
       await createAuditLog(
         currentUserEmail || "Guest User",
@@ -351,6 +548,9 @@ export default function LaporanView({
           jenis_laporan: selectedLaporan,
           kode_dokumen: currentDocCode,
           judul_laporan: reportTitle,
+          ukuran_kertas: pdfPaperSize,
+          orientasi: pdfOrientation,
+          skala: `${pdfScale}%`,
           waktu_cetak: new Date().toISOString(),
           data_rows_hash: currentReportContentSignature,
           seq: currentSeq
@@ -362,28 +562,34 @@ export default function LaporanView({
     window.print();
   };
 
-  const handleExportPdf = async () => {
+  const handleBrowserPrintFromModal = async () => {
+    updatePrintPageStyle(pdfPaperSize, pdfOrientation);
     try {
       await createAuditLog(
         currentUserEmail || "Guest User",
         currentUserRole || "Pimpinan",
-        "EKSPOR_PDF",
+        "CETAK_LAPORAN",
         "LAPORAN",
         null,
         {
           jenis_laporan: selectedLaporan,
           kode_dokumen: currentDocCode,
           judul_laporan: reportTitle,
+          ukuran_kertas: pdfPaperSize,
+          orientasi: pdfOrientation,
+          skala: `${pdfScale}%`,
           waktu_cetak: new Date().toISOString(),
           data_rows_hash: currentReportContentSignature,
           seq: currentSeq
         }
       );
     } catch (err) {
-      console.warn("Failed recording export history:", err);
+      console.warn("Failed recording print history:", err);
     }
-    window.print();
     setShowPdfModal(false);
+    setTimeout(() => {
+      window.print();
+    }, 150);
   };
 
   // Aggregate totals
@@ -392,14 +598,15 @@ export default function LaporanView({
   const totalSisaSum = useMemo(() => reportRows.reduce((s, r) => s + r.sisa, 0), [reportRows]);
   const avgPersenSum = useMemo(() => totalPaguSum > 0 ? (totalRealisasiSum / totalPaguSum) * 100 : 0, [totalPaguSum, totalRealisasiSum]);
 
-  // Export to Excel
+  // Export to Excel with 'NO' column as first column
   const handleExportExcel = () => {
     let wsData: any[][];
 
     if (selectedLaporan === "belanja_pihak_ketiga") {
       wsData = [
-        ['NO. KONTRAK', 'TANGGAL', 'PELAKSANA / REKANAN', 'SUB-KEGIATAN', 'URAIAN BELANJA / PEKERJAAN', 'MASA KONTRAK', 'PAGU ANGGARAN (Rp)', 'REALISASI SP2D (Rp)', 'SISA ANGGARAN (Rp)', 'RASIO SERAPAN'],
-        ...reportRows.map(r => [
+        ['NO', 'NO. KONTRAK', 'TANGGAL', 'PELAKSANA / REKANAN', 'SUB-KEGIATAN', 'URAIAN BELANJA / PEKERJAAN', 'MASA KONTRAK', 'PAGU ANGGARAN (Rp)', 'REALISASI SP2D (Rp)', 'SISA ANGGARAN (Rp)', 'RASIO SERAPAN'],
+        ...reportRows.map((r, idx) => [
+          idx + 1,
           r.kode,
           r.tanggal || '-',
           r.rekanan || '-',
@@ -411,13 +618,13 @@ export default function LaporanView({
           r.sisa,
           `${r.persen}%`
         ]),
-        ['TOTAL', '', '', '', '', '', totalPaguSum, totalRealisasiSum, totalSisaSum, `${avgPersenSum.toFixed(2)}%`]
+        ['TOTAL', '', '', '', '', '', '', totalPaguSum, totalRealisasiSum, totalSisaSum, `${avgPersenSum.toFixed(2)}%`]
       ];
     } else {
       wsData = [
-        ['KODE/TANGGAL', 'URAIAN KEGIATAN', 'PAGU (Rp)', 'REALISASI (Rp)', 'SISA (Rp)', 'PERSENTASE'],
-        ...reportRows.map(r => [r.kode, r.nama, r.pagu, r.realisasi, r.sisa, `${r.persen}%`]),
-        ['TOTAL', '', totalPaguSum, totalRealisasiSum, totalSisaSum, `${avgPersenSum.toFixed(2)}%`]
+        ['NO', 'KODE/TANGGAL', 'URAIAN KEGIATAN', 'PAGU (Rp)', 'REALISASI (Rp)', 'SISA (Rp)', 'PERSENTASE'],
+        ...reportRows.map((r, idx) => [idx + 1, r.kode, r.nama, r.pagu, r.realisasi, r.sisa, `${r.persen}%`]),
+        ['TOTAL', '', '', totalPaguSum, totalRealisasiSum, totalSisaSum, `${avgPersenSum.toFixed(2)}%`]
       ];
     }
 
@@ -516,15 +723,19 @@ export default function LaporanView({
         <div className="border-b-4 border-double border-slate-800 pb-5 text-center relative flex flex-col items-center" id="kop-surat">
           <div className="flex items-center justify-center gap-4">
             <img 
-              src={settings?.logo_instansi && !settings.logo_instansi.includes('logo_sibiru') ? settings.logo_instansi : "https://firebasestorage.googleapis.com/v0/b/bidang-pertanahan.firebasestorage.app/o/bimatanahku%2Flogo%20kab.png?alt=media&token=678421d5-13c6-44d5-9e9e-82283be5e25f"} 
+              src={logoBase64 || "/logo_kab_bima.png"} 
               alt="Logo Resmi Pemerintah Kabupaten Bima" 
-              className="w-16 h-16 object-contain" 
-              referrerPolicy="no-referrer" 
+              className="w-16 h-16 object-contain shrink-0" 
+              crossOrigin="anonymous"
+              loading="eager"
+              onError={(e) => {
+                (e.target as HTMLImageElement).src = "/logo_kab_bima.png";
+              }}
             />
             <div className="text-left">
               <h1 className="text-base font-black tracking-widest text-slate-900 uppercase">PEMERINTAH KABUPATEN BIMA</h1>
               <h2 className="text-sm font-extrabold tracking-widest text-slate-800 uppercase mt-0.5">DINAS PERUMAHAN DAN KAWASAN PERMUKIMAN</h2>
-              <p className="text-[9px] text-slate-500 font-semibold italic mt-0.5">Jl. Soekarno Hatta No. 07 Kompleks Perkantoran Pemerintah Kabupaten Bima Dadibou - WOha</p>
+              <p className="text-[9px] text-slate-500 font-semibold italic mt-0.5">Jl. Soekarno Hatta No. 07 Kompleks Perkantoran Pemerintah Kabupaten Bima Dadibou - Woha</p>
             </div>
           </div>
         </div>
@@ -542,6 +753,7 @@ export default function LaporanView({
           <table className="w-full text-left text-[11px] border border-slate-300 border-collapse">
             <thead>
               <tr className="bg-slate-100/80 border-b border-slate-300 font-bold text-slate-800">
+                <th className="p-3 border border-slate-300 text-center w-12 font-bold">NO</th>
                 <th className="p-3 border border-slate-300 w-36">
                   {selectedLaporan === "belanja_pihak_ketiga" ? "NO. KONTRAK / TGL" : "KODE / TANGGAL"}
                 </th>
@@ -563,7 +775,7 @@ export default function LaporanView({
             <tbody className="divide-y text-slate-800">
               {reportRows.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="p-8 text-center text-slate-400 italic">
+                  <td colSpan={7} className="p-8 text-center text-slate-400 italic">
                     {selectedLaporan === "belanja_pihak_ketiga" 
                       ? "Belum ada data belanja pihak ketiga yang tercatat pada Tahun Anggaran ini. Silakan tambahkan pada menu Belanja Pihak Ketiga."
                       : "Tidak ada data rekapan yang tersedia untuk kriteria laporan ini."}
@@ -572,6 +784,9 @@ export default function LaporanView({
               ) : (
                 reportRows.map((row, index) => (
                   <tr key={index} className="hover:bg-slate-50/20 divide-x font-medium">
+                    <td className="p-2.5 border border-slate-200 text-center font-bold text-slate-700 w-12 font-mono">
+                      {index + 1}
+                    </td>
                     <td className="p-2.5 border border-slate-200 font-mono font-semibold whitespace-nowrap">
                       {selectedLaporan === "belanja_pihak_ketiga" ? (
                         <div>
@@ -620,7 +835,7 @@ export default function LaporanView({
 
               {/* Accumulator Row summary info */}
               <tr className="bg-slate-50 font-black text-rose-950 divide-x border-t-2 border-slate-300">
-                <td colSpan={2} className="p-3 text-right uppercase border border-slate-300">
+                <td colSpan={3} className="p-3 text-right uppercase border border-slate-300">
                   {selectedLaporan === "belanja_pihak_ketiga" ? "TOTAL BELANJA JASA PIHAK KETIGA:" : "TOTAL KESELURUHAN (TOTAL EXPENDITURES):"}
                 </td>
                 <td className="p-3 text-right border border-slate-300 text-slate-900">
@@ -641,7 +856,7 @@ export default function LaporanView({
         </div>
 
         {/* Offsite legal signing "Tanda Tangan Pengesahan" */}
-        <div className="grid grid-cols-2 gap-4 pt-12 text-center text-xs select-none font-medium" id="signing-block">
+        <div className="grid grid-cols-2 gap-4 pt-0 text-center text-xs select-none font-medium" id="signing-block">
           <div>
             <p className="text-slate-500 font-semibold uppercase">Mengetahui & Menyetujui,</p>
             <p className="text-slate-800 font-extrabold mt-0.5">{jabatanPejabat}</p>
@@ -661,80 +876,244 @@ export default function LaporanView({
 
       </div>
 
-      {/* PDF Export confirmation modal */}
+      {/* PDF Export confirmation & settings modal */}
       {showPdfModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-2xs flex items-center justify-center p-4 z-50 animate-fade-in print:hidden" id="pdf-export-modal">
-          <div className="bg-white rounded-2xl max-w-md w-full border border-slate-100 shadow-2xl overflow-hidden p-6 space-y-4">
-            <div className="flex items-center justify-between border-b pb-3 border-dashed">
-              <div className="flex items-center gap-2">
-                <FileText className="text-red-700 font-bold" size={18} />
-                <h4 className="text-sm font-black text-slate-800 uppercase tracking-wider">Konfirmasi Ekspor PDF</h4>
+          <div className="bg-white rounded-2xl max-w-lg w-full border border-slate-150 shadow-2xl overflow-hidden p-6 space-y-4 max-h-[92vh] overflow-y-auto">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b pb-3 border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-red-50 text-red-700 flex items-center justify-center border border-red-150 shadow-3xs">
+                  <FileText size={18} />
+                </div>
+                <div>
+                  <h4 className="text-sm font-black text-slate-800 uppercase tracking-wider">Pengaturan Ekspor PDF</h4>
+                  <p className="text-[10px] text-slate-500 font-medium">Sesuaikan format kertas, orientasi, dan skala cetak</p>
+                </div>
               </div>
               <button 
                 onClick={() => setShowPdfModal(false)}
-                className="text-slate-400 hover:text-slate-600 transition cursor-pointer font-bold text-sm"
+                disabled={isGeneratingPdf}
+                className="text-slate-400 hover:text-slate-600 transition cursor-pointer font-bold text-sm p-1 rounded-lg hover:bg-slate-100"
               >
                 ✕
               </button>
             </div>
 
-            <div className="text-[11px] text-slate-600 space-y-3.5 leading-relaxed">
-              <p className="font-semibold">
-                Sistem mendeteksi format data laporan saat ini untuk verifikasi kode dokumen legal:
-              </p>
-
-              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-100 space-y-2">
-                <div className="flex justify-between items-center text-slate-700">
-                  <span className="font-bold text-slate-500 uppercase tracking-wider text-[9px]">Jenis Laporan:</span>
-                  <span className="font-black text-slate-800 uppercase text-right truncate max-w-[180px]">{selectedLaporan.replace(/_/g, ' ')}</span>
-                </div>
-                <div className="flex justify-between items-center text-slate-700">
-                  <span className="font-bold text-slate-500 uppercase tracking-wider text-[9px]">Validasi Data:</span>
-                  {isDataSameAsPrevious ? (
-                    <span className="inline-flex items-center gap-1 font-extrabold text-emerald-800 bg-emerald-100/80 px-2 py-0.5 rounded-full text-[9px]">
-                      <CheckCircle size={9} />
-                      IDENTIK (Sama)
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1 font-extrabold text-blue-800 bg-blue-100/80 px-2 py-0.5 rounded-full text-[9px]">
-                      DATA BARU / BERBEDA
-                    </span>
-                  )}
-                </div>
-                <div className="border-t border-dashed my-2 pt-2">
-                  <p className="font-bold text-slate-400 uppercase tracking-widest text-[9px]">Ditetapkan Kode Dokumen Rekap:</p>
-                  <p className="font-mono font-black text-blue-700 text-[11px] tracking-wide mt-1 select-all break-all">{currentDocCode}</p>
+            <div className="space-y-4 text-xs text-slate-700">
+              {/* 1. Pengaturan Ukuran Kertas */}
+              <div className="space-y-2">
+                <label className="flex items-center justify-between font-extrabold text-slate-700 uppercase tracking-wider text-[10px]">
+                  <span className="flex items-center gap-1.5">
+                    <Maximize2 size={12} className="text-blue-600" />
+                    1. Ukuran Kertas (Paper Size)
+                  </span>
+                  <span className="text-blue-700 font-bold font-mono text-[10px] bg-blue-50 px-2 py-0.5 rounded border border-blue-150">
+                    {pdfPaperSize}
+                  </span>
+                </label>
+                <div className="grid grid-cols-3 sm:grid-cols-5 gap-1.5">
+                  {[
+                    { id: 'A4', label: 'A4', desc: '210 × 297 mm', badge: 'Standar' },
+                    { id: 'F4', label: 'F4 / Folio', desc: '215 × 330 mm', badge: 'Pemda' },
+                    { id: 'Letter', label: 'Letter', desc: '216 × 279 mm', badge: 'Kuarto' },
+                    { id: 'Legal', label: 'Legal', desc: '216 × 356 mm', badge: '' },
+                    { id: 'A3', label: 'A3', desc: '297 × 420 mm', badge: 'Lebar' },
+                  ].map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => setPdfPaperSize(p.id as any)}
+                      className={`p-2 rounded-xl border text-center transition cursor-pointer flex flex-col items-center justify-between min-h-[64px] ${
+                        pdfPaperSize === p.id 
+                          ? 'border-blue-600 bg-blue-50/70 text-blue-900 shadow-3xs ring-1 ring-blue-600' 
+                          : 'border-slate-200 hover:border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
+                      }`}
+                    >
+                      <span className="font-extrabold text-xs block">{p.label}</span>
+                      <span className="text-[9px] text-slate-500 font-mono block mt-0.5">{p.desc}</span>
+                      {p.badge && (
+                        <span className={`text-[8px] font-black uppercase px-1 py-0.2 rounded mt-1 ${
+                          pdfPaperSize === p.id ? 'bg-blue-200 text-blue-900' : 'bg-slate-100 text-slate-600'
+                        }`}>
+                          {p.badge}
+                        </span>
+                      )}
+                    </button>
+                  ))}
                 </div>
               </div>
 
-              {isDataSameAsPrevious ? (
-                <div className="p-3 bg-emerald-50 text-emerald-900 rounded-lg border border-emerald-150 font-bold text-[10px]">
-                  💡 Isi data sama persis dengan cetakan sebelumnya! Sesuai aturan, nomor urutan tetap dipertahankan yaitu <b className="font-black text-emerald-950">{String(currentSeq).padStart(3, '0')}</b>.
-                </div>
-              ) : (
-                <div className="p-3 bg-indigo-50 text-indigo-900 rounded-lg border border-indigo-150 font-bold text-[10px]">
-                  ✨ Perubahan data atau data baru terdeteksi! Urutan dokumen naik otomatis menjadi nomor urutan baru <b className="font-black text-indigo-950">{String(currentSeq).padStart(3, '0')}</b>.
-                </div>
-              )}
+              {/* 2. Pengaturan Tata Letak / Orientasi */}
+              <div className="space-y-2">
+                <label className="flex items-center justify-between font-extrabold text-slate-700 uppercase tracking-wider text-[10px]">
+                  <span className="flex items-center gap-1.5">
+                    <Compass size={12} className="text-indigo-600" />
+                    2. Tata Letak (Orientasi Kertas)
+                  </span>
+                  <span className="text-indigo-700 font-bold uppercase text-[10px] bg-indigo-50 px-2 py-0.5 rounded border border-indigo-150">
+                    {pdfOrientation === 'landscape' ? 'Landscape (Mendatar)' : 'Portrait (Tegak)'}
+                  </span>
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPdfOrientation('landscape')}
+                    className={`p-3 rounded-xl border text-left transition cursor-pointer relative ${
+                      pdfOrientation === 'landscape'
+                        ? 'border-indigo-600 bg-indigo-50/70 text-indigo-950 shadow-3xs ring-1 ring-indigo-600'
+                        : 'border-slate-200 hover:border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-extrabold text-xs">Landscape (Mendatar)</span>
+                      <span className="text-[8px] bg-emerald-100 text-emerald-800 font-black px-1.5 py-0.5 rounded uppercase">
+                        Sangat Disarankan
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-slate-500 mt-1 leading-snug">
+                      Format ideal untuk tabel keuangan 7 kolom agar angka pagu, realisasi, dan rasio tidak terpotong.
+                    </p>
+                  </button>
 
-              <p className="font-bold text-slate-500 text-[10px]">
-                💡 Tip: Pilih printer <b className="text-slate-800 font-extrabold">"Save as PDF" / "Simpan sebagai PDF"</b> di jendela dialog print browser untuk menyimpan file.
-              </p>
+                  <button
+                    type="button"
+                    onClick={() => setPdfOrientation('portrait')}
+                    className={`p-3 rounded-xl border text-left transition cursor-pointer ${
+                      pdfOrientation === 'portrait'
+                        ? 'border-indigo-600 bg-indigo-50/70 text-indigo-950 shadow-3xs ring-1 ring-indigo-600'
+                        : 'border-slate-200 hover:border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-extrabold text-xs">Portrait (Tegak)</span>
+                    </div>
+                    <p className="text-[10px] text-slate-500 mt-1 leading-snug">
+                      Format tegak standar. Gunakan skala 80% atau 75% jika kolom tabel melebihi batas kanan.
+                    </p>
+                  </button>
+                </div>
+              </div>
+
+              {/* 3. Pengaturan Skala Cetak / Export */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between font-extrabold text-slate-700 uppercase tracking-wider text-[10px]">
+                  <span className="flex items-center gap-1.5">
+                    <Sliders size={12} className="text-emerald-600" />
+                    3. Skala Dokumen (Zoom / Scaling)
+                  </span>
+                  <span className="text-emerald-700 font-mono font-black text-xs bg-emerald-50 px-2.5 py-0.5 rounded border border-emerald-150">
+                    {pdfScale}%
+                  </span>
+                </div>
+
+                {/* Quick scale presets */}
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {[
+                    { val: 100, label: '100% (Penuh)' },
+                    { val: 90, label: '90% (Pas)' },
+                    { val: 80, label: '80% (Kompak)' },
+                    { val: 75, label: '75% (Rapat)' },
+                    { val: 65, label: '65% (Kecil)' }
+                  ].map(sc => (
+                    <button
+                      key={sc.val}
+                      type="button"
+                      onClick={() => setPdfScale(sc.val)}
+                      className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition cursor-pointer ${
+                        pdfScale === sc.val 
+                          ? 'border-emerald-600 bg-emerald-600 text-white shadow-3xs' 
+                          : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
+                      }`}
+                    >
+                      {sc.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Slider */}
+                <div className="flex items-center gap-3 pt-1">
+                  <span className="text-[10px] font-mono text-slate-400">50%</span>
+                  <input
+                    type="range"
+                    min="50"
+                    max="120"
+                    step="5"
+                    value={pdfScale}
+                    onChange={(e) => setPdfScale(parseInt(e.target.value, 10))}
+                    className="flex-1 accent-emerald-600 cursor-pointer h-1.5 bg-slate-200 rounded-lg"
+                  />
+                  <span className="text-[10px] font-mono text-slate-400">120%</span>
+                </div>
+              </div>
+
+              {/* Legal verification & document details summary */}
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 space-y-2 text-[10px]">
+                <div className="flex justify-between items-center text-slate-700">
+                  <span className="font-bold text-slate-500 uppercase tracking-wider text-[9px]">Laporan:</span>
+                  <span className="font-black text-slate-800 uppercase text-right truncate max-w-[220px]">
+                    {selectedLaporan.replace(/_/g, ' ')}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-slate-700">
+                  <span className="font-bold text-slate-500 uppercase tracking-wider text-[9px]">Status Verifikasi:</span>
+                  {isDataSameAsPrevious ? (
+                    <span className="inline-flex items-center gap-1 font-extrabold text-emerald-800 bg-emerald-100/90 px-2 py-0.5 rounded-full text-[9px]">
+                      <CheckCircle size={9} />
+                      IDENTIK (No Urut Tetap #{String(currentSeq).padStart(3, '0')})
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 font-extrabold text-blue-800 bg-blue-100/90 px-2 py-0.5 rounded-full text-[9px]">
+                      DATA BARU (No Urut Baru #{String(currentSeq).padStart(3, '0')})
+                    </span>
+                  )}
+                </div>
+                <div className="border-t border-dashed border-slate-200 pt-1.5">
+                  <p className="font-bold text-slate-400 uppercase tracking-widest text-[9px]">Kode Dokumen Rekap Resmi:</p>
+                  <p className="font-mono font-black text-blue-700 text-[10px] tracking-wide select-all break-all mt-0.5">
+                    {currentDocCode}
+                  </p>
+                </div>
+              </div>
             </div>
 
-            <div className="flex gap-2.5 pt-2">
+            {/* Action buttons */}
+            <div className="space-y-2 pt-2 border-t border-slate-100">
               <button
-                onClick={handleExportPdf}
-                className="flex-1 py-2.5 bg-red-700 hover:bg-red-800 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-xs transition cursor-pointer text-center"
+                onClick={handleDownloadDirectPdf}
+                disabled={isGeneratingPdf}
+                className="w-full py-2.5 px-4 bg-red-700 hover:bg-red-800 disabled:bg-red-400 text-white font-extrabold text-xs uppercase tracking-wider rounded-xl shadow-xs transition cursor-pointer flex items-center justify-center gap-2"
               >
-                Unduh / Simpan PDF
+                {isGeneratingPdf ? (
+                  <>
+                    <Loader2 size={15} className="animate-spin" />
+                    Sedang Memproses & Mengunduh Berkas PDF...
+                  </>
+                ) : (
+                  <>
+                    <FileDown size={15} />
+                    Unduh Berkas PDF (.pdf)
+                  </>
+                )}
               </button>
-              <button
-                onClick={() => setShowPdfModal(false)}
-                className="py-2.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-xs rounded-xl transition cursor-pointer"
-              >
-                Batal
-              </button>
+
+              <div className="flex gap-2">
+                <button
+                  onClick={handleBrowserPrintFromModal}
+                  disabled={isGeneratingPdf}
+                  className="flex-1 py-2 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 border border-slate-200"
+                >
+                  <Printer size={13} />
+                  Dialog Cetak Browser
+                </button>
+                <button
+                  onClick={() => setShowPdfModal(false)}
+                  disabled={isGeneratingPdf}
+                  className="py-2 px-4 bg-white hover:bg-slate-100 text-slate-600 font-bold text-xs rounded-xl transition cursor-pointer border border-slate-200"
+                >
+                  Batal
+                </button>
+              </div>
             </div>
           </div>
         </div>

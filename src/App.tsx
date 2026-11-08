@@ -1000,11 +1000,11 @@ export default function App() {
           <div className="flex justify-center mb-2">
             <div className="w-24 h-24 bg-white rounded-2xl flex items-center justify-center p-1.5 shadow-2xl border-2 border-orange-500 overflow-hidden">
               <img 
-                src={appSettings?.logo_instansi || "/logo.svg"} 
+                src={appSettings?.logo_instansi || "/logo_kab_bima.png"} 
                 alt="Logo SIREKAP TANAH" 
                 className="w-full h-full object-contain"
                 onError={(e) => {
-                  (e.target as HTMLImageElement).src = "/logo.svg";
+                  (e.target as HTMLImageElement).src = "/logo_kab_bima.png";
                 }}
               />
             </div>
@@ -1337,11 +1337,11 @@ export default function App() {
             {/* Swapped Brand from Sidebar into Topheader (SIREKAP TAHUN ANGGARAN [TAHUN]) */}
             <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center shrink-0 border-none overflow-hidden shadow-2xs select-none p-0.5">
               <img 
-                src={appSettings?.logo_instansi || "/logo.svg"} 
+                src={appSettings?.logo_instansi || "/logo_kab_bima.png"} 
                 alt="Logo SIREKAP" 
                 className="w-full h-full object-contain"
                 onError={(e) => {
-                  (e.target as HTMLImageElement).src = "/logo.svg";
+                  (e.target as HTMLImageElement).src = "/logo_kab_bima.png";
                 }}
               />
             </div>

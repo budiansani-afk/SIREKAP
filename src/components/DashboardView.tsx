@@ -759,36 +759,36 @@ export default function DashboardView({
         </div>
       </div>
 
-      {/* Charts Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-in" id="dashboard-charts">
+      {/* Charts Grid - 1 Baris Rapi & Informatif (3 Kolom Sejajar) */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 animate-fade-in items-stretch" id="dashboard-charts">
         
-        {/* 1. Serapan Bulanan (Bar Chart) (Tren Realisasi Bulanan clickable) */}
+        {/* 1. Serapan Bulanan (Bar Chart) */}
         <div 
           onClick={() => onNavigate?.('analisis')}
-          className="bg-white p-6 rounded-2xl border border-slate-200 hover:border-blue-400 cursor-pointer shadow-sm lg:col-span-2 flex flex-col justify-between transition group duration-200" 
+          className="bg-white p-5 rounded-2xl border border-slate-200 hover:border-blue-400 cursor-pointer shadow-sm flex flex-col justify-between transition group duration-200 h-full" 
           id="chart-bulan"
           title="Klik untuk langsung menuju informasi Tren Realisasi Bulanan"
         >
           <div>
-            <div className="flex justify-between items-start">
+            <div className="flex justify-between items-start gap-2">
               <div>
-                <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                  <FolderLock size={18} className="text-blue-750" />
-                  Tren Realisasi Bulanan TA {selectedYear}
+                <h3 className="font-bold text-slate-800 flex items-center gap-1.5 text-sm">
+                  <FolderLock size={16} className="text-blue-700" />
+                  Tren Realisasi Bulanan (TA {selectedYear})
                 </h3>
-                <p className="text-slate-600 text-xs mt-1 font-medium">Grafik nominal realisasi penyerapan keuangan per bulan berjalan</p>
+                <p className="text-slate-500 text-[11px] mt-0.5 font-medium">Realisasi SP2D per bulan berjalan</p>
               </div>
-              <div className="text-right text-[10px] text-slate-500 font-bold bg-slate-50 px-2 py-1 rounded border border-slate-100">
-                Nilai Tertinggi: <span className="font-mono text-emerald-800 font-black">{formatRupiah(maxMonthAmount)}</span>
+              <div className="text-right text-[9px] text-slate-500 font-bold bg-slate-50 px-2 py-1 rounded border border-slate-200 shrink-0">
+                Tertinggi: <span className="font-mono text-emerald-800 font-black block">{formatRupiah(maxMonthAmount)}</span>
               </div>
             </div>
           </div>
           
-          <div className="mt-6 h-56 w-full text-[10px]" id="chart-months-bars-container" onClick={(e) => e.stopPropagation()}>
+          <div className="my-auto py-2 h-52 w-full text-[10px]" id="chart-months-bars-container" onClick={(e) => e.stopPropagation()}>
             <ResponsiveContainer width="100%" height="100%">
               <BarChart
                 data={monthlyData}
-                margin={{ top: 10, right: 10, left: -5, bottom: 0 }}
+                margin={{ top: 10, right: 10, left: -10, bottom: 0 }}
               >
                 <defs>
                   <linearGradient id="colorRealisasi" x1="0" y1="0" x2="0" y2="1">
@@ -816,26 +816,31 @@ export default function DashboardView({
                   dataKey="amount" 
                   fill="url(#colorRealisasi)" 
                   radius={[4, 4, 0, 0]}
-                  maxBarSize={28}
+                  maxBarSize={22}
                 />
               </BarChart>
             </ResponsiveContainer>
           </div>
+
+          <div className="flex items-center justify-between pt-3 border-t border-slate-100 text-[10px] text-slate-600 font-bold">
+            <span>Total Realisasi SP2D:</span>
+            <span className="font-mono font-black text-blue-800 text-xs" title={formatRupiah(totalRealisasiAll)}>{formatRupiah(totalRealisasiAll)}</span>
+          </div>
         </div>
 
         {/* 2. Donut Gauge for overall Serapan */}
-        <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex flex-col justify-between" id="chart-gauge">
+        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between h-full" id="chart-gauge">
           <div>
-            <h3 className="font-bold text-slate-800 flex items-center gap-1.5">
-              <PieChart size={18} className="text-blue-750" />
+            <h3 className="font-bold text-slate-800 flex items-center gap-1.5 text-sm">
+              <PieChart size={16} className="text-blue-700" />
               Persentase Kinerja Serapan
             </h3>
-            <p className="text-slate-600 text-xs mt-1 font-medium">Visualisasi efisiensi penyerapan DPA dinas</p>
+            <p className="text-slate-500 text-[11px] mt-0.5 font-medium">Visualisasi efisiensi penyerapan DPA dinas</p>
           </div>
 
-          <div className="flex flex-col items-center justify-center py-4">
-            <div className="relative w-32 h-32 flex items-center justify-center">
-              {/* Simple SV Donut */}
+          <div className="flex flex-col items-center justify-center my-auto py-2">
+            <div className="relative w-36 h-36 flex items-center justify-center">
+              {/* Donut SVG */}
               <svg className="w-full h-full transform -rotate-90" viewBox="0 0 36 36">
                 <path
                   className="text-slate-100"
@@ -845,26 +850,31 @@ export default function DashboardView({
                   d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
                 />
                 <path
-                  className="text-blue-700"
+                  className="text-blue-600 transition-all duration-700 ease-out"
                   strokeWidth="3.5"
-                  strokeDasharray={`${persentaseSerapanAll}, 100`}
+                  strokeDasharray={`${Math.min(persentaseSerapanAll, 100)}, 100`}
                   strokeLinecap="round"
                   stroke="currentColor"
                   fill="none"
                   d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
                 />
               </svg>
-              <div className="absolute text-center">
-                <span className="text-2xl font-black text-slate-850">{persentaseSerapanAll.toFixed(1)}%</span>
-                <p className="text-[9px] text-slate-550 font-bold tracking-wider uppercase mt-1">TERSERAP</p>
+              <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-1">
+                <span className="text-xl font-black text-slate-900 font-mono tracking-tight leading-none">
+                  {persentaseSerapanAll.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%
+                </span>
+                <p className="text-[9px] text-slate-500 font-extrabold tracking-wider uppercase mt-1">TERSERAP</p>
+                <span className="text-[10px] font-mono font-black text-blue-700 mt-1 px-2 py-0.5 bg-blue-50/90 rounded border border-blue-150 block truncate max-w-[125px]" title={formatRupiah(totalRealisasiAll)}>
+                  {formatRupiah(totalRealisasiAll)}
+                </span>
               </div>
             </div>
             
-            {/* Color-graded performance references */}
-            <div className="w-full mt-4 space-y-1.5 text-[10px] bg-slate-50 p-2.5 rounded-xl border border-slate-100">
-              <div className="flex justify-between items-center text-[9px] font-black uppercase text-slate-500 pb-1 border-b">
+            {/* Status referensi kinerja */}
+            <div className="w-full mt-3.5 space-y-1 text-[10px] bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+              <div className="flex justify-between items-center text-[9px] font-black uppercase text-slate-500 pb-1 border-b border-slate-200">
                 <span>Rujukan Status Kinerja</span>
-                <span>Alokasi</span>
+                <span>Status</span>
               </div>
               <div className="flex justify-between">
                 <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-500"></span> Tinggi (&gt;= 80%)</span>
@@ -881,88 +891,95 @@ export default function DashboardView({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4 w-full mt-4 text-center text-xs border-t border-slate-100 pt-3">
-            <div className="p-2 bg-blue-50/50 rounded-xl border border-blue-100/50">
-              <p className="text-slate-500 font-semibold text-[10px] uppercase">Realisasi</p>
-              <p className="font-bold text-blue-700 font-mono text-[11px] mt-0.5">{formatRupiah(totalRealisasiAll)}</p>
+          <div className="grid grid-cols-2 gap-2 w-full pt-3 border-t border-slate-100 text-center text-xs">
+            <div className="p-2 bg-blue-50/60 rounded-xl border border-blue-150/60">
+              <p className="text-slate-500 font-semibold text-[9px] uppercase tracking-wider">Anggaran Terserap</p>
+              <p className="font-extrabold text-blue-800 font-mono text-[11px] mt-0.5 truncate" title={formatRupiah(totalRealisasiAll)}>
+                {formatRupiah(totalRealisasiAll)}
+              </p>
             </div>
-            <div className="p-2 bg-slate-50 rounded-xl border border-slate-100">
-              <p className="text-slate-500 font-semibold text-[10px] uppercase">Sisa Kas</p>
-              <p className="font-bold text-slate-750 font-mono text-[11px] mt-0.5">{formatRupiah(totalSisaAll)}</p>
+            <div className="p-2 bg-slate-50 rounded-xl border border-slate-200/70">
+              <p className="text-slate-500 font-semibold text-[9px] uppercase tracking-wider">Sisa Anggaran</p>
+              <p className="font-extrabold text-slate-800 font-mono text-[11px] mt-0.5 truncate" title={formatRupiah(totalSisaAll)}>
+                {formatRupiah(totalSisaAll)}
+              </p>
             </div>
           </div>
         </div>
-      </div>
 
-      {/* Perbandingan Pagu vs Realisasi per Program (Bar Chart) */}
-      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm animate-fade-in" id="chart-comparison-container">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+        {/* 3. Perbandingan Pagu vs Realisasi per Program (Bar Chart) */}
+        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between h-full" id="chart-comparison-container">
           <div>
-            <h3 className="font-bold text-slate-800 flex items-center gap-2">
-              <TrendingUp size={18} className="text-blue-700" />
-              Perbandingan Pagu vs Realisasi Keuangan per Program (TA {selectedYear})
-            </h3>
-            <p className="text-slate-600 text-xs mt-1 font-medium">
-              Analisis perbandingan antara ketetapan Pagu anggaran belanja dengan capaian Realisasi keuangan masing-masing program
-            </p>
+            <div className="flex justify-between items-start gap-2">
+              <div>
+                <h3 className="font-bold text-slate-800 flex items-center gap-1.5 text-sm">
+                  <TrendingUp size={16} className="text-blue-700" />
+                  Pagu vs Realisasi Program
+                </h3>
+                <p className="text-slate-500 text-[11px] mt-0.5 font-medium">Perbandingan pagu &amp; serapan program</p>
+              </div>
+              {/* Quick legend */}
+              <div className="flex items-center gap-2 text-[10px] shrink-0 bg-slate-50 px-2 py-1 rounded border border-slate-150">
+                <span className="flex items-center gap-1 font-bold text-blue-700">
+                  <span className="w-2 h-2 rounded-full bg-blue-600"></span> Pagu
+                </span>
+                <span className="flex items-center gap-1 font-bold text-emerald-700">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500"></span> Realisasi
+                </span>
+              </div>
+            </div>
           </div>
-          {/* Quick legend and summary badges */}
-          <div className="flex items-center gap-3 text-xs">
-            <div className="flex items-center gap-1.5 px-2.5 py-1 bg-blue-50 text-blue-800 rounded-lg border border-blue-100 font-bold">
-              <span className="w-2.5 h-2.5 rounded bg-blue-600 shrink-0"></span>
-              Pagu
+
+          {programChartData.length === 0 ? (
+            <div className="flex flex-col items-center justify-center my-auto py-8 text-center border border-dashed border-slate-200 rounded-xl">
+              <Layers size={24} className="text-slate-400 mb-1" />
+              <p className="text-slate-600 font-bold text-xs">Belum Ada Program TA {selectedYear}</p>
             </div>
-            <div className="flex items-center gap-1.5 px-2.5 py-1 bg-emerald-50 text-emerald-800 rounded-lg border border-emerald-100 font-bold">
-              <span className="w-2.5 h-2.5 rounded bg-emerald-500 shrink-0"></span>
-              Realisasi
+          ) : (
+            <div className="my-auto py-2 h-52 w-full text-[10px]" id="chart-comparison-recharts">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={programChartData}
+                  margin={{ top: 10, right: 10, left: -10, bottom: 0 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" opacity={0.5} />
+                  <XAxis 
+                    dataKey="name" 
+                    tick={{ fill: '#475569', fontSize: 9, fontWeight: 700 }}
+                    axisLine={false}
+                    tickLine={false}
+                  />
+                  <YAxis 
+                    tickFormatter={formatYAxis} 
+                    tick={{ fill: '#475569', fontSize: 9, fontWeight: 600 }}
+                    axisLine={false}
+                    tickLine={false}
+                    width={38}
+                  />
+                  <RechartsTooltip content={<ComparisonTooltip />} cursor={{ fill: '#f1f5f9', opacity: 0.4 }} />
+                  <Bar 
+                    dataKey="Pagu" 
+                    fill="#3b82f6" 
+                    radius={[3, 3, 0, 0]}
+                    maxBarSize={18}
+                  />
+                  <Bar 
+                    dataKey="Realisasi" 
+                    fill="#10b981" 
+                    radius={[3, 3, 0, 0]}
+                    maxBarSize={18}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
             </div>
+          )}
+
+          <div className="flex items-center justify-between pt-3 border-t border-slate-100 text-[10px] text-slate-600 font-bold">
+            <span>Total Program Terdaftar:</span>
+            <span className="font-bold text-slate-800">{programs.length} Program Kerja</span>
           </div>
         </div>
 
-        {programChartData.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12 text-center border-2 border-dashed border-slate-200 rounded-xl">
-            <Layers size={32} className="text-slate-400 mb-2" />
-            <p className="text-slate-600 font-bold text-sm">Belum Ada Program Terdaftar untuk Tahun Anggaran {selectedYear}</p>
-            <p className="text-slate-400 text-xs mt-1">Silakan tambahkan data Program di menu Program atau sesuaikan tahun anggaran di kanan atas.</p>
-          </div>
-        ) : (
-          <div className="h-72 w-full text-[10px]" id="chart-comparison-recharts">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart
-                data={programChartData}
-                margin={{ top: 10, right: 10, left: -5, bottom: 5 }}
-              >
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" opacity={0.5} />
-                <XAxis 
-                  dataKey="name" 
-                  tick={{ fill: '#475569', fontSize: 10, fontWeight: 700 }}
-                  axisLine={false}
-                  tickLine={false}
-                />
-                <YAxis 
-                  tickFormatter={formatYAxis} 
-                  tick={{ fill: '#475569', fontSize: 9, fontWeight: 600 }}
-                  axisLine={false}
-                  tickLine={false}
-                  width={42}
-                />
-                <RechartsTooltip content={<ComparisonTooltip />} cursor={{ fill: '#f1f5f9', opacity: 0.4 }} />
-                <Bar 
-                  dataKey="Pagu" 
-                  fill="#3b82f6" 
-                  radius={[4, 4, 0, 0]}
-                  maxBarSize={32}
-                />
-                <Bar 
-                  dataKey="Realisasi" 
-                  fill="#10b981" 
-                  radius={[4, 4, 0, 0]}
-                  maxBarSize={32}
-                />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        )}
       </div>
 
       {/* 3. Program & Kegiatan Progress Bars */}
