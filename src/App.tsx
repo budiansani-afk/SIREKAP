@@ -39,8 +39,18 @@ import {
   Clock,
   PowerOff,
   Eye,
-  EyeOff
+  EyeOff,
+  Bell,
+  BellRing,
+  BellOff
 } from 'lucide-react';
+import { 
+  getNotificationPermission, 
+  requestNotificationPermission, 
+  notifyRkaChange, 
+  notifyRealisasiChange, 
+  sendWebNotification 
+} from './utils/notifications';
 import { auth, db } from './firebase';
 import { 
   COLL_PROGRAM, 
@@ -260,6 +270,11 @@ export default function App() {
   const [isOnlineSessionsModalOpen, setIsOnlineSessionsModalOpen] = useState<boolean>(false);
   const [forceDisconnectedNotice, setForceDisconnectedNotice] = useState<string | null>(null);
 
+  // Web Notifications API States
+  const [notifPermission, setNotifPermission] = useState<NotificationPermission>(() => getNotificationPermission());
+  const isInitialRkaLoadedRef = useRef<boolean>(false);
+  const isInitialRealLoadedRef = useRef<boolean>(false);
+
   // Inactivity Auto-Logout Configurations (30 Menit Tidak Aktif)
   const INACTIVITY_TIMEOUT_MS = 30 * 60 * 1000; // 30 menit = 1.800.000 ms
   const INACTIVITY_WARNING_MS = 2 * 60 * 1000;  // Peringatan hitung mundur 2 menit sebelum logout
@@ -357,7 +372,7 @@ export default function App() {
           signOut(auth).catch(() => {});
           setUser(null);
           setForceDisconnectedNotice(
-            `Koneksi akun Anda telah diputuskan oleh Administrator (${disconnectedBy}). Silakan hubungi admin atau masuk kembali jika diizinkan.`
+            `Koneksi akun Anda telah diputuskan oleh Administrator. Silakan hubungi admin atau masuk kembali jika diizinkan.`
           );
         }
       }
@@ -635,11 +650,29 @@ export default function App() {
     }, (err) => console.warn('Error listening sub kegiatan:', err));
 
     const unsubRka = onSnapshot(collection(db, COLL_RKA), (snap) => {
-      setRkaList(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as RKA)));
+      const items = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as RKA));
+      if (!isInitialRkaLoadedRef.current) {
+        isInitialRkaLoadedRef.current = true;
+      } else {
+        snap.docChanges().forEach(change => {
+          const docData = { id: change.doc.id, ...change.doc.data() } as RKA;
+          notifyRkaChange(change.type, docData);
+        });
+      }
+      setRkaList(items);
     }, (err) => console.warn('Error listening rka:', err));
 
     const unsubReal = onSnapshot(collection(db, COLL_REALISASI), (snap) => {
-      setRealisasis(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Realisasi)));
+      const items = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Realisasi));
+      if (!isInitialRealLoadedRef.current) {
+        isInitialRealLoadedRef.current = true;
+      } else {
+        snap.docChanges().forEach(change => {
+          const docData = { id: change.doc.id, ...change.doc.data() } as Realisasi;
+          notifyRealisasiChange(change.type, docData);
+        });
+      }
+      setRealisasis(items);
     }, (err) => console.warn('Error listening realisasi:', err));
 
     const unsubMon = onSnapshot(collection(db, COLL_BELANJA_PIHAK_KETIGA), (snap) => {
@@ -732,6 +765,8 @@ export default function App() {
     });
 
     return () => {
+      isInitialRkaLoadedRef.current = false;
+      isInitialRealLoadedRef.current = false;
       unsubProg();
       unsubKeg();
       unsubSub();
@@ -1385,6 +1420,61 @@ export default function App() {
               <span>{currentDateTime}</span>
             </div>
           )}
+
+          {/* Web Notifications API Bell Trigger & Real-time Alert Indicator */}
+          <button
+            type="button"
+            onClick={async () => {
+              if (notifPermission === 'granted') {
+                sendWebNotification('Notifikasi Web SIREKAP Aktif', {
+                  body: 'Sistem peringatan real-time siap! Anda akan menerima notifikasi saat ada perubahan data RKA atau pencairan SP2D.',
+                  icon: '/logo_kab_bima.png'
+                });
+                showToast("Notifikasi web real-time telah aktif & terverifikasi.", "success");
+              } else if (notifPermission === 'denied') {
+                alert('Izin notifikasi peramban saat ini diblokir. Klik ikon gembok/pengaturan situs di bilah alamat peramban Anda untuk mengizinkan notifikasi.');
+              } else {
+                const res = await requestNotificationPermission();
+                setNotifPermission(res);
+                if (res === 'granted') {
+                  showToast("Izin notifikasi web real-time berhasil diaktifkan!", "success");
+                }
+              }
+            }}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all shadow-3xs cursor-pointer select-none border ${
+              notifPermission === 'granted'
+                ? 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
+                : notifPermission === 'denied'
+                ? 'bg-slate-100 text-slate-500 border-slate-200 hover:bg-slate-200'
+                : 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 animate-pulse'
+            }`}
+            title={
+              notifPermission === 'granted'
+                ? 'Web Notifications API Aktif: Klik untuk tes notifikasi'
+                : notifPermission === 'denied'
+                ? 'Notifikasi diblokir di browser. Buka setelan browser untuk mengaktifkan'
+                : 'Klik untuk mengaktifkan Web Notifications API (Peringatan RKA & SP2D Real-time)'
+            }
+          >
+            {notifPermission === 'granted' ? (
+              <>
+                <BellRing size={13} className="text-emerald-600 shrink-0" />
+                <span className="hidden xl:inline">Notif Real-time</span>
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+              </>
+            ) : notifPermission === 'denied' ? (
+              <>
+                <BellOff size={13} className="text-slate-400 shrink-0" />
+                <span className="hidden xl:inline">Notif Nonaktif</span>
+              </>
+            ) : (
+              <>
+                <Bell size={13} className="text-blue-600 shrink-0" />
+                <span className="hidden xl:inline">Aktifkan Notif</span>
+                <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-ping"></span>
+              </>
+            )}
+          </button>
           
           <div className="flex items-center gap-3 pl-5 border-l border-slate-200">
             <div className="hidden sm:flex flex-col text-right">

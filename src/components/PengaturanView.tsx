@@ -29,7 +29,10 @@ import {
   Globe,
   Clock,
   PowerOff,
-  Activity
+  Activity,
+  Bell,
+  BellRing,
+  BellOff
 } from 'lucide-react';
 import { AppSettings, UserRole, Pengguna, SesiPenggunaOnline } from '../types';
 import { backupDatabaseToJSON, restoreDatabaseFromJSON, createAuditLog } from '../dbService';
@@ -42,6 +45,12 @@ import { runFirebaseStorageMigration, MigrationProgressData } from '../migration
 import { formatDuration, formatWaktuMasuk } from '../utils/deviceHelper';
 import { db } from '../firebase';
 import { doc, setDoc, deleteDoc } from 'firebase/firestore';
+import { 
+  isNotificationSupported, 
+  getNotificationPermission, 
+  requestNotificationPermission, 
+  sendWebNotification 
+} from '../utils/notifications';
 
 interface PengaturanViewProps {
   settings: AppSettings | null;
@@ -154,6 +163,7 @@ export default function PengaturanView({
   const [userActionError, setUserActionError] = useState<string | null>(null);
   const [isSubmittingUser, setIsSubmittingUser] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [webNotifPerm, setWebNotifPerm] = useState<NotificationPermission>(() => getNotificationPermission());
 
   useEffect(() => {
     if (settings) {
@@ -824,6 +834,144 @@ export default function PengaturanView({
           </div>
         </div>
 
+      </div>
+
+      {/* Web Notifications API Management & Diagnostic Card */}
+      <div className="bg-white p-6 rounded-xl border border-slate-100 shadow-sm space-y-4" id="web-notifications-panel">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-dashed pb-3 gap-3">
+          <div className="flex items-center gap-2.5">
+            <div className={`p-2 rounded-lg ${
+              webNotifPerm === 'granted' 
+                ? 'bg-emerald-50 text-emerald-600' 
+                : webNotifPerm === 'denied' 
+                ? 'bg-rose-50 text-rose-600' 
+                : 'bg-blue-50 text-blue-600'
+            }`}>
+              {webNotifPerm === 'granted' ? <BellRing size={20} /> : webNotifPerm === 'denied' ? <BellOff size={20} /> : <Bell size={20} />}
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                Peringatan Real-Time & Web Notifications API
+                <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${
+                  webNotifPerm === 'granted'
+                    ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                    : webNotifPerm === 'denied'
+                    ? 'bg-rose-100 text-rose-800 border border-rose-200'
+                    : 'bg-blue-100 text-blue-800 border border-blue-200'
+                }`}>
+                  {webNotifPerm === 'granted' ? 'Aktif' : webNotifPerm === 'denied' ? 'Diblokir' : 'Menunggu Izin'}
+                </span>
+              </h3>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                Memberikan notifikasi peramban instan kepada pengguna saat terdapat penambahan atau perubahan status penting pada RKA atau realisasi SP2D belanja.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {webNotifPerm !== 'granted' ? (
+              <button
+                type="button"
+                onClick={async () => {
+                  const res = await requestNotificationPermission();
+                  setWebNotifPerm(res);
+                  if (res === 'granted') {
+                    alert('Izin Web Notifications berhasil diaktifkan!');
+                  } else if (res === 'denied') {
+                    alert('Izin notifikasi diblokir. Harap buka pengaturan izin situs di browser Anda.');
+                  }
+                }}
+                className="px-3.5 py-2 bg-blue-700 hover:bg-blue-800 text-white font-bold rounded-lg shadow-xs text-xs flex items-center gap-2 cursor-pointer transition"
+              >
+                <Bell size={14} />
+                <span>Aktifkan Notifikasi</span>
+              </button>
+            ) : (
+              <span className="text-xs font-semibold text-emerald-700 flex items-center gap-1.5 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-200">
+                <CheckCircle size={14} className="text-emerald-600" />
+                Izin Peramban Diberikan
+              </span>
+            )}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-1">
+          {/* Status info card */}
+          <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-3.5 flex flex-col justify-between">
+            <div>
+              <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Status Dukungan Browser</span>
+              <p className="text-xs font-bold text-slate-800 mt-1 flex items-center gap-1.5">
+                <span className={`w-2 h-2 rounded-full ${isNotificationSupported() ? 'bg-emerald-500' : 'bg-red-500'}`} />
+                {isNotificationSupported() ? 'Mendukung Web Notifications API' : 'Tidak Didukung di Browser Ini'}
+              </p>
+              <p className="text-[11px] text-slate-500 mt-1">
+                {webNotifPerm === 'granted' 
+                  ? 'Peramban siap menerima peringatan popup instan dari sistem SIREKAP.'
+                  : webNotifPerm === 'denied'
+                  ? 'Izin notifikasi diblokir di browser Anda. Klik ikon gembok pada URL bar untuk mereset.'
+                  : 'Klik tombol aktifkan untuk mengizinkan sistem mengirimkan notifikasi.'}
+              </p>
+            </div>
+          </div>
+
+          {/* Test RKA Notification */}
+          <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-3.5 flex flex-col justify-between">
+            <div>
+              <span className="text-[10px] font-black uppercase text-blue-600 tracking-wider">Uji Coba Notifikasi RKA</span>
+              <p className="text-[11px] text-slate-600 mt-1">
+                Simulasi peringatan perubahan atau penambahan alokasi anggaran belanja pada dokumen RKA.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={async () => {
+                if (webNotifPerm !== 'granted') {
+                  const res = await requestNotificationPermission();
+                  setWebNotifPerm(res);
+                  if (res !== 'granted') return;
+                }
+                sendWebNotification('RKA Anggaran: Rincian Baru (Uji Coba)', {
+                  body: 'Belanja Pengukuran dan Pemetaan Tanah senilai Rp 85.000.000 telah diperbarui oleh Operator.',
+                  icon: '/logo_kab_bima.png',
+                  tag: 'test-rka'
+                });
+              }}
+              className="mt-3 px-3 py-1.5 bg-white border border-blue-300 text-blue-700 hover:bg-blue-50 font-bold rounded-lg text-xs flex items-center justify-center gap-1.5 shadow-3xs cursor-pointer transition"
+            >
+              <Bell size={13} />
+              <span>Tes Notifikasi RKA</span>
+            </button>
+          </div>
+
+          {/* Test Realisasi Notification */}
+          <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-3.5 flex flex-col justify-between">
+            <div>
+              <span className="text-[10px] font-black uppercase text-emerald-600 tracking-wider">Uji Coba Notifikasi SP2D</span>
+              <p className="text-[11px] text-slate-600 mt-1">
+                Simulasi peringatan pencairan anggaran SP2D belanja realisasi oleh bendahara pengeluaran.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={async () => {
+                if (webNotifPerm !== 'granted') {
+                  const res = await requestNotificationPermission();
+                  setWebNotifPerm(res);
+                  if (res !== 'granted') return;
+                }
+                sendWebNotification('Realisasi SP2D: Pencairan Baru (Uji Coba)', {
+                  body: 'SP2D Belanja Modal Pengadaan Tanah sebesar Rp 150.000.000 berhasil dibukukan.',
+                  icon: '/logo_kab_bima.png',
+                  tag: 'test-real'
+                });
+              }}
+              className="mt-3 px-3 py-1.5 bg-white border border-emerald-300 text-emerald-700 hover:bg-emerald-50 font-bold rounded-lg text-xs flex items-center justify-center gap-1.5 shadow-3xs cursor-pointer transition"
+            >
+              <BellRing size={13} />
+              <span>Tes Notifikasi Realisasi</span>
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* Kelola Akun Pengguna Panel */}
