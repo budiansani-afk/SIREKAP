@@ -1312,6 +1312,10 @@ export default function App() {
             subKegiatans={filteredSubKegiatans} 
             realisasis={filteredRealisasis} 
             pihakKetigas={filteredPihakKetigas}
+            rkaList={filteredRkaList}
+            allPrograms={programs}
+            allRealisasis={realisasis}
+            selectedYear={selectedYear}
           />
         );
       case "logs":
