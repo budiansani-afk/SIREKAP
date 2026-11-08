@@ -97,7 +97,7 @@ export default function OnlineSessionsModal({
     }
 
     const confirmMsg = `PUTUSKAN KONEKSI PENGGUNA:\n\n` +
-      `Akun: ${session.nama || session.email} (${session.email})\n` +
+      `Nama Pengguna: ${session.nama || session.email}\n` +
       `Perangkat: ${session.device}\n` +
       `Alamat IP: ${session.ip_address}\n` +
       `Waktu Masuk: ${formatWaktuMasuk(session.login_at)}\n\n` +
@@ -352,9 +352,6 @@ export default function OnlineSessionsModal({
                                     Sesi Ini
                                   </span>
                                 )}
-                              </div>
-                              <div className="text-[11px] text-slate-500 font-mono truncate">
-                                {session.email}
                               </div>
                               <div className="mt-1">
                                 {getRoleBadge(session.role)}

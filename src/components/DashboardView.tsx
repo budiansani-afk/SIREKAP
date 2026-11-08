@@ -890,21 +890,6 @@ export default function DashboardView({
               </div>
             </div>
           </div>
-
-          <div className="grid grid-cols-2 gap-2 w-full pt-3 border-t border-slate-100 text-center text-xs">
-            <div className="p-2 bg-blue-50/60 rounded-xl border border-blue-150/60">
-              <p className="text-slate-500 font-semibold text-[9px] uppercase tracking-wider">Anggaran Terserap</p>
-              <p className="font-extrabold text-blue-800 font-mono text-[11px] mt-0.5 truncate" title={formatRupiah(totalRealisasiAll)}>
-                {formatRupiah(totalRealisasiAll)}
-              </p>
-            </div>
-            <div className="p-2 bg-slate-50 rounded-xl border border-slate-200/70">
-              <p className="text-slate-500 font-semibold text-[9px] uppercase tracking-wider">Sisa Anggaran</p>
-              <p className="font-extrabold text-slate-800 font-mono text-[11px] mt-0.5 truncate" title={formatRupiah(totalSisaAll)}>
-                {formatRupiah(totalSisaAll)}
-              </p>
-            </div>
-          </div>
         </div>
 
         {/* 3. Perbandingan Pagu vs Realisasi per Program (Bar Chart) */}

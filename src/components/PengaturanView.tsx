@@ -110,7 +110,7 @@ export default function PengaturanView({
       return;
     }
     const confirmMsg = `PUTUSKAN KONEKSI PENGGUNA:\n\n` +
-      `Akun: ${session.nama || session.email} (${session.email})\n` +
+      `Nama Pengguna: ${session.nama || session.email}\n` +
       `Perangkat: ${session.device}\n` +
       `Alamat IP: ${session.ip_address}\n` +
       `Waktu Masuk: ${formatWaktuMasuk(session.login_at)}\n\n` +
@@ -1183,7 +1183,6 @@ export default function PengaturanView({
                                 </span>
                               )}
                             </div>
-                            <span className="text-[10px] text-slate-500 font-mono block">{session.email}</span>
                             <span className="inline-block mt-0.5 px-1.5 py-0.2 rounded text-[9px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
                               {session.role}
                             </span>
