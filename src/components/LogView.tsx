@@ -9,7 +9,89 @@ import {
   Info,
   Layers
 } from 'lucide-react';
-import { ActivityLog } from '../types';
+import { ActivityLog, Pengguna } from '../types';
+
+export function resolveLogUserAndRole(
+  log: ActivityLog,
+  penggunas: Pengguna[] = []
+): { nama: string; role: string } {
+  const rawUser = (log.nama_pengguna || log.userEmail || '').trim();
+  const rawRole = (log.role || log.userRole || '').trim();
+  const clean = rawUser.toLowerCase();
+
+  // 1. Try finding in penggunas list
+  let found = penggunas.find(p => 
+    (p.email && p.email.toLowerCase() === clean) ||
+    (p.id && p.id.toLowerCase() === clean) ||
+    (p.nama && p.nama.toLowerCase() === clean) ||
+    ((p as any).username && (p as any).username.toLowerCase() === clean)
+  );
+
+  if (!found && clean.includes('@')) {
+    const handle = clean.split('@')[0];
+    found = penggunas.find(p => 
+      (p.email && p.email.toLowerCase().includes(handle)) ||
+      (p.id && p.id.toLowerCase().includes(handle))
+    );
+  }
+
+  // 2. Resolve Role label
+  let resolvedRole = found?.role || rawRole || 'Operator';
+  const roleLower = String(resolvedRole).toLowerCase();
+  let roleLabel = 'OPERATOR';
+  if (roleLower.includes('admin')) {
+    roleLabel = 'ADMINISTRATOR';
+  } else if (roleLower.includes('pimpinan') || roleLower.includes('kabid') || roleLower.includes('kepala')) {
+    roleLabel = 'PIMPINAN';
+  } else if (roleLower.includes('operator')) {
+    roleLabel = 'OPERATOR';
+  } else if (roleLower) {
+    roleLabel = roleLower.toUpperCase();
+  }
+
+  // 3. Resolve Nama Pengguna
+  if (found?.nama && found.nama.trim()) {
+    return { nama: found.nama.trim(), role: roleLabel };
+  }
+
+  // Known account presets
+  if (clean === 'admin@sirekap.com' || clean === 'admin' || clean === 'administrator') {
+    return { nama: 'Administrator SIREKAP Bima', role: 'ADMINISTRATOR' };
+  }
+  if (clean === 'budiansani@gmail.com' || clean === 'budiansani' || clean === 'budi') {
+    return { nama: 'Drs. H. BUDIAN SANI, M.Si', role: 'PIMPINAN' };
+  }
+  if (clean === 'operator@sirekap.com' || clean === 'operator' || clean === 'operator1') {
+    return { nama: 'Operator Teknis Pertanahan', role: 'OPERATOR' };
+  }
+  if (clean === 'pimpinan@sirekap.com' || clean === 'pimpinan' || clean === 'kabid') {
+    return { nama: 'Kepala Bidang Pertanahan', role: 'PIMPINAN' };
+  }
+
+  // Check localStorage cache if available
+  try {
+    const cached = JSON.parse(localStorage.getItem('sibiru_user_names_cache') || '{}');
+    if (cached[clean]) {
+      return { nama: cached[clean], role: roleLabel };
+    }
+  } catch (e) {}
+
+  // If already a human name (no @ and reasonable length)
+  if (rawUser && !rawUser.includes('@') && rawUser.length > 3) {
+    return { nama: rawUser, role: roleLabel };
+  }
+
+  if (clean.includes('@')) {
+    const username = clean.split('@')[0];
+    const capitalized = username.charAt(0).toUpperCase() + username.slice(1);
+    if (roleLabel === 'ADMINISTRATOR') {
+      return { nama: `Administrator (${capitalized})`, role: roleLabel };
+    }
+    return { nama: capitalized, role: roleLabel };
+  }
+
+  return { nama: rawUser || 'Aparatur Pertanahan', role: roleLabel };
+}
 
 function formatValue(key: string, val: any): string {
   if (val === null || val === undefined) return "Kosong";
@@ -105,9 +187,10 @@ function renderLogDetails(log: ActivityLog) {
 
 interface LogViewProps {
   logs: ActivityLog[];
+  penggunas?: Pengguna[];
 }
 
-export default function LogView({ logs }: LogViewProps) {
+export default function LogView({ logs, penggunas = [] }: LogViewProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedModule, setSelectedModule] = useState('');
   const [selectedLog, setSelectedLog] = useState<ActivityLog | null>(null);
@@ -118,14 +201,21 @@ export default function LogView({ logs }: LogViewProps) {
     const sorted = [...logs].sort((a,b) => b.timestamp - a.timestamp);
 
     return sorted.filter(l => {
-      const matchSearch = l.userEmail.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                          l.action.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                          String(l.module || '').toLowerCase().includes(searchTerm.toLowerCase());
-      const matchMod = selectedModule === '' || l.module === selectedModule;
+      const { nama, role } = resolveLogUserAndRole(l, penggunas);
+      const search = searchTerm.toLowerCase();
+      const matchSearch = 
+        nama.toLowerCase().includes(search) ||
+        role.toLowerCase().includes(search) ||
+        (l.nama_pengguna && l.nama_pengguna.toLowerCase().includes(search)) ||
+        (l.userEmail && l.userEmail.toLowerCase().includes(search)) ||
+        (l.action && l.action.toLowerCase().includes(search)) ||
+        (l.aksi && l.aksi.toLowerCase().includes(search)) ||
+        String(l.module || l.modul || '').toLowerCase().includes(search);
+      const matchMod = selectedModule === '' || (l.module || l.modul) === selectedModule;
 
       return matchSearch && matchMod;
     });
-  }, [logs, searchTerm, selectedModule]);
+  }, [logs, searchTerm, selectedModule, penggunas]);
 
   const uniqueModules = useMemo(() => {
     const mods = new Set<string>();
@@ -179,7 +269,7 @@ export default function LogView({ logs }: LogViewProps) {
             <thead>
               <tr className="bg-slate-50 border-b border-slate-100 font-semibold text-slate-600">
                 <th className="p-3.5 pl-4 w-44 align-top text-left">Waktu Kejadian (UTC)</th>
-                <th className="p-3.5 w-48 align-top text-left">Nama Pengguna / Peran</th>
+                <th className="p-3.5 w-56 align-top text-left">Nama Pengguna / Peran</th>
                 <th className="p-3.5 align-top text-left">Dokumentasi Aksi / Kegiatan</th>
                 <th className="p-3.5 w-32 align-top text-left">Modul</th>
                 <th className="p-3.5 text-center w-24 align-top">Inspeksi Data</th>
@@ -193,6 +283,7 @@ export default function LogView({ logs }: LogViewProps) {
               ) : (
                 filteredLogs.map((log, idx) => {
                   const dateStr = new Date(log.timestamp).toLocaleString('id-ID');
+                  const { nama: userNama, role: userRole } = resolveLogUserAndRole(log, penggunas);
                   return (
                     <tr key={idx} className="hover:bg-slate-50/50 transition">
                       <td className="p-3.5 pl-4 font-mono text-[10px] text-slate-500 align-top text-left">
@@ -202,11 +293,21 @@ export default function LogView({ logs }: LogViewProps) {
                         </div>
                       </td>
                       <td className="p-3.5 align-top text-left">
-                        <div className="flex items-start gap-1">
-                          <UserCheck size={12} className="text-blue-600 shrink-0 mt-0.5" />
-                          <p className="font-bold text-slate-900 truncate max-w-[150px]" title={log.userEmail}>{log.userEmail}</p>
+                        <div className="flex items-start gap-1.5">
+                          <UserCheck size={13} className="text-blue-600 shrink-0 mt-0.5" />
+                          <p className="font-bold text-slate-900 leading-snug" title={userNama}>
+                            {userNama}
+                          </p>
                         </div>
-                        <span className="text-[10px] bg-slate-100 px-1.5 py-0.5 rounded text-slate-700 uppercase tracking-widest font-extrabold mt-1 block w-fit">{log.userRole}</span>
+                        <span className={`text-[10px] px-2 py-0.5 rounded font-black tracking-wider uppercase mt-1.5 inline-block border ${
+                          userRole === 'ADMINISTRATOR' 
+                            ? 'bg-blue-50 text-blue-800 border-blue-200' 
+                            : userRole === 'PIMPINAN' 
+                            ? 'bg-purple-50 text-purple-800 border-purple-200' 
+                            : 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                        }`}>
+                          {userRole}
+                        </span>
                       </td>
                       <td className="p-3.5 max-w-sm break-words whitespace-normal leading-relaxed align-top text-left">
                         <p className="font-bold text-slate-950 uppercase text-[11px] font-black tracking-wide break-words whitespace-normal">{log.action}</p>
@@ -228,7 +329,7 @@ export default function LogView({ logs }: LogViewProps) {
                         </button>
                       </td>
                     </tr>
-                  )
+                  );
                 })
               )}
             </tbody>
@@ -256,7 +357,9 @@ export default function LogView({ logs }: LogViewProps) {
 
               <div>
                 <p className="text-slate-500 font-bold">Dilakukan Oleh:</p>
-                <p className="font-bold text-slate-950">{selectedLog.userEmail} ({selectedLog.userRole})</p>
+                <p className="font-bold text-slate-950">
+                  {resolveLogUserAndRole(selectedLog, penggunas).nama} ({resolveLogUserAndRole(selectedLog, penggunas).role})
+                </p>
               </div>
 
               <div className="grid grid-cols-2 gap-3 p-3 bg-slate-50 rounded-lg border">

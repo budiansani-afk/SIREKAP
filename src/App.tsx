@@ -575,7 +575,14 @@ export default function App() {
 
           setUserRole(role);
           const activeNama = localStorage.getItem('nama_pengguna_aktif');
-          setUserDisplayName(activeNama || dbNama || 'Aparatur Pertanahan');
+          const resolvedDisplayName = activeNama || dbNama || 'Aparatur Pertanahan';
+          setUserDisplayName(resolvedDisplayName);
+          try {
+            const cached = JSON.parse(localStorage.getItem('sibiru_user_names_cache') || '{}');
+            cached[email] = resolvedDisplayName;
+            if (rawAccount) cached[rawAccount] = resolvedDisplayName;
+            localStorage.setItem('sibiru_user_names_cache', JSON.stringify(cached));
+          } catch(e) {}
         } else {
           setUser(null);
         }
@@ -1320,7 +1327,7 @@ export default function App() {
           );
         }
         return (
-          <LogView logs={logs} />
+          <LogView logs={logs} penggunas={penggunas} />
         );
       case "pengaturan":
         if (userRole !== UserRole.ADMIN) {
