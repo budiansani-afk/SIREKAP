@@ -32,6 +32,44 @@ import {
   Tooltip as RechartsTooltip 
 } from 'recharts';
 
+export const RupiahSign: React.FC<{ size?: number; className?: string }> = ({ 
+  size = 20, 
+  className = 'text-emerald-400' 
+}) => (
+  <svg 
+    width={size} 
+    height={size} 
+    viewBox="0 0 24 24" 
+    fill="none" 
+    xmlns="http://www.w3.org/2000/svg"
+    className={`shrink-0 ${className}`}
+  >
+    <rect 
+      x="2" 
+      y="2.5" 
+      width="20" 
+      height="19" 
+      rx="5" 
+      stroke="currentColor" 
+      strokeWidth="2" 
+      fill="currentColor" 
+      fillOpacity="0.15" 
+    />
+    <text 
+      x="12" 
+      y="15.5" 
+      textAnchor="middle" 
+      fill="currentColor" 
+      fontSize="9.5" 
+      fontWeight="900" 
+      fontFamily="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace"
+      letterSpacing="-0.5px"
+    >
+      Rp
+    </text>
+  </svg>
+);
+
 export interface OverbudgetItem {
   id: string;
   kode_program: string;
@@ -534,7 +572,7 @@ export default function DashboardView({
               Pagu Anggaran TA {selectedYear}
             </span>
             <h2 className="text-xl font-black font-display mt-1 text-white flex items-center gap-2">
-              <DollarSign size={20} className="text-emerald-400" />
+              <RupiahSign size={20} className="text-emerald-400" />
               Informasi Pagu Anggaran &amp; Realisasi
             </h2>
           </div>
