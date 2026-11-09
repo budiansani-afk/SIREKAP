@@ -116,3 +116,19 @@ export function notifyRealisasiChange(type: 'added' | 'modified' | 'removed', re
     });
   }
 }
+
+export function notifySubKegiatanUnderperforming(
+  count: number,
+  lowestName: string,
+  lowestPercent: number,
+  targetMonthlyPercent: number,
+  monthIndex: number
+) {
+  const halfTarget = (targetMonthlyPercent * 0.5).toFixed(1);
+  return sendWebNotification(`⚠️ Peringatan Kinerja: ${count} Sub-Kegiatan Serapan Kritis`, {
+    body: `Bulan ke-${monthIndex}: ${count} sub-kegiatan serapannya di bawah 50% dari target bulanan (<${halfTarget}%). Contoh: "${lowestName}" (${lowestPercent}%). Segera evaluasi!`,
+    icon: '/logo_kab_bima.png',
+    tag: `audit-underperforming-${monthIndex}-${new Date().toISOString().slice(0, 10)}`
+  });
+}
+

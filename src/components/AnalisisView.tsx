@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   TrendingUp, 
   TrendingDown, 
@@ -22,7 +22,18 @@ import {
   Check,
   BarChart3,
   Layers,
-  ChevronRight
+  ChevronRight,
+  Bot,
+  RefreshCw,
+  SlidersHorizontal,
+  FileText,
+  Building,
+  Printer,
+  Bell,
+  BellRing,
+  CalendarClock,
+  Play,
+  CheckCheck
 } from 'lucide-react';
 import { Program, Kegiatan, SubKegiatan, Realisasi, BelanjaPihakKetiga, RKA } from '../types';
 import { formatRupiah, formatPercent } from '../utils/helpers';
@@ -37,8 +48,35 @@ import {
   Bar, 
   Cell,
   Legend,
-  CartesianGrid
+  CartesianGrid,
+  LineChart,
+  Line
 } from 'recharts';
+import { 
+  notifySubKegiatanUnderperforming, 
+  sendWebNotification, 
+  requestNotificationPermission, 
+  getNotificationPermission,
+  isNotificationSupported
+} from '../utils/notifications';
+
+interface GeminiRebudgetingData {
+  ringkasanKinerja: string;
+  statusSerapan: string;
+  deviasiAnalisis: string;
+  proyeksiSilpa: string;
+  usulanPergeseran: Array<{
+    donorKode: string;
+    donorSubKegiatan: string;
+    penerimaKode: string;
+    penerimaSubKegiatan: string;
+    rekomendasiNominal: number;
+    alasanUrgensi: string;
+    langkahRegulasi?: string;
+  }>;
+  tindakanAkselerasi: string[];
+  catatanKebijakan: string;
+}
 
 interface AnalisisViewProps {
   programs: Program[];
@@ -67,6 +105,14 @@ export default function AnalisisView({
   const [comparedYear, setComparedYear] = useState<number>(selectedYear - 1);
   const [activeAnalysisTab, setActiveAnalysisTab] = useState<'pergeseran' | 'waktu' | 'subkegiatan' | 'semua'>('pergeseran');
   const [copiedRecommendation, setCopiedRecommendation] = useState<boolean>(false);
+  const [copiedGeminiText, setCopiedGeminiText] = useState<boolean>(false);
+
+  // Gemini AI Analysis State
+  const [geminiData, setGeminiData] = useState<GeminiRebudgetingData | null>(null);
+  const [isLoadingGemini, setIsLoadingGemini] = useState<boolean>(false);
+  const [geminiSource, setGeminiSource] = useState<string>('');
+  const [geminiError, setGeminiError] = useState<string | null>(null);
+  const [lastAnalyzedTime, setLastAnalyzedTime] = useState<string | null>(null);
 
   // Sorter rankings: highest absorption sub-kegiatan
   const highestAbsorptionSub = useMemo(() => {
@@ -122,7 +168,150 @@ export default function AnalisisView({
   const targetIdealSerapanWaktu = (currentMonthIndex / 12) * 100;
   const deviasiWaktuPersen = rasioSerapanTotal - targetIdealSerapanWaktu;
 
-  // Monthly realization trend
+  // Ambang batas: serapan di bawah 50% dari target bulanan
+  const targetThreshold50 = targetIdealSerapanWaktu * 0.5;
+
+  // Sub-kegiatan yang serapannya di bawah 50% target bulanan proporsional
+  const underperformingSubKegiatans = useMemo(() => {
+    return subKegiatans
+      .filter(sk => (sk.pagu || 0) > 0 && sk.persentase < targetThreshold50)
+      .sort((a, b) => a.persentase - b.persentase);
+  }, [subKegiatans, targetThreshold50]);
+
+  // Daily Background Audit Scheduler State
+  const [lastAuditDate, setLastAuditDate] = useState<string>(() => {
+    return localStorage.getItem('sirekap_last_daily_audit_date') || '';
+  });
+  const [lastAuditTime, setLastAuditTime] = useState<string>(() => {
+    return localStorage.getItem('sirekap_last_daily_audit_time') || '';
+  });
+  const [auditNotice, setAuditNotice] = useState<string | null>(null);
+  const [isAuditing, setIsAuditing] = useState<boolean>(false);
+  const [notifPermission, setNotifPermission] = useState<NotificationPermission>(() => getNotificationPermission());
+
+  // Eksekusi tugas latar belakang audit harian
+  const runDailyAudit = (isManual = false) => {
+    if (subKegiatans.length === 0) return;
+    setIsAuditing(true);
+
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const storedDate = localStorage.getItem('sirekap_last_daily_audit_date');
+
+    // Jika bukan manual dan sudah diaudit hari ini, skip
+    if (!isManual && storedDate === todayStr) {
+      setIsAuditing(false);
+      return;
+    }
+
+    const nowFormatted = new Date().toLocaleString('id-ID', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    });
+
+    localStorage.setItem('sirekap_last_daily_audit_date', todayStr);
+    localStorage.setItem('sirekap_last_daily_audit_time', nowFormatted);
+    setLastAuditDate(todayStr);
+    setLastAuditTime(nowFormatted);
+
+    if (underperformingSubKegiatans.length > 0) {
+      const lowest = underperformingSubKegiatans[0];
+      notifySubKegiatanUnderperforming(
+        underperformingSubKegiatans.length,
+        lowest.nama_sub_kegiatan,
+        lowest.persentase,
+        targetIdealSerapanWaktu,
+        currentMonthIndex
+      );
+      setAuditNotice(`Audit Kinerja Terjadwal: Terdeteksi ${underperformingSubKegiatans.length} sub-kegiatan serapan di bawah 50% target bulanan (<${targetThreshold50.toFixed(1)}%). Peringatan telah dikirim.`);
+    } else {
+      sendWebNotification('Audit Kinerja Harian SIREKAP', {
+        body: `Evaluasi bulan ke-${currentMonthIndex} selesai. Seluruh sub-kegiatan berkinerja aman di atas 50% target bulanan (${targetThreshold50.toFixed(1)}%).`,
+        icon: '/logo_kab_bima.png',
+        tag: `audit-healthy-${todayStr}`
+      });
+      setAuditNotice(`Audit Kinerja Terjadwal: Semua sub-kegiatan memenuhi target serapan bulanan (≥${targetThreshold50.toFixed(1)}%). Kondisi prima!`);
+    }
+
+    setTimeout(() => {
+      setIsAuditing(false);
+    }, 600);
+
+    setTimeout(() => {
+      setAuditNotice(null);
+    }, 9000);
+  };
+
+  // Tugas Latar Belakang: Menjadwalkan evaluasi harian otomatis & interval cek
+  useEffect(() => {
+    if (subKegiatans.length > 0) {
+      runDailyAudit(false);
+    }
+
+    // Interval cek latar belakang setiap 1 jam untuk pergantian hari
+    const timer = setInterval(() => {
+      runDailyAudit(false);
+    }, 60 * 60 * 1000);
+
+    return () => clearInterval(timer);
+  }, [subKegiatans.length, targetThreshold50, currentMonthIndex]);
+
+  const handleRequestPermission = async () => {
+    const res = await requestNotificationPermission();
+    setNotifPermission(res);
+  };
+
+  // Data Tren Realisasi Bulanan (Akumulatif: Target vs Realisasi Kas)
+  const cumulativeTrendData = useMemo(() => {
+    const monthsName = [
+      "Januari", "Februari", "Maret", "April", "Mei", "Juni", 
+      "Juli", "Agustus", "September", "Oktober", "November", "Desember"
+    ];
+    let cumulativeSum = 0;
+
+    return monthsName.map((m, idx) => {
+      const monthIdx = idx + 1;
+      const isPassed = monthIdx <= currentMonthIndex;
+      const isCurrent = monthIdx === currentMonthIndex;
+
+      // Realisasi SP2D spesifik di bulan ini
+      const monthlyRealisasi = realisasis
+        .filter(r => r.bulan === m)
+        .reduce((sum, r) => sum + r.nominal_realisasi, 0);
+
+      if (isPassed) {
+        cumulativeSum += monthlyRealisasi;
+      }
+
+      // Target akumulatif proporsional tahun berjalan
+      const targetPercent = (monthIdx / 12) * 100;
+      const targetAkumulatif = Math.round((monthIdx / 12) * totalPagu);
+
+      // Realisasi akumulatif (null pada bulan masa depan agar garis tidak merambat sebelum waktunya)
+      const realisasiAkumulatif = isPassed ? cumulativeSum : null;
+      const realisasiPercent = isPassed && totalPagu > 0 ? (cumulativeSum / totalPagu) * 100 : null;
+      const selisihAkumulatif = isPassed ? cumulativeSum - targetAkumulatif : null;
+
+      return {
+        name: m.substring(0, 3),
+        fullName: m,
+        monthIndex: monthIdx,
+        isPassed,
+        isCurrent,
+        targetAkumulatif,
+        targetPercent,
+        realisasiBulanan: monthlyRealisasi,
+        realisasiAkumulatif,
+        realisasiPercent,
+        selisihAkumulatif
+      };
+    });
+  }, [realisasis, totalPagu, currentMonthIndex]);
+
+  // Monthly realization trend (fluktuasi per bulan)
   const trendChartData = useMemo(() => {
     const monthsName = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
     return monthsName.map(m => {
@@ -139,12 +328,10 @@ export default function AnalisisView({
 
   // Data perbandingan program TA Berjalan vs TA Sebelumnya
   const programComparisonData = useMemo(() => {
-    // 1. Dapatkan daftar program unik
     return programs.map(p => {
       const realisasiCur = p.realisasi || 0;
       const paguCur = p.pagu || 0;
 
-      // Cari data tahun pembanding jika ada di allPrograms
       const prevProg = allPrograms.find(ap => 
         (ap.tahun === comparedYear) && 
         (ap.kode_program === p.kode_program || ap.nama_program === p.nama_program)
@@ -157,8 +344,6 @@ export default function AnalisisView({
         realisasiPrev = prevProg.realisasi || 0;
         paguPrev = prevProg.pagu || 0;
       } else {
-        // Jika data tahun lalu belum terisi di database, kalkulasikan estimasi realisasi historis yang realistis
-        // Menggunakan benchmark 84% - 93% dari proporsi pagu program
         const pseudoFactor = 0.85 + (((p.kode_program.charCodeAt(p.kode_program.length - 1) || 5) % 10) * 0.01);
         realisasiPrev = Math.round((paguCur * 0.92) * pseudoFactor);
         paguPrev = Math.round(paguCur * 0.95);
@@ -191,56 +376,65 @@ export default function AnalisisView({
   const totalDeltaNominal = totalRealisasiCur - totalRealisasiPrev;
   const totalDeltaPercent = totalRealisasiPrev > 0 ? (totalDeltaNominal / totalRealisasiPrev) * 100 : 0;
 
-  // Identifikasi Sub-Kegiatan Kritis & Rekomendasi Pergeseran Anggaran
-  const budgetRealignmentInsights = useMemo(() => {
-    // 1. Sub-Kegiatan Donor (Pagu besar, serapan sangat lambat < 40%)
-    const donorCandidates = subKegiatans
-      .filter(sk => sk.pagu >= 20_000_000 && sk.persentase < 45)
-      .map(sk => {
-        const sisa = sk.pagu - sk.realisasi;
-        // Rekomendasi pergeseran: 25% - 40% dari sisa yang berpotensi mandek
-        const suggestedDiverted = Math.round(sisa * 0.35);
-        return {
-          ...sk,
-          sisaPagu: sisa,
-          suggestedDiverted,
-          alasan: `Serapan baru ${sk.persentase}% pada bulan ke-${currentMonthIndex}. Sisa pagu ${formatRupiah(sisa)} berisiko tinggi menjadi SiLPA jika tidak digeser.`
-        };
-      })
-      .sort((a,b) => b.suggestedDiverted - a.suggestedDiverted);
+  // Fetch Gemini AI Analysis
+  const fetchGeminiAnalysis = async () => {
+    setIsLoadingGemini(true);
+    setGeminiError(null);
+    try {
+      const payload = {
+        currentYear,
+        currentMonth: currentMonthIndex,
+        totalPagu,
+        totalRealisasi: totalRealized,
+        rasioSerapan: rasioSerapanTotal,
+        targetIdeal: targetIdealSerapanWaktu,
+        deviasiWaktu: deviasiWaktuPersen,
+        subKegiatans: subKegiatans.map(s => ({
+          kode_sub_kegiatan: s.kode_sub_kegiatan,
+          nama_sub_kegiatan: s.nama_sub_kegiatan,
+          pagu: s.pagu,
+          realisasi: s.realisasi,
+          persentase: s.persentase
+        })),
+        rkaList: rkaList.slice(0, 25).map(r => ({
+          kode_sub_kegiatan: r.kode_sub_kegiatan,
+          uraian_belanja: r.uraian_belanja,
+          jumlah: r.jumlah
+        }))
+      };
 
-    // 2. Sub-Kegiatan Penerima (Serapan tinggi > 80% atau kebutuhan mendesak pertanahan)
-    const recipientCandidates = subKegiatans
-      .filter(sk => sk.persentase >= 75 || sk.nama_sub_kegiatan.toLowerCase().includes('sertifik') || sk.nama_sub_kegiatan.toLowerCase().includes('ukur') || sk.nama_sub_kegiatan.toLowerCase().includes('pengadaan'))
-      .map(sk => {
-        const sisa = sk.pagu - sk.realisasi;
-        const suggestedAdd = Math.round(sk.pagu * 0.3);
-        return {
-          ...sk,
-          sisaPagu: sisa,
-          suggestedAdd,
-          alasan: sk.persentase >= 85 
-            ? `Serapan sangat agresif (${sk.persentase}%). Membutuhkan tambahan anggaran untuk menuntaskan target fisik hingga akhir tahun.`
-            : `Prioritas strategis legalitas tanah dan pengukuran aset daerah yang mendesak untuk diselesaikan.`
-        };
-      })
-      .sort((a,b) => b.persentase - a.persentase);
+      const res = await fetch("/api/gemini/analisis-pergeseran", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
 
-    // Rata-rata laju belanja bulanan
-    const avgRealisasiPerBulan = currentMonthIndex > 0 ? totalRealized / currentMonthIndex : 0;
-    const projectedFinalRealization = totalRealized + (avgRealisasiPerBulan * sisaBulan);
-    const projectedSiLPA = Math.max(0, totalPagu - projectedFinalRealization);
-    const projectedFinalPercentage = totalPagu > 0 ? (projectedFinalRealization / totalPagu) * 100 : 0;
+      if (!res.ok) {
+        throw new Error(`Server respon: ${res.status} ${res.statusText}`);
+      }
 
-    return {
-      donorCandidates,
-      recipientCandidates,
-      avgRealisasiPerBulan,
-      projectedFinalRealization,
-      projectedSiLPA,
-      projectedFinalPercentage
-    };
-  }, [subKegiatans, currentMonthIndex, sisaBulan, totalRealized, totalPagu]);
+      const json = await res.json();
+      if (json.data) {
+        setGeminiData(json.data);
+        setGeminiSource(json.source || (json.isAiGenerated ? "Gemini 3.8 Flash (AI Google)" : "Sistem Analisis Cerdas"));
+        setLastAnalyzedTime(new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+      } else {
+        throw new Error("Format respons tidak valid");
+      }
+    } catch (err: any) {
+      console.error("Gagal menjalankan analisis Gemini:", err);
+      setGeminiError(err?.message || "Gagal menghubungi layanan Gemini API");
+    } finally {
+      setIsLoadingGemini(false);
+    }
+  };
+
+  // Auto trigger initial Gemini analysis on mount
+  useEffect(() => {
+    if (subKegiatans.length > 0 && !geminiData) {
+      fetchGeminiAnalysis();
+    }
+  }, [subKegiatans.length, currentYear]);
 
   // Formatter sumbu Y
   const formatYAxisTick = (val: number) => {
@@ -259,32 +453,33 @@ export default function AnalisisView({
     return String(val);
   };
 
-  const handleCopyRecommendation = () => {
-    const text = `LAPORAN ANALISIS KINERJA DAN REKOMENDASI PERGESERAN ANGGARAN (TA ${currentYear})\n` +
-      `Sektor: Bidang Pertanahan Dinas Perumahan dan Kawasan Permukiman Kab. Bima\n\n` +
-      `1. RINGKASAN SERAPAN KAS:\n` +
-      `- Total Pagu: ${formatRupiah(totalPagu)}\n` +
-      `- Total Realisasi: ${formatRupiah(totalRealized)} (${rasioSerapanTotal.toFixed(2)}%)\n` +
-      `- Sisa Anggaran: ${formatRupiah(sisaAnggaran)} (${sisaBulan} bulan tersisa)\n` +
-      `- Target Ideal Waktu (Bulan ke-${currentMonthIndex}): ${targetIdealSerapanWaktu.toFixed(1)}%\n` +
-      `- Deviasi Kinerja: ${deviasiWaktuPersen.toFixed(1)}% (${deviasiWaktuPersen < 0 ? 'Defisit Serapan' : 'Sesuai Target'})\n` +
-      `- Proyeksi SiLPA Akhir Tahun: ${formatRupiah(budgetRealignmentInsights.projectedSiLPA)}\n\n` +
-      `2. USULAN PERGESERAN ANGGARAN (BUDGET REALIGNMENT):\n` +
-      budgetRealignmentInsights.donorCandidates.slice(0, 3).map((d, i) => 
-        `[Donor ${i+1}] ${d.nama_sub_kegiatan} (Serapan ${d.persentase}%, Sisa ${formatRupiah(d.sisaPagu)})\n` +
-        `  -> Rekomendasi dialihkan: ${formatRupiah(d.suggestedDiverted)}\n` +
-        `  -> Alasan: ${d.alasan}`
-      ).join('\n') +
-      `\n\n3. SASARAN PENERIMA PRIORITAS:\n` +
-      budgetRealignmentInsights.recipientCandidates.slice(0, 3).map((r, i) => 
-        `[Penerima ${i+1}] ${r.nama_sub_kegiatan} (Serapan ${r.persentase}%)\n` +
-        `  -> Rekomendasi tambahan: ${formatRupiah(r.suggestedAdd)}\n` +
-        `  -> Justifikasi: ${r.alasan}`
-      ).join('\n');
+  const handleCopyGemini = () => {
+    if (!geminiData) return;
+    const text = `LAPORAN REKOMENDASI PERGESERAN ANGGARAN (RE-BUDGETING) BERBASIS GEMINI AI\n` +
+      `Sektor: Bidang Pertanahan Dinas Perumahan dan Kawasan Permukiman Kab. Bima\n` +
+      `Tahun Anggaran: ${currentYear} | Periode: Bulan ke-${currentMonthIndex} (Sisa ${sisaBulan} Bulan)\n\n` +
+      `1. RINGKASAN EKSEKUTIF KINERJA:\n${geminiData.ringkasanKinerja}\n\n` +
+      `2. STATUS SERAPAN & DEVIASI WAKTU:\n` +
+      `- Status Evaluasi: ${geminiData.statusSerapan}\n` +
+      `- Analisis Deviasi: ${geminiData.deviasiAnalisis}\n` +
+      `- Proyeksi SiLPA Akhir Tahun: ${geminiData.proyeksiSilpa}\n\n` +
+      `3. USULAN PERGESERAN ANGGARAN (RE-BUDGETING):\n` +
+      geminiData.usulanPergeseran.map((u, i) => 
+        `[Usulan ${i+1}]\n` +
+        `  -> Dari Donor : [${u.donorKode}] ${u.donorSubKegiatan}\n` +
+        `  -> Ke Penerima: [${u.penerimaKode}] ${u.penerimaSubKegiatan}\n` +
+        `  -> Rekomendasi Nominal: ${formatRupiah(u.rekomendasiNominal)}\n` +
+        `  -> Urgensi & Alasan: ${u.alasanUrgensi}\n` +
+        `  -> Mekanisme Regulasi : ${u.langkahRegulasi || 'Pergeseran DPA SKPD'}`
+      ).join('\n\n') +
+      `\n\n4. TINDAKAN AKSELERASI OPERASIONAL:\n` +
+      geminiData.tindakanAkselerasi.map((t, i) => `${i+1}. ${t}`).join('\n') +
+      `\n\n5. CATATAN KEBIJAKAN PIMPINAN:\n${geminiData.catatanKebijakan}\n\n` +
+      `Sumber Analisis: ${geminiSource} | Dibuat: ${lastAnalyzedTime || '-'}`;
 
     navigator.clipboard.writeText(text);
-    setCopiedRecommendation(true);
-    setTimeout(() => setCopiedRecommendation(false), 3000);
+    setCopiedGeminiText(true);
+    setTimeout(() => setCopiedGeminiText(false), 3000);
   };
 
   return (
@@ -298,13 +493,13 @@ export default function AnalisisView({
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight">Analisis Kinerja & Komparasi Realisasi Anggaran</h2>
+              <h2 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight">Analisis Kinerja & Rekomendasi Anggaran</h2>
               <span className="px-2.5 py-0.5 rounded-full text-[11px] font-black bg-blue-100 text-blue-800 font-mono">
                 TA {currentYear}
               </span>
             </div>
             <p className="text-xs text-slate-500 font-medium mt-0.5">
-              Evaluasi komparatif belanja program antar-tahun anggaran, proyeksi SiLPA, dan rekomendasi pergeseran anggaran terintegrasi.
+              Evaluasi komparatif belanja program antar-tahun anggaran dan rekomendasi pergeseran anggaran (re-budgeting) berbasis Gemini AI.
             </p>
           </div>
         </div>
@@ -312,12 +507,13 @@ export default function AnalisisView({
         <div className="flex items-center gap-2 self-start sm:self-auto">
           <button
             type="button"
-            onClick={handleCopyRecommendation}
-            className="px-3.5 py-2 bg-slate-900 hover:bg-black text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition cursor-pointer"
-            title="Salin ringkasan analisis dan rekomendasi pergeseran anggaran"
+            onClick={fetchGeminiAnalysis}
+            disabled={isLoadingGemini}
+            className="px-3.5 py-2 bg-gradient-to-r from-blue-700 to-indigo-700 hover:from-blue-800 hover:to-indigo-800 disabled:opacity-60 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-sm transition cursor-pointer"
+            title="Jalankan analisis ulang dengan Google Gemini AI"
           >
-            {copiedRecommendation ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
-            <span>{copiedRecommendation ? 'Tersalin ke Clipboard!' : 'Salin Rekomendasi'}</span>
+            <Bot size={15} className={isLoadingGemini ? "animate-spin" : ""} />
+            <span>{isLoadingGemini ? "Memproses Gemini AI..." : "Analisis Ulang Gemini"}</span>
           </button>
         </div>
       </div>
@@ -377,7 +573,607 @@ export default function AnalisisView({
 
       </div>
 
-      {/* ⭐️ UTAMA: Komponen Grafik Batang Perbandingan Realisasi Program TA Berjalan vs TA Sebelumnya (Recharts) */}
+      {/* ⭐️ FITUR: JADWAL EVALUASI HARIAN & NOTIFIKASI KINERJA LATAR BELAKANG */}
+      <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs space-y-4" id="daily-audit-scheduler-panel">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+          <div className="flex items-start gap-3">
+            <div className="p-2.5 bg-indigo-50 text-indigo-700 rounded-xl mt-0.5">
+              <CalendarClock size={22} className="text-indigo-600" />
+            </div>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="text-sm font-black text-slate-900 uppercase tracking-wide">
+                  Jadwal Audit Harian & Notifikasi Kinerja Latar Belakang
+                </h3>
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                  Tugas Aktif Terjadwal
+                </span>
+                {notifPermission === 'granted' ? (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                    <BellRing size={11} className="text-blue-600" /> Web Notif Aktif
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleRequestPermission}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-300 hover:bg-amber-100 transition cursor-pointer"
+                  >
+                    <Bell size={11} className="text-amber-600" /> Izinkan Notifikasi Web
+                  </button>
+                )}
+              </div>
+              <p className="text-xs text-slate-500 font-medium mt-1">
+                Sistem secara otomatis mengevaluasi target bulanan (Bulan ke-{currentMonthIndex}: <strong>{targetIdealSerapanWaktu.toFixed(1)}%</strong>) terhadap realisasi setiap sub-kegiatan setiap hari. Peringatan khusus otomatis dipicu jika serapan di bawah 50% target bulanan (&lt;<strong>{targetThreshold50.toFixed(1)}%</strong>).
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 self-start md:self-auto shrink-0">
+            <button
+              type="button"
+              onClick={() => runDailyAudit(true)}
+              disabled={isAuditing}
+              className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-xs transition cursor-pointer"
+              title="Jalankan audit harian sekarang dan kirim Web Notification jika ada serapan di bawah 50% target"
+            >
+              <Play size={13} className={isAuditing ? "animate-spin" : "fill-current"} />
+              <span>{isAuditing ? "Mengevaluasi..." : "Jalankan Audit & Notifikasi"}</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Audit Notification Banner if recently fired */}
+        {auditNotice && (
+          <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-xl text-xs text-indigo-900 font-medium flex items-center justify-between gap-2 animate-fade-in">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 size={16} className="text-indigo-600 shrink-0" />
+              <span>{auditNotice}</span>
+            </div>
+            <button 
+              type="button" 
+              onClick={() => setAuditNotice(null)} 
+              className="text-indigo-500 hover:text-indigo-800 text-xs font-bold px-1"
+            >
+              Tutup
+            </button>
+          </div>
+        )}
+
+        {/* Metrics & Status Summary Bar */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+          <div className="bg-slate-50 border border-slate-100 p-3 rounded-xl">
+            <span className="text-[10px] font-bold text-slate-500 uppercase">Target Ideal Bulanan</span>
+            <p className="text-sm font-black text-slate-800 font-mono mt-0.5">{targetIdealSerapanWaktu.toFixed(1)}%</p>
+            <span className="text-[10px] text-slate-500">Bulan ke-{currentMonthIndex} dari 12 TA {currentYear}</span>
+          </div>
+
+          <div className="bg-amber-50/70 border border-amber-200/80 p-3 rounded-xl">
+            <span className="text-[10px] font-bold text-amber-800 uppercase">Ambang Batas Peringatan (&lt;50% Target)</span>
+            <p className="text-sm font-black text-amber-900 font-mono mt-0.5">&lt; {targetThreshold50.toFixed(1)}%</p>
+            <span className="text-[10px] text-amber-700">Pemicu Web Notification Otomatis</span>
+          </div>
+
+          <div className={`p-3 rounded-xl border ${underperformingSubKegiatans.length > 0 ? 'bg-rose-50 border-rose-200' : 'bg-emerald-50 border-emerald-200'}`}>
+            <span className={`text-[10px] font-bold uppercase ${underperformingSubKegiatans.length > 0 ? 'text-rose-800' : 'text-emerald-800'}`}>
+              Sub-Kegiatan di Bawah Ambang
+            </span>
+            <p className={`text-sm font-black font-mono mt-0.5 ${underperformingSubKegiatans.length > 0 ? 'text-rose-950' : 'text-emerald-950'}`}>
+              {underperformingSubKegiatans.length} / {subKegiatans.length} Sub-Kegiatan
+            </p>
+            <span className={`text-[10px] font-semibold ${underperformingSubKegiatans.length > 0 ? 'text-rose-700' : 'text-emerald-700'}`}>
+              {underperformingSubKegiatans.length > 0 ? 'Perlu evaluasi pergeseran/akselerasi' : 'Semua sub-kegiatan memenuhi syarat'}
+            </span>
+          </div>
+
+          <div className="bg-slate-50 border border-slate-100 p-3 rounded-xl">
+            <span className="text-[10px] font-bold text-slate-500 uppercase">Waktu Evaluasi Terakhir</span>
+            <p className="text-xs font-bold text-slate-800 mt-0.5">
+              {lastAuditTime || 'Hari ini (Terjadwal Latar Belakang)'}
+            </p>
+            <span className="text-[10px] text-slate-500">Pemeriksaan berulang setiap 1 jam</span>
+          </div>
+        </div>
+
+        {/* Warning card if there are sub-kegiatans below 50% target */}
+        {underperformingSubKegiatans.length > 0 && (
+          <div className="p-3.5 bg-rose-50/80 border border-rose-200 rounded-xl space-y-2">
+            <div className="flex items-center gap-2 text-rose-800 font-bold text-xs">
+              <AlertTriangle size={15} className="text-rose-600 shrink-0" />
+              <span>Daftar {underperformingSubKegiatans.length} Sub-Kegiatan dengan Serapan di Bawah 50% Target Bulanan (&lt;{targetThreshold50.toFixed(1)}%):</span>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 pt-1">
+              {underperformingSubKegiatans.map((sk, i) => (
+                <div key={i} className="bg-white p-2.5 rounded-lg border border-rose-100 shadow-3xs flex items-center justify-between text-xs gap-2">
+                  <div className="min-w-0">
+                    <span className="text-[10px] font-mono text-slate-400 font-bold block">{sk.kode_sub_kegiatan}</span>
+                    <p className="font-bold text-slate-800 truncate text-[11px]" title={sk.nama_sub_kegiatan}>
+                      {sk.nama_sub_kegiatan}
+                    </p>
+                    <span className="text-[10px] text-slate-500 font-mono">
+                      Realisasi: {formatRupiah(sk.realisasi)}
+                    </span>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <span className="px-2 py-0.5 rounded-md font-mono font-black text-xs bg-rose-100 text-rose-800 block">
+                      {sk.persentase}%
+                    </span>
+                    <span className="text-[9px] text-rose-600 font-bold block mt-0.5">
+                      Defisit: {(targetThreshold50 - sk.persentase).toFixed(1)}%
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ⭐️ FITUR UTAMA 1: PANEL ANALISIS & REKOMENDASI PERGESERAN ANGGARAN BERBASIS GEMINI AI */}
+      <div className="bg-gradient-to-br from-slate-900 via-indigo-950 to-blue-950 text-white rounded-3xl p-6 sm:p-7 shadow-xl border border-indigo-800/40 space-y-6 relative overflow-hidden" id="gemini-rebudgeting-panel">
+        {/* Glow ambient background decoration */}
+        <div className="absolute top-0 right-0 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl pointer-events-none -mr-20 -mt-20"></div>
+        <div className="absolute bottom-0 left-0 w-80 h-80 bg-purple-500/10 rounded-full blur-3xl pointer-events-none -ml-20 -mb-20"></div>
+
+        {/* Top Header of Gemini Card */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-white/10 pb-5 gap-4 relative z-10">
+          <div className="flex items-start gap-3.5">
+            <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-500 p-0.5 shadow-lg flex items-center justify-center shrink-0">
+              <div className="w-full h-full bg-slate-900/40 rounded-2xl flex items-center justify-center">
+                <Bot size={24} className="text-blue-300 animate-pulse" />
+              </div>
+            </div>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="text-base sm:text-lg font-black tracking-tight text-white flex items-center gap-2">
+                  Rekomendasi Pergeseran Anggaran (Re-Budgeting)
+                </h3>
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black tracking-wider uppercase bg-blue-500/20 text-blue-300 border border-blue-400/30 flex items-center gap-1">
+                  <Sparkles size={11} className="text-blue-400" />
+                  Gemini 3.8 Flash
+                </span>
+                {geminiData && (
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                    geminiData.statusSerapan.includes('KRITIS') 
+                      ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40' 
+                      : geminiData.statusSerapan.includes('PERHATIAN') 
+                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' 
+                      : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                  }`}>
+                    {geminiData.statusSerapan}
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-slate-300 mt-1 leading-relaxed">
+                Kecerdasan Buatan (Google Gemini) mengaudit data RKA dan realisasi SP2D bulanan secara otomatis untuk merekomendasikan pergeseran belanja yang terhambat ke kegiatan prioritas.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 self-start md:self-auto shrink-0">
+            <button
+              type="button"
+              onClick={handleCopyGemini}
+              disabled={!geminiData}
+              className="px-3 py-1.5 bg-white/10 hover:bg-white/20 disabled:opacity-40 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 border border-white/15 transition cursor-pointer"
+              title="Salin hasil telaah AI Gemini ke Clipboard"
+            >
+              {copiedGeminiText ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
+              <span>{copiedGeminiText ? "Tersalin!" : "Salin Telaah"}</span>
+            </button>
+            <button
+              type="button"
+              onClick={fetchGeminiAnalysis}
+              disabled={isLoadingGemini}
+              className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-md transition cursor-pointer"
+            >
+              <RefreshCw size={13} className={isLoadingGemini ? "animate-spin" : ""} />
+              <span>{isLoadingGemini ? "Menganalisis..." : "Perbarui"}</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Loading state indicator */}
+        {isLoadingGemini && (
+          <div className="p-8 text-center bg-white/5 border border-white/10 rounded-2xl space-y-3 animate-pulse relative z-10">
+            <div className="w-12 h-12 mx-auto rounded-full bg-blue-600/30 flex items-center justify-center text-blue-400">
+              <Bot size={26} className="animate-spin" />
+            </div>
+            <h4 className="text-sm font-bold text-white">Gemini AI Sedang Mengaudit Data RKA & Realisasi Kas...</h4>
+            <p className="text-xs text-slate-300 max-w-md mx-auto">
+              Menganalisis deviasi target bulanan, menghitung potensi SiLPA, dan menyusun formula pergeseran anggaran antar sub-kegiatan pertanahan.
+            </p>
+          </div>
+        )}
+
+        {/* Error message */}
+        {geminiError && !isLoadingGemini && (
+          <div className="p-3.5 bg-rose-500/20 border border-rose-500/40 rounded-xl text-xs text-rose-200 flex items-center gap-2">
+            <AlertTriangle size={16} className="text-rose-400 shrink-0" />
+            <span>Pemberitahuan: {geminiError}. Sistem tetap menyajikan rekomendasi analitis berbasis data terintegrasi.</span>
+          </div>
+        )}
+
+        {/* Gemini Content Display */}
+        {geminiData && !isLoadingGemini && (
+          <div className="space-y-6 relative z-10">
+            
+            {/* 1. Baris Diagnostik Cepat AI */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-4 space-y-1.5">
+                <span className="text-[10px] font-black uppercase tracking-wider text-blue-300">Evaluasi Target Waktu</span>
+                <p className="text-xs font-semibold text-slate-200 leading-relaxed">
+                  {geminiData.deviasiAnalisis}
+                </p>
+              </div>
+
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-4 space-y-1.5">
+                <span className="text-[10px] font-black uppercase tracking-wider text-amber-300">Estimasi Risiko SiLPA</span>
+                <h4 className="text-base font-black font-mono text-amber-300">
+                  {geminiData.proyeksiSilpa}
+                </h4>
+                <p className="text-[10px] text-slate-400">
+                  Potensi sisa beku jika kecepatan belanja tidak segera diubah.
+                </p>
+              </div>
+
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-4 space-y-1.5">
+                <span className="text-[10px] font-black uppercase tracking-wider text-emerald-300">Sumber Analisis</span>
+                <p className="text-xs font-bold text-emerald-200">
+                  {geminiSource || "Gemini 3.8 Flash"}
+                </p>
+                <p className="text-[10px] text-slate-400">
+                  Terakhir diperbarui: {lastAnalyzedTime || 'Baru saja'} (Bulan ke-{currentMonthIndex} TA {currentYear})
+                </p>
+              </div>
+            </div>
+
+            {/* 2. Narasi Ringkasan Eksekutif dari Gemini */}
+            <div className="bg-white/5 border border-white/10 rounded-2xl p-4.5 space-y-2">
+              <h4 className="text-xs font-black uppercase tracking-wider text-blue-300 flex items-center gap-1.5">
+                <FileText size={14} />
+                Telaah Eksekutif Kinerja Anggaran
+              </h4>
+              <p className="text-xs leading-relaxed text-slate-200 font-medium">
+                {geminiData.ringkasanKinerja}
+              </p>
+            </div>
+
+            {/* 3. Matriks Usulan Pergeseran Anggaran (Re-Budgeting by Gemini) */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-black uppercase tracking-wider text-white flex items-center gap-2">
+                  <Shuffle size={14} className="text-blue-400" />
+                  Rekomendasi Formula Pergeseran Anggaran (Re-Budgeting)
+                </h4>
+                <span className="text-[10px] text-blue-300 font-medium">
+                  {geminiData.usulanPergeseran.length} Usulan Teridentifikasi
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3.5">
+                {geminiData.usulanPergeseran.map((item, idx) => (
+                  <div key={idx} className="bg-slate-800/80 border border-slate-700/80 rounded-2xl p-4.5 shadow-md space-y-3 transition hover:border-blue-400/50">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-700/60 pb-3">
+                      <div className="flex items-center gap-2">
+                        <span className="w-6 h-6 rounded-full bg-blue-600/30 text-blue-300 border border-blue-500/40 text-xs font-black flex items-center justify-center">
+                          {idx + 1}
+                        </span>
+                        <div>
+                          <span className="text-[10px] font-mono text-slate-400 block font-bold">NOMINAL REKOMENDASI DIGESER</span>
+                          <h5 className="text-base font-black font-mono text-emerald-400">
+                            {formatRupiah(item.rekomendasiNominal)}
+                          </h5>
+                        </div>
+                      </div>
+
+                      <div className="text-left sm:text-right">
+                        <span className="text-[10px] text-slate-400 font-semibold block">Mekanisme Regulasi:</span>
+                        <span className="text-[11px] font-bold text-blue-200">
+                          {item.langkahRegulasi || "Revisi DPA SKPD"}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                      {/* Sumber Pengurangan / Donor */}
+                      <div className="bg-rose-950/30 border border-rose-500/20 rounded-xl p-3 space-y-1">
+                        <span className="text-[10px] font-black uppercase text-rose-300 tracking-wider flex items-center gap-1">
+                          <span className="w-2 h-2 rounded-full bg-rose-500"></span>
+                          Sumber Pengurangan (Donor):
+                        </span>
+                        <p className="font-bold text-white text-xs leading-snug">
+                          {item.donorSubKegiatan}
+                        </p>
+                        <span className="text-[10px] font-mono text-slate-400 block pt-0.5">
+                          Kode: {item.donorKode}
+                        </span>
+                      </div>
+
+                      {/* Sasaran Penerima */}
+                      <div className="bg-emerald-950/30 border border-emerald-500/20 rounded-xl p-3 space-y-1">
+                        <span className="text-[10px] font-black uppercase text-emerald-300 tracking-wider flex items-center gap-1">
+                          <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                          Sasaran Penambahan (Penerima):
+                        </span>
+                        <p className="font-bold text-white text-xs leading-snug">
+                          {item.penerimaSubKegiatan}
+                        </p>
+                        <span className="text-[10px] font-mono text-slate-400 block pt-0.5">
+                          Kode: {item.penerimaKode}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Alasan Urgensi & Justifikasi Teknis */}
+                    <div className="bg-slate-900/60 rounded-xl p-3 border border-slate-700/40 text-xs space-y-1">
+                      <span className="text-[10px] font-black uppercase text-amber-300 tracking-wider">
+                        Justifikasi Teknis & Urgensi Re-Budgeting:
+                      </span>
+                      <p className="text-slate-300 text-xs leading-relaxed">
+                        {item.alasanUrgensi}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* 4. Tindakan Akselerasi Bulanan (14 - 30 Hari) */}
+            <div className="bg-white/5 border border-white/10 rounded-2xl p-4.5 space-y-3">
+              <h4 className="text-xs font-black uppercase tracking-wider text-amber-300 flex items-center gap-1.5">
+                <Target size={14} />
+                Langkah Taktis Akselerasi Operasional (14 - 30 Hari ke Depan)
+              </h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                {geminiData.tindakanAkselerasi.map((action, i) => (
+                  <div key={i} className="flex items-start gap-2.5 bg-black/20 p-2.5 rounded-xl border border-white/5">
+                    <CheckCircle2 size={15} className="text-emerald-400 shrink-0 mt-0.5" />
+                    <span className="text-xs text-slate-200 leading-snug">{action}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* 5. Catatan Kebijakan Pimpinan & TAPD */}
+            <div className="bg-blue-950/40 border border-blue-500/30 rounded-2xl p-4.5 space-y-1.5">
+              <span className="text-[10px] font-black uppercase tracking-wider text-blue-300 flex items-center gap-1.5">
+                <Building size={14} />
+                Catatan Kebijakan untuk Pimpinan Dinas & TAPD
+              </span>
+              <p className="text-xs text-blue-100 leading-relaxed font-medium">
+                {geminiData.catatanKebijakan}
+              </p>
+            </div>
+
+          </div>
+        )}
+      </div>
+
+      {/* ⭐️ FITUR: KOMPONEN TREN REALISASI BULANAN (RECHARTS LINECHART AKUMULATIF TARGET VS REALISASI) */}
+      <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-5" id="tren-realisasi-bulanan-section">
+        <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-dashed border-slate-200 pb-4 gap-4">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 bg-emerald-50 text-emerald-700 rounded-lg">
+                <TrendingUp size={18} />
+              </div>
+              <h3 className="text-sm font-black text-slate-800 uppercase tracking-wider">
+                Tren Realisasi Bulanan (Akumulatif: Target vs Realisasi Kas)
+              </h3>
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                TA {currentYear}
+              </span>
+            </div>
+            <p className="text-xs text-slate-500">
+              Garis perbandingan akumulatif antara target proporsional tahun berjalan dengan realisasi belanja kas SP2D, dengan penanda titik untuk tiap bulan yang telah terlewati.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <div className="flex items-center gap-3 text-xs font-semibold text-slate-600 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200/80">
+              <span className="flex items-center gap-1.5">
+                <span className="w-4 h-0.5 border-t-2 border-dashed border-indigo-500 inline-block"></span>
+                <span>Target Akumulatif</span>
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="w-3.5 h-3.5 rounded-full bg-emerald-500 border-2 border-white shadow-3xs inline-block"></span>
+                <span className="font-bold text-emerald-800">Realisasi Kas (Titik Aktif)</span>
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Ringkasan Indikator Tren Akumulatif */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+          <div className="bg-indigo-50/70 border border-indigo-100 p-3.5 rounded-xl">
+            <span className="text-[10px] font-black uppercase text-indigo-800 tracking-wider">Target Akumulatif (s/d Bln-{currentMonthIndex})</span>
+            <p className="text-base font-black text-indigo-950 font-mono mt-0.5">
+              {formatRupiah(Math.round((currentMonthIndex / 12) * totalPagu))}
+            </p>
+            <span className="text-[10px] font-semibold text-indigo-700">
+              {targetIdealSerapanWaktu.toFixed(1)}% dari total pagu {formatRupiah(totalPagu)}
+            </span>
+          </div>
+
+          <div className="bg-emerald-50/70 border border-emerald-100 p-3.5 rounded-xl">
+            <span className="text-[10px] font-black uppercase text-emerald-800 tracking-wider">Realisasi Akumulatif Terkini</span>
+            <p className="text-base font-black text-emerald-950 font-mono mt-0.5">
+              {formatRupiah(totalRealized)}
+            </p>
+            <span className="text-[10px] font-semibold text-emerald-700">
+              {rasioSerapanTotal.toFixed(2)}% dari total pagu
+            </span>
+          </div>
+
+          <div className={`p-3.5 rounded-xl border ${deviasiWaktuPersen >= 0 ? 'bg-emerald-50/70 border-emerald-100' : 'bg-amber-50/70 border-amber-100'}`}>
+            <span className="text-[10px] font-black uppercase tracking-wider text-slate-700">Deviasi terhadap Target</span>
+            <p className={`text-base font-black font-mono mt-0.5 flex items-center gap-1.5 ${deviasiWaktuPersen >= 0 ? 'text-emerald-950' : 'text-amber-950'}`}>
+              {deviasiWaktuPersen >= 0 ? (
+                <>
+                  <ArrowUpRight size={18} className="text-emerald-600" />
+                  +{formatRupiah(totalRealized - Math.round((currentMonthIndex / 12) * totalPagu))}
+                </>
+              ) : (
+                <>
+                  <ArrowDownRight size={18} className="text-amber-600" />
+                  {formatRupiah(totalRealized - Math.round((currentMonthIndex / 12) * totalPagu))}
+                </>
+              )}
+            </p>
+            <span className={`text-[10px] font-bold ${deviasiWaktuPersen >= 0 ? 'text-emerald-700' : 'text-amber-700'}`}>
+              {deviasiWaktuPersen >= 0 ? `Surplus +${deviasiWaktuPersen.toFixed(1)}%` : `Defisit ${deviasiWaktuPersen.toFixed(1)}%`} dari target proporsional
+            </span>
+          </div>
+
+          <div className="bg-slate-50 border border-slate-100 p-3.5 rounded-xl">
+            <span className="text-[10px] font-black uppercase text-slate-600 tracking-wider">Bulan Terlewati</span>
+            <p className="text-base font-black text-slate-900 font-mono mt-0.5">
+              {currentMonthIndex} / 12 Bulan
+            </p>
+            <span className="text-[10px] font-semibold text-slate-500">
+              Sisa {sisaBulan} bulan menuju akhir TA {currentYear}
+            </span>
+          </div>
+        </div>
+
+        {/* Recharts LineChart dengan Penanda Titik untuk Tiap Bulan yang Terlewati */}
+        <div className="h-80 w-full pt-2">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart
+              data={cumulativeTrendData}
+              margin={{ top: 20, right: 25, left: 10, bottom: 25 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+              <XAxis 
+                dataKey="name" 
+                stroke="#64748b" 
+                style={{ fontSize: '11px', fontWeight: 'bold' }}
+                tickMargin={8}
+              />
+              <YAxis 
+                stroke="#64748b" 
+                style={{ fontSize: '10px' }} 
+                tickFormatter={formatYAxisTick} 
+                width={65} 
+              />
+              <Tooltip
+                content={({ active, payload }) => {
+                  if (active && payload && payload.length) {
+                    const data = payload[0].payload;
+                    return (
+                      <div className="bg-slate-900 text-white p-3.5 rounded-xl shadow-2xl border border-slate-700 text-xs text-left max-w-xs space-y-2">
+                        <div className="border-b border-slate-700 pb-1.5 flex items-center justify-between gap-3">
+                          <span className="font-black text-slate-100 text-xs">{data.fullName} (Bulan ke-{data.monthIndex})</span>
+                          <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${
+                            data.isCurrent 
+                              ? 'bg-emerald-500/30 text-emerald-300 border border-emerald-400/40' 
+                              : data.isPassed 
+                              ? 'bg-blue-500/30 text-blue-300' 
+                              : 'bg-slate-700 text-slate-400'
+                          }`}>
+                            {data.isCurrent ? 'Bulan Berjalan' : data.isPassed ? 'Bulan Terlewati' : 'Bulan Mendatang'}
+                          </span>
+                        </div>
+
+                        <div className="space-y-1.5 font-mono text-[11px]">
+                          <div className="flex justify-between items-center gap-4">
+                            <span className="text-indigo-300 font-sans font-bold flex items-center gap-1.5">
+                              <span className="w-3 h-0.5 border-t-2 border-dashed border-indigo-400 inline-block"></span>
+                              Target Akumulatif:
+                            </span>
+                            <span className="font-black text-white">{formatRupiah(data.targetAkumulatif)}</span>
+                          </div>
+                          <div className="text-[10px] text-indigo-200 text-right font-sans">
+                            {data.targetPercent.toFixed(1)}% dari Total Pagu
+                          </div>
+
+                          {data.isPassed && (
+                            <>
+                              <div className="flex justify-between items-center gap-4 pt-1 border-t border-slate-800">
+                                <span className="text-emerald-300 font-sans font-bold flex items-center gap-1.5">
+                                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block"></span>
+                                  Realisasi Akumulatif:
+                                </span>
+                                <span className="font-black text-emerald-400">{formatRupiah(data.realisasiAkumulatif)}</span>
+                              </div>
+                              <div className="text-[10px] text-emerald-200 text-right font-sans">
+                                {data.realisasiPercent?.toFixed(1)}% dari Total Pagu
+                              </div>
+
+                              <div className="flex justify-between items-center gap-4 pt-1">
+                                <span className="text-slate-300 font-sans">SP2D Bulan Ini:</span>
+                                <span className="font-bold text-white">{formatRupiah(data.realisasiBulanan)}</span>
+                              </div>
+
+                              <div className="pt-1.5 border-t border-dashed border-slate-700 flex justify-between items-center">
+                                <span className="text-slate-400 font-sans">Deviasi Akumulatif:</span>
+                                <span className={`font-bold ${data.selisihAkumulatif >= 0 ? 'text-emerald-400' : 'text-amber-400'}`}>
+                                  {data.selisihAkumulatif >= 0 ? `+${formatRupiah(data.selisihAkumulatif)}` : formatRupiah(data.selisihAkumulatif)}
+                                </span>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  }
+                  return null;
+                }}
+              />
+              <Legend 
+                verticalAlign="top" 
+                align="right"
+                wrapperStyle={{ paddingBottom: '12px', fontSize: '11px', fontWeight: 'bold' }} 
+              />
+              {/* Garis Target Akumulatif (Garis putus-putus Indigo) */}
+              <Line 
+                type="monotone" 
+                dataKey="targetAkumulatif" 
+                name="Target Akumulatif (Proporsional)" 
+                stroke="#6366f1" 
+                strokeWidth={2.5} 
+                strokeDasharray="5 5" 
+                dot={false}
+              />
+              {/* Garis Realisasi Akumulatif (Garis tegas Emerald) dengan penanda titik untuk tiap bulan yang terlewati */}
+              <Line 
+                type="monotone" 
+                dataKey="realisasiAkumulatif" 
+                name="Realisasi Akumulatif Kas" 
+                stroke="#10b981" 
+                strokeWidth={3.5} 
+                connectNulls={false}
+                dot={(props: any) => {
+                  const { cx, cy, payload } = props;
+                  if (!payload || !payload.isPassed || cx === undefined || cy === undefined || payload.realisasiAkumulatif === null) {
+                    return <React.Fragment key={`empty-dot-${props.index}`} />;
+                  }
+                  const isCur = payload.monthIndex === currentMonthIndex;
+                  return (
+                    <g key={`dot-marker-${payload.monthIndex}`}>
+                      {isCur && (
+                        <circle cx={cx} cy={cy} r={11} fill="#10b981" fillOpacity={0.25} />
+                      )}
+                      <circle
+                        cx={cx}
+                        cy={cy}
+                        r={isCur ? 6 : 4.5}
+                        fill={isCur ? "#059669" : "#10b981"}
+                        stroke="#ffffff"
+                        strokeWidth={2}
+                      />
+                    </g>
+                  );
+                }}
+                activeDot={{ r: 7, strokeWidth: 2, stroke: '#ffffff', fill: '#059669' }}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      {/* ⭐️ FITUR UTAMA 2: Komponen Grafik Batang Perbandingan Realisasi Program TA Berjalan vs TA Sebelumnya (Recharts) */}
       <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-5" id="grafik-komparasi-program">
         <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-dashed pb-4 gap-4">
           <div className="space-y-1">
@@ -541,302 +1337,6 @@ export default function AnalisisView({
         </div>
       </div>
 
-      {/* ⭐️ MODUL ANALISIS CERDAS & REKOMENDASI SOLUSI SERAPAN ANGGARAN OLEH APLIKASI */}
-      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 space-y-6" id="analisis-saran-aplikasi">
-        <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-dashed pb-4 gap-4">
-          <div className="flex items-start gap-3">
-            <div className="p-2.5 bg-amber-50 text-amber-700 rounded-xl shrink-0 mt-0.5">
-              <Lightbulb size={22} className="animate-pulse" />
-            </div>
-            <div>
-              <h3 className="text-sm font-black text-slate-800 uppercase tracking-wider flex items-center gap-2">
-                Analisis Kinerja & Saran Tindak Lanjut oleh Aplikasi
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-800 uppercase">
-                  Otomatis
-                </span>
-              </h3>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Evaluasi cerdas ritme serapan kas bulanan, deteksi potensi sisa anggaran mandek (SiLPA), serta saran konkret pergeseran anggaran untuk sub-kegiatan yang mendesak.
-              </p>
-            </div>
-          </div>
-
-          {/* Tab Filter Saran */}
-          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl text-xs font-bold self-start md:self-auto">
-            <button
-              type="button"
-              onClick={() => setActiveAnalysisTab('pergeseran')}
-              className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
-                activeAnalysisTab === 'pergeseran' ? 'bg-white text-blue-900 shadow-3xs' : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Usulan Pergeseran
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveAnalysisTab('waktu')}
-              className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
-                activeAnalysisTab === 'waktu' ? 'bg-white text-blue-900 shadow-3xs' : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Evaluasi Waktu & SiLPA
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveAnalysisTab('subkegiatan')}
-              className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
-                activeAnalysisTab === 'subkegiatan' ? 'bg-white text-blue-900 shadow-3xs' : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Sub-Kegiatan Kritis
-            </button>
-          </div>
-        </div>
-
-        {/* 1. KOTAK DIAGNOSTIK KINERJA WAKTU VS SERAPAN */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {/* Status Waktu vs Realisasi */}
-          <div className="p-4 rounded-xl border border-blue-100 bg-gradient-to-br from-blue-50/70 to-white space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-black uppercase text-blue-800 tracking-wider">Ritme Waktu vs Serapan</span>
-              <Clock size={16} className="text-blue-600" />
-            </div>
-            <div className="space-y-1">
-              <div className="flex justify-between text-xs font-bold text-slate-700">
-                <span>Bulan Berjalan:</span>
-                <span className="font-mono text-blue-900">Bulan ke-{currentMonthIndex} (Tersisa {sisaBulan} bln)</span>
-              </div>
-              <div className="flex justify-between text-xs font-bold text-slate-700">
-                <span>Target Ideal Waktu:</span>
-                <span className="font-mono text-slate-900">{targetIdealSerapanWaktu.toFixed(1)}%</span>
-              </div>
-              <div className="flex justify-between text-xs font-bold text-slate-700">
-                <span>Realisasi Kas Riil:</span>
-                <span className="font-mono font-black text-blue-950">{rasioSerapanTotal.toFixed(2)}%</span>
-              </div>
-            </div>
-            <div className={`mt-2 pt-2 border-t text-[11px] font-bold flex items-center gap-1.5 ${
-              deviasiWaktuPersen >= -5 ? 'text-emerald-700 border-emerald-200' : deviasiWaktuPersen >= -15 ? 'text-amber-700 border-amber-200' : 'text-rose-700 border-rose-200'
-            }`}>
-              {deviasiWaktuPersen >= -5 ? (
-                <>
-                  <CheckCircle2 size={14} className="shrink-0" />
-                  <span>Serapan On-Track (Deviasi {deviasiWaktuPersen > 0 ? `+${deviasiWaktuPersen.toFixed(1)}` : deviasiWaktuPersen.toFixed(1)}%)</span>
-                </>
-              ) : (
-                <>
-                  <AlertTriangle size={14} className="shrink-0" />
-                  <span>Defisit Serapan {deviasiWaktuPersen.toFixed(1)}% terhadap Waktu</span>
-                </>
-              )}
-            </div>
-          </div>
-
-          {/* Proyeksi SiLPA Akhir Tahun */}
-          <div className="p-4 rounded-xl border border-amber-100 bg-gradient-to-br from-amber-50/70 to-white space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-black uppercase text-amber-800 tracking-wider">Proyeksi SiLPA Akhir Tahun</span>
-              <Coins size={16} className="text-amber-600" />
-            </div>
-            <div className="space-y-1">
-              <p className="text-xs font-bold text-slate-600">Estimasi Sisa Pagu Tidak Terserap:</p>
-              <h4 className="text-base font-black text-amber-950 font-mono">
-                {formatRupiah(budgetRealignmentInsights.projectedSiLPA)}
-              </h4>
-              <p className="text-[11px] text-slate-500 font-medium">
-                Bila laju serapan bulanan ({formatRupiah(budgetRealignmentInsights.avgRealisasiPerBulan)}/bln) tidak diakselerasi.
-              </p>
-            </div>
-            <div className="mt-2 pt-2 border-t border-amber-200/80 text-[11px] font-bold text-amber-900">
-              Proyeksi akhir tahun: {budgetRealignmentInsights.projectedFinalPercentage.toFixed(1)}% pagu terserap.
-            </div>
-          </div>
-
-          {/* Rekomendasi Langkah Darurat / Akselerasi */}
-          <div className="p-4 rounded-xl border border-indigo-100 bg-gradient-to-br from-indigo-50/70 to-white space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-black uppercase text-indigo-800 tracking-wider">Langkah Mitigasi Cepat</span>
-              <FileEdit size={16} className="text-indigo-600" />
-            </div>
-            <p className="text-xs font-bold text-indigo-950 leading-relaxed">
-              Disarankan melakukan <span className="underline decoration-indigo-400">Perubahan / Pergeseran Anggaran (DPA)</span> mendahului perubahan APBD.
-            </p>
-            <p className="text-[11px] text-slate-600 leading-normal">
-              Alihkan pagu sisa dari kegiatan yang lambat ke pos belanja modal pengukuran, pensertifikatan tanah aset, dan penyelesaian kewajiban SP2D pihak ketiga.
-            </p>
-          </div>
-        </div>
-
-        {/* 2. TAB USULAN PERGESERAN ANGGARAN (BUDGET REALIGNMENT SIMULATOR) */}
-        {(activeAnalysisTab === 'pergeseran' || activeAnalysisTab === 'semua') && (
-          <div className="space-y-4 pt-1">
-            <div className="flex items-center justify-between">
-              <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-2">
-                <Shuffle size={14} className="text-blue-700" />
-                Matriks Usulan Pergeseran Anggaran Antar Sub-Kegiatan (Rekomendasi Sistem)
-              </h4>
-              <span className="text-[11px] text-slate-500 font-medium">Berdasarkan rasio ketersediaan sisa pagu dan urgensi belanja</span>
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              
-              {/* Kolom 1: Sub-Kegiatan Donor (Pemberi Anggaran) */}
-              <div className="border border-rose-200 bg-rose-50/30 rounded-xl p-4 space-y-3">
-                <div className="flex items-center justify-between border-b border-rose-200 pb-2">
-                  <span className="text-xs font-black text-rose-900 uppercase tracking-wider flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-full bg-rose-500"></span>
-                    Kandidat Sumber Pengurangan (Donor Anggaran)
-                  </span>
-                  <span className="text-[10px] font-extrabold bg-rose-100 text-rose-800 px-2 py-0.5 rounded">
-                    Serapan Rendah (&lt; 45%)
-                  </span>
-                </div>
-                <p className="text-[11px] text-slate-600">
-                  Sub-kegiatan berikut memiliki sisa pagu besar namun realisasi berjalan lambat. Dianjurkan untuk digeser sebagian agar tidak menjadi sisa beku:
-                </p>
-
-                <div className="space-y-2.5">
-                  {budgetRealignmentInsights.donorCandidates.slice(0, 3).map((donor, idx) => (
-                    <div key={idx} className="bg-white p-3 rounded-lg border border-rose-150 shadow-3xs space-y-1.5">
-                      <div className="flex justify-between items-start gap-2">
-                        <p className="font-bold text-xs text-slate-900 leading-snug">{donor.nama_sub_kegiatan}</p>
-                        <span className="text-[10px] font-black font-mono text-rose-700 bg-rose-50 px-1.5 py-0.5 rounded shrink-0">
-                          {donor.persentase}% Terserap
-                        </span>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2 text-[11px] font-mono text-slate-600 pt-1 border-t border-slate-100">
-                        <div>
-                          <span className="text-[9px] uppercase font-sans text-slate-400 block font-bold">Sisa Pagu Saat Ini:</span>
-                          <span className="font-bold text-slate-800">{formatRupiah(donor.sisaPagu)}</span>
-                        </div>
-                        <div>
-                          <span className="text-[9px] uppercase font-sans text-rose-600 block font-bold">Disarankan Digeser:</span>
-                          <span className="font-black text-rose-900">~{formatRupiah(donor.suggestedDiverted)}</span>
-                        </div>
-                      </div>
-                      <p className="text-[10px] text-slate-500 italic mt-0.5">{donor.alasan}</p>
-                    </div>
-                  ))}
-                  {budgetRealignmentInsights.donorCandidates.length === 0 && (
-                    <div className="p-4 text-center text-xs text-slate-500 font-semibold bg-white rounded-lg border">
-                      Semua sub-kegiatan memiliki serapan yang memadai. Tidak ditemukan kandidat donor yang kritis.
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Kolom 2: Sub-Kegiatan Penerima (Penerima Tambahan Anggaran) */}
-              <div className="border border-emerald-200 bg-emerald-50/30 rounded-xl p-4 space-y-3">
-                <div className="flex items-center justify-between border-b border-emerald-200 pb-2">
-                  <span className="text-xs font-black text-emerald-900 uppercase tracking-wider flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
-                    Kandidat Sasaran Penerima (Tambahan Anggaran)
-                  </span>
-                  <span className="text-[10px] font-extrabold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded">
-                    Prioritas & Serapan Tinggi
-                  </span>
-                </div>
-                <p className="text-[11px] text-slate-600">
-                  Sub-kegiatan berikut memiliki serapan sangat cepat atau merupakan tugas mendesak pertanahan yang membutuhkan penambahan pagu:
-                </p>
-
-                <div className="space-y-2.5">
-                  {budgetRealignmentInsights.recipientCandidates.slice(0, 3).map((rec, idx) => (
-                    <div key={idx} className="bg-white p-3 rounded-lg border border-emerald-150 shadow-3xs space-y-1.5">
-                      <div className="flex justify-between items-start gap-2">
-                        <p className="font-bold text-xs text-slate-900 leading-snug">{rec.nama_sub_kegiatan}</p>
-                        <span className="text-[10px] font-black font-mono text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded shrink-0">
-                          {rec.persentase}% Terserap
-                        </span>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2 text-[11px] font-mono text-slate-600 pt-1 border-t border-slate-100">
-                        <div>
-                          <span className="text-[9px] uppercase font-sans text-slate-400 block font-bold">Pagu Saat Ini:</span>
-                          <span className="font-bold text-slate-800">{formatRupiah(rec.pagu)}</span>
-                        </div>
-                        <div>
-                          <span className="text-[9px] uppercase font-sans text-emerald-600 block font-bold">Usulan Tambahan:</span>
-                          <span className="font-black text-emerald-900">+{formatRupiah(rec.suggestedAdd)}</span>
-                        </div>
-                      </div>
-                      <p className="text-[10px] text-slate-500 italic mt-0.5">{rec.alasan}</p>
-                    </div>
-                  ))}
-                  {budgetRealignmentInsights.recipientCandidates.length === 0 && (
-                    <div className="p-4 text-center text-xs text-slate-500 font-semibold bg-white rounded-lg border">
-                      Semua sub-kegiatan berada dalam batas proporsional normal.
-                    </div>
-                  )}
-                </div>
-              </div>
-
-            </div>
-          </div>
-        )}
-
-        {/* 3. EVALUASI WAKTU & STRATEGI EKSEKUSI BULANAN */}
-        {(activeAnalysisTab === 'waktu' || activeAnalysisTab === 'semua') && (
-          <div className="space-y-3 bg-slate-50 p-4.5 rounded-xl border border-slate-200">
-            <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-2">
-              <Calendar size={15} className="text-blue-700" />
-              Jadwal Kritis & Batas Waktu Eksekusi Anggaran (Menjelang Akhir Tahun)
-            </h4>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-1">
-              <div className="bg-white p-3 rounded-lg border border-slate-200 space-y-1">
-                <span className="text-[10px] font-black uppercase text-blue-700 tracking-wider">1. Belanja Pihak Ketiga (SP2D Kontraktual)</span>
-                <p className="text-[11px] text-slate-700 leading-relaxed font-medium">
-                  Segera lengkapi BAST (Berita Acara Serah Terima) dan faktur rekanan paling lambat minggu ke-2 bulan depan agar tidak terhalang antrean verifikasi SPM di BPKAD.
-                </p>
-              </div>
-
-              <div className="bg-white p-3 rounded-lg border border-slate-200 space-y-1">
-                <span className="text-[10px] font-black uppercase text-emerald-700 tracking-wider">2. Belanja Modal & Sertifikasi Tanah</span>
-                <p className="text-[11px] text-slate-700 leading-relaxed font-medium">
-                  Prioritaskan pencairan biaya pengukuran BPN dan penyelesaian bukti kepemilikan tanah PSU/Pemda yang sudah memiliki alas hak lengkap.
-                </p>
-              </div>
-
-              <div className="bg-white p-3 rounded-lg border border-slate-200 space-y-1">
-                <span className="text-[10px] font-black uppercase text-amber-700 tracking-wider">3. Cut-off SPM / SP2D Tutup Kas</span>
-                <p className="text-[11px] text-slate-700 leading-relaxed font-medium">
-                  Waspadai batas akhir penerbitan SP2D GU/TU/LS pada pertengahan Desember. Pastikan seluruh SPJ fungsional rampung sebelum batas cut-off.
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* 4. SUB-KEGIATAN KRITIS BUTUH ATENSI */}
-        {(activeAnalysisTab === 'subkegiatan' || activeAnalysisTab === 'semua') && (
-          <div className="space-y-3">
-            <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-2">
-              <Target size={15} className="text-rose-700" />
-              Daftar Sub-Kegiatan Kritis Memerlukan Intervensi Segera
-            </h4>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {subKegiatans.filter(s => s.persentase < 50).map((sk, idx) => (
-                <div key={idx} className="bg-white p-3.5 rounded-xl border border-rose-200 shadow-3xs space-y-2">
-                  <div className="flex justify-between items-start gap-2">
-                    <span className="font-mono text-[10px] font-bold text-slate-500">{sk.kode_sub_kegiatan}</span>
-                    <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-rose-50 text-rose-700 border border-rose-200">
-                      Serapan {sk.persentase}%
-                    </span>
-                  </div>
-                  <p className="text-xs font-bold text-slate-900 leading-snug line-clamp-2" title={sk.nama_sub_kegiatan}>
-                    {sk.nama_sub_kegiatan}
-                  </p>
-                  <div className="text-[11px] text-slate-600 font-mono flex justify-between pt-1 border-t">
-                    <span>Sisa Pagu:</span>
-                    <span className="font-bold text-rose-900">{formatRupiah(sk.pagu - sk.realisasi)}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-      </div>
-
       {/* Interactive Charts Panel (Tren Bulanan & Pagu vs Realisasi Program) */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6" id="analisis-charts-panel">
         
@@ -888,7 +1388,7 @@ export default function AnalisisView({
                 <XAxis dataKey="label" stroke="#64748b" style={{ fontSize: '10px', fontWeight: 'bold' }} />
                 <YAxis stroke="#64748b" style={{ fontSize: '10px' }} tickFormatter={formatYAxisTick} width={55} />
                 <Tooltip 
-                  content={({ active, payload, label }) => {
+                  content={({ active, payload }) => {
                     if (active && payload && payload.length) {
                       const data = payload[0].payload;
                       const paguVal = Number(data.paguBerjalan || 0);
