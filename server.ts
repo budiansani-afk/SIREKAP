@@ -193,7 +193,7 @@ TUGAS & INSTRUKSI:
 5. Rumuskan 4 langkah tindakan akselerasi konkret untuk PPTK dan Bendahara Pengeluaran dalam 14-30 hari ke depan serta antisipasi cut-off SPM/SP2D di BPKAD Bima.`;
 
     const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error("Batas waktu respons Gemini (12s) tercapai")), 12000);
+      setTimeout(() => reject(new Error("Batas waktu respons Gemini (50s) tercapai")), 50000);
     });
 
     const generatePromise = ai.models.generateContent({
@@ -202,6 +202,7 @@ TUGAS & INSTRUKSI:
       config: {
         systemInstruction: "Anda adalah Konsultan Ahli Perencanaan Keuangan Daerah dan Analis APBD Sektor Pertanahan di Pemerintah Kabupaten Bima, NTB. Jawaban Anda harus formal, berbobot, berbasis data numerik riil, dan sesuai regulasi Permendagri tentang Pengelolaan Keuangan Daerah.",
         responseMimeType: "application/json",
+        temperature: 0.2,
         responseSchema: {
           type: Type.OBJECT,
           properties: {
@@ -248,11 +249,10 @@ TUGAS & INSTRUKSI:
       data: parsedData
     });
   } catch (error: any) {
-    console.error("[Gemini Re-budgeting Analysis Error]", error);
+    console.warn("[Gemini Re-budgeting Fallback Active]", error?.message || error);
     res.json({
       isAiGenerated: false,
       source: "Sistem Analisis Cerdas (Mode Heuristik Otomatis)",
-      error: error.message || "Gagal menghubungi layanan Gemini API",
       data: generateHeuristicAnalysis(req.body)
     });
   }
