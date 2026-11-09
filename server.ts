@@ -193,11 +193,11 @@ TUGAS & INSTRUKSI:
 5. Rumuskan 4 langkah tindakan akselerasi konkret untuk PPTK dan Bendahara Pengeluaran dalam 14-30 hari ke depan serta antisipasi cut-off SPM/SP2D di BPKAD Bima.`;
 
     const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error("Batas waktu respons Gemini (50s) tercapai")), 50000);
+      setTimeout(() => reject(new Error("Batas waktu respons Gemini (15s) tercapai")), 15000);
     });
 
     const generatePromise = ai.models.generateContent({
-      model: "gemini-3.8-flash",
+      model: "gemini-3.5-flash-lite",
       contents: prompt,
       config: {
         systemInstruction: "Anda adalah Konsultan Ahli Perencanaan Keuangan Daerah dan Analis APBD Sektor Pertanahan di Pemerintah Kabupaten Bima, NTB. Jawaban Anda harus formal, berbobot, berbasis data numerik riil, dan sesuai regulasi Permendagri tentang Pengelolaan Keuangan Daerah.",
@@ -245,7 +245,7 @@ TUGAS & INSTRUKSI:
 
     res.json({
       isAiGenerated: true,
-      source: "Gemini 3.8 Flash (AI Google)",
+      source: "Gemini 3.5 Flash Lite (AI Google)",
       data: parsedData
     });
   } catch (error: any) {
@@ -256,6 +256,18 @@ TUGAS & INSTRUKSI:
       data: generateHeuristicAnalysis(req.body)
     });
   }
+});
+
+// Alias endpoint route for flexibility
+app.all(["/api/gemini/analisis-pergeseran", "/api/gemini/analisis-pergeseran/"], (req, res, next) => {
+  if (req.method !== "POST") {
+    return res.json({
+      isAiGenerated: false,
+      source: "Sistem Analisis Cerdas (Mode Heuristik Otomatis)",
+      data: generateHeuristicAnalysis(req.body || {})
+    });
+  }
+  next();
 });
 
 // Vite Middleware & SPA serving
