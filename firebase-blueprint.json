@@ -10,7 +10,8 @@
         "pagu": { "type": "number" },
         "realisasi": { "type": "number" },
         "sisa": { "type": "number" },
-        "persentase": { "type": "number" }
+        "persentase": { "type": "number" },
+        "tahun": { "type": "number" }
       },
       "required": ["kode_program", "nama_program", "pagu"]
     },
@@ -25,7 +26,8 @@
         "pagu": { "type": "number" },
         "realisasi": { "type": "number" },
         "sisa": { "type": "number" },
-        "persentase": { "type": "number" }
+        "persentase": { "type": "number" },
+        "tahun": { "type": "number" }
       },
       "required": ["kode_kegiatan", "nama_kegiatan", "kode_program", "pagu"]
     },
@@ -41,7 +43,8 @@
         "pagu": { "type": "number" },
         "realisasi": { "type": "number" },
         "sisa": { "type": "number" },
-        "persentase": { "type": "number" }
+        "persentase": { "type": "number" },
+        "tahun": { "type": "number" }
       },
       "required": ["kode_sub_kegiatan", "nama_sub_kegiatan", "kode_program", "kode_kegiatan", "pagu"]
     },
@@ -69,11 +72,12 @@
     },
     "Realisasi": {
       "title": "Realisasi",
-      "description": "Catatan Realisasi Keuangan",
+      "description": "Catatan Realisasi Keuangan SP2D",
       "type": "object",
       "properties": {
         "tanggal": { "type": "string" },
         "bulan": { "type": "string" },
+        "tahun": { "type": "number" },
         "kode_program": { "type": "string" },
         "kode_kegiatan": { "type": "string" },
         "kode_sub_kegiatan": { "type": "string" },
@@ -81,14 +85,40 @@
         "nominal_realisasi": { "type": "number" },
         "persentase_realisasi": { "type": "number" },
         "sisa_anggaran": { "type": "number" },
+        "pagu_anggaran_terpantau": { "type": "number" },
         "keterangan": { "type": "string" },
-        "bukti_transaksi": { "type": "string" }
+        "bukti_transaksi": { "type": "string" },
+        "bukti_transaksi_storage_path": { "type": "string" },
+        "id_pihak_ketiga": { "type": "string" }
       },
       "required": ["tanggal", "bulan", "kode_sub_kegiatan", "nominal_realisasi"]
     },
+    "BelanjaPihakKetiga": {
+      "title": "BelanjaPihakKetiga",
+      "description": "Catatan Kontrak & Realisasi Belanja Pihak Ketiga",
+      "type": "object",
+      "properties": {
+        "tanggal": { "type": "string" },
+        "tahun": { "type": "number" },
+        "kode_program": { "type": "string" },
+        "kode_kegiatan": { "type": "string" },
+        "kode_sub_kegiatan": { "type": "string" },
+        "uraian_belanja": { "type": "string" },
+        "nama_pelaksana": { "type": "string" },
+        "nomor_kontrak": { "type": "string" },
+        "masa_kerja_mulai": { "type": "string" },
+        "masa_kerja_selesai": { "type": "string" },
+        "realisasi": { "type": "number" },
+        "catatan": { "type": "string" },
+        "foto_kegiatan": { "type": "string" },
+        "foto_kegiatan_storage_path": { "type": "string" },
+        "id_realisasi_sp2d": { "type": "string" }
+      },
+      "required": ["tanggal", "kode_sub_kegiatan", "uraian_belanja", "realisasi"]
+    },
     "MonitoringFisik": {
       "title": "MonitoringFisik",
-      "description": "Catatan Capaian Target & Realisasi Fisik",
+      "description": "Catatan Capaian Target & Realisasi Fisik (Legacy)",
       "type": "object",
       "properties": {
         "tanggal": { "type": "string" },
@@ -114,25 +144,32 @@
         "tanggal_upload": { "type": "string" },
         "tipe_file": { "type": "string" },
         "ukuran_file": { "type": "string" },
-        "data_url": { "type": "string" }
+        "data_url": { "type": "string" },
+        "storage_path": { "type": "string" }
       },
       "required": ["nama_dokumen", "kategori", "tanggal_upload"]
     },
     "Pengguna": {
       "title": "Pengguna",
-      "description": "Pengguna aplikasi dan role mereka",
+      "description": "Pengguna aplikasi dan role mereka (wajib alamat email valid)",
       "type": "object",
       "properties": {
-        "nama": { "type": "string" },
-        "email": { "type": "string" },
-        "role": { "type": "string" },
+        "id": { "type": "string", "maxLength": 254 },
+        "nama": { "type": "string", "maxLength": 150 },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "maxLength": 254,
+          "pattern": "^[a-zA-Z0-9._%+\\-]+@[a-zA-Z0-9.\\-]+\\.[a-zA-Z]{2,}$"
+        },
+        "role": { "type": "string", "enum": ["Administrator", "Operator", "Pimpinan"] },
         "aktif": { "type": "boolean" }
       },
-      "required": ["nama", "email", "role"]
+      "required": ["id", "nama", "email", "role", "aktif"]
     },
     "LogAktivitas": {
       "title": "LogAktivitas",
-      "description": "Catatan log audit aktivitas pengguna",
+      "description": "Catatan log audit aktivitas pengguna (immutable)",
       "type": "object",
       "properties": {
         "waktu": { "type": "string" },
@@ -160,23 +197,41 @@
     },
     "Presence": {
       "title": "Presence",
-      "description": "Data sesi aktif user untuk real-time status online",
+      "description": "Data sesi aktif user untuk real-time status online dan kontrol pemutusan koneksi",
       "type": "object",
       "properties": {
+        "id": { "type": "string" },
         "email": { "type": "string" },
-        "lastActive": { "type": "number" },
-        "status": { "type": "string" }
+        "nama": { "type": "string" },
+        "role": { "type": "string" },
+        "device": { "type": "string" },
+        "device_type": { "type": "string" },
+        "browser": { "type": "string" },
+        "os": { "type": "string" },
+        "ip_address": { "type": "string" },
+        "login_at": { "type": "number" },
+        "last_active": { "type": "number" },
+        "status": { "type": "string" },
+        "disconnected_by": { "type": "string" },
+        "disconnected_at": { "type": "number" }
       },
-      "required": ["email", "lastActive"]
+      "required": ["email", "last_active", "status"]
     },
     "Pengaturan": {
       "title": "Pengaturan",
-      "description": "Pengaturan master Sistem",
+      "description": "Pengaturan master Sistem & Identitas Instansi",
       "type": "object",
       "properties": {
         "tahun_anggaran_aktif": { "type": "number" },
         "nama_instansi": { "type": "string" },
-        "logo_instansi": { "type": "string" }
+        "logo_instansi": { "type": "string" },
+        "logo_instansi_storage_path": { "type": "string" },
+        "nama_pejabat_ttd": { "type": "string" },
+        "jabatan_pejabat_ttd": { "type": "string" },
+        "nip_pejabat_ttd": { "type": "string" },
+        "nama_bendahara": { "type": "string" },
+        "jabatan_bendahara": { "type": "string" },
+        "nip_bendahara": { "type": "string" }
       },
       "required": ["tahun_anggaran_aktif", "nama_instansi"]
     }
@@ -207,7 +262,7 @@
       "description": "Koleksi pemantauan fisik kegiatan"
     },
     "sibiru_belanja_pihak_ketiga": {
-      "schema": { "$ref": "#/entities/MonitoringFisik" },
+      "schema": { "$ref": "#/entities/BelanjaPihakKetiga" },
       "description": "Koleksi monitoring belanja pihak ketiga"
     },
     "sibiru_dokumen": {
@@ -216,7 +271,7 @@
     },
     "sibiru_pengguna": {
       "schema": { "$ref": "#/entities/Pengguna" },
-      "description": "Koleksi data pengguna system"
+      "description": "Koleksi data pengguna system (terkunci hingga login, wajib email)"
     },
     "sibiru_log_aktivitas": {
       "schema": { "$ref": "#/entities/LogAktivitas" },
@@ -224,7 +279,7 @@
     },
     "sibiru_visits": {
       "schema": { "$ref": "#/entities/Visit" },
-      "description": "Koleksi log kunjungan sitem"
+      "description": "Koleksi log kunjungan sistem"
     },
     "sibiru_presence": {
       "schema": { "$ref": "#/entities/Presence" },

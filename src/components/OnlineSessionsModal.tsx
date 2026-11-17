@@ -58,8 +58,8 @@ export default function OnlineSessionsModal({
   const activeSessions = useMemo(() => {
     return sessions.filter(s => {
       if (s.status === 'force_disconnected' || s.status === 'logged_out') return false;
-      // Allow sessions with activity in the last 60 seconds
-      return (now - (s.last_active || 0)) < 60000;
+      // Allow sessions with activity in the last 120 seconds
+      return (now - (s.last_active || 0)) < 120000;
     });
   }, [sessions, now]);
 

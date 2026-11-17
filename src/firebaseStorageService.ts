@@ -1,6 +1,6 @@
 /**
  * Firebase Storage Service for SIREKAP TANAH
- * Target Bucket: bidang-pertanahan.firebasestorage.app
+ * Target Bucket: bidang-pertanahan.firebasestorage.app (previous Firebase Storage)
  * Structure:
  * sirekap/{tahun}/{program}/{kegiatan}/{subkegiatan}/{jenis_belanja}/{fileName}
  */
@@ -12,7 +12,7 @@ import {
   deleteObject,
   uploadString
 } from 'firebase/storage';
-import { storage } from './firebase';
+import { storage, STORAGE_BUCKET, STORAGE_PROJECT_ID } from './firebase';
 
 export interface StoragePathParams {
   tahun?: string | number;
@@ -77,14 +77,13 @@ export function buildSirekapStoragePath(params: StoragePathParams): string {
 }
 
 /**
- * Checks whether a given URL is already hosted on Firebase Storage
+ * Checks whether a given URL is already hosted on the active Firebase Storage bucket
  */
 export function isFirebaseStorageUrl(url?: string | null): boolean {
   if (!url) return false;
   return (
-    url.includes('firebasestorage.googleapis.com') ||
-    url.includes('bidang-pertanahan.firebasestorage.app') ||
-    url.includes('storage.googleapis.com')
+    url.includes(STORAGE_BUCKET) ||
+    url.includes(`/v0/b/${STORAGE_PROJECT_ID}`)
   );
 }
 
@@ -175,6 +174,9 @@ export async function uploadBase64ToFirebaseStorage(
  */
 export async function deleteFileFromFirebaseStorage(urlOrPath: string): Promise<boolean> {
   if (!urlOrPath) return false;
+  if (urlOrPath.startsWith('http') && !isFirebaseStorageUrl(urlOrPath)) {
+    return false;
+  }
 
   const storagePath = extractStoragePath(urlOrPath);
   console.log(`[FirebaseStorageService] Menghapus berkas dari path: "${storagePath}"`);

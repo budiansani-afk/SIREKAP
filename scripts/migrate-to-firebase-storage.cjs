@@ -1,6 +1,6 @@
 /**
  * Direct Migration Script to Firebase Storage
- * Bucket: bidang-pertanahan.firebasestorage.app
+ * Reads active Firebase configuration from firebase-applet-config.json
  * Structure: sirekap/{tahun}/{program}/{kegiatan}/{subkegiatan}/{jenis_belanja}/{fileName}
  */
 
@@ -10,10 +10,24 @@ const { getFirestore, collection, getDocs, doc, updateDoc } = require("firebase/
 const { getStorage, ref, uploadBytes, getDownloadURL } = require("firebase/storage");
 const config = require("../firebase-applet-config.json");
 
+const STORAGE_PROJECT_ID = "bidang-pertanahan";
+const STORAGE_BUCKET = "bidang-pertanahan.firebasestorage.app";
+const storageConfig = {
+  projectId: STORAGE_PROJECT_ID,
+  appId: "1:208169868343:web:2124bb1860a530125e33b2",
+  apiKey: "AIzaSyCZCsaPlKCWC_1ZB1J7lcQke5PCKRdLg0c",
+  authDomain: "bidang-pertanahan.firebaseapp.com",
+  storageBucket: STORAGE_BUCKET,
+  messagingSenderId: "208169868343",
+};
+
 const app = initializeApp(config);
+const storageApp = initializeApp(storageConfig, "sirekap-storage");
 const auth = getAuth(app);
-const db = getFirestore(app, config.firestoreDatabaseId);
-const storage = getStorage(app, config.storageBucket);
+const db = config.firestoreDatabaseId
+  ? getFirestore(app, config.firestoreDatabaseId)
+  : getFirestore(app);
+const storage = getStorage(storageApp, `gs://${STORAGE_BUCKET}`);
 
 function sanitize(str, fallback = "umum") {
   if (!str) return fallback;
@@ -26,9 +40,8 @@ function sanitize(str, fallback = "umum") {
 function isFirebaseStorageUrl(url) {
   if (!url) return false;
   return (
-    url.includes("firebasestorage.googleapis.com") ||
-    url.includes("bidang-pertanahan.firebasestorage.app") ||
-    url.includes("storage.googleapis.com")
+    url.includes(STORAGE_BUCKET) ||
+    url.includes(`/v0/b/${STORAGE_PROJECT_ID}`)
   );
 }
 

@@ -5,7 +5,10 @@ import {
   doc, 
   setDoc,
   getDoc,
-  deleteDoc
+  deleteDoc,
+  query,
+  where,
+  getCountFromServer
 } from 'firebase/firestore';
 import { 
   onAuthStateChanged, 
@@ -274,6 +277,7 @@ export default function App() {
   const [notifPermission, setNotifPermission] = useState<NotificationPermission>(() => getNotificationPermission());
   const isInitialRkaLoadedRef = useRef<boolean>(false);
   const isInitialRealLoadedRef = useRef<boolean>(false);
+  const permissionDeniedNotifiedRef = useRef<boolean>(false);
 
   // Inactivity Auto-Logout Configurations (30 Menit Tidak Aktif)
   const INACTIVITY_TIMEOUT_MS = 30 * 60 * 1000; // 30 menit = 1.800.000 ms
@@ -297,7 +301,18 @@ export default function App() {
     }).catch(() => {});
   }, []);
 
-  // Real-time Visit session registration and Presence heartbeat
+  const penggunasRef = useRef<Pengguna[]>([]);
+  const userDisplayNameRef = useRef<string>('');
+
+  useEffect(() => {
+    penggunasRef.current = penggunas;
+  }, [penggunas]);
+
+  useEffect(() => {
+    userDisplayNameRef.current = userDisplayName;
+  }, [userDisplayName]);
+
+  // Real-time Visit session registration and Presence heartbeat (quota-optimized)
   useEffect(() => {
     if (!user) return;
 
@@ -312,11 +327,12 @@ export default function App() {
       }).catch(err => console.warn('Gagal mencatat kunjungan:', err));
     }
 
-    // 2. Presence Heartbeat Timer (every 10 seconds to keep it super fresh)
+    // 2. Presence Heartbeat Timer (every 45 seconds when tab is visible to conserve Firestore quota)
     const updatePresence = async () => {
+      if (typeof document !== 'undefined' && document.hidden) return;
       try {
         const deviceInfo = getDeviceDetails();
-        const displayName = userDisplayName || (penggunas.find(p => p.email === user.email)?.nama) || (user.email ? user.email.split('@')[0] : 'Pengguna');
+        const displayName = userDisplayNameRef.current || (penggunasRef.current.find(p => p.email === user.email)?.nama) || (user.email ? user.email.split('@')[0] : 'Pengguna');
 
         await setDoc(doc(db, COLL_PRESENCE, sessionId), {
           id: sessionId,
@@ -338,7 +354,12 @@ export default function App() {
     };
 
     updatePresence();
-    const presenceInterval = setInterval(updatePresence, 10000);
+    const presenceInterval = setInterval(updatePresence, 45000);
+
+    const handleVisibilityRefresh = () => {
+      if (!document.hidden) updatePresence();
+    };
+    document.addEventListener('visibilitychange', handleVisibilityRefresh);
 
     // Clean up presence when component unmounts or user logs out / closes tab
     const handleUnload = () => {
@@ -354,9 +375,10 @@ export default function App() {
 
     return () => {
       clearInterval(presenceInterval);
+      document.removeEventListener('visibilitychange', handleVisibilityRefresh);
       window.removeEventListener('beforeunload', handleUnload);
     };
-  }, [user, sessionId, userRole, userDisplayName, penggunas, clientIp, loginAt]);
+  }, [user, sessionId, userRole, clientIp, loginAt]);
 
   // Listener on current user's session document to detect forced disconnection by Administrator
   useEffect(() => {
@@ -366,7 +388,6 @@ export default function App() {
       if (docSnap.exists()) {
         const data = docSnap.data();
         if (data.status === 'force_disconnected') {
-          const disconnectedBy = data.disconnected_by || 'Administrator';
           sessionStorage.removeItem('sibiru_session_id');
           sessionStorage.removeItem('sibiru_session_login_at');
           signOut(auth).catch(() => {});
@@ -375,6 +396,12 @@ export default function App() {
             `Koneksi akun Anda telah diputuskan oleh Administrator. Silakan hubungi admin atau masuk kembali jika diizinkan.`
           );
         }
+      }
+    }, (err: any) => {
+      console.warn('Error listening current session:', err);
+      if (err?.code === 'permission-denied' && !permissionDeniedNotifiedRef.current) {
+        permissionDeniedNotifiedRef.current = true;
+        showToast('Akses Firestore ditolak (permission-denied). Harap publikasikan firestore.rules di Firebase Console sirekap-cf2b1.', 'error');
       }
     });
 
@@ -544,30 +571,43 @@ export default function App() {
           let dbNama = rawAccount.split('@')[0];
           
           try {
-            let userDoc = await getDoc(doc(db, "sibiru_pengguna", rawAccount));
+            let userDoc = await getDoc(doc(db, "sibiru_pengguna", email));
             if (!userDoc.exists() && rawAccount !== email) {
-              userDoc = await getDoc(doc(db, "sibiru_pengguna", email));
+              userDoc = await getDoc(doc(db, "sibiru_pengguna", rawAccount));
             }
             if (userDoc.exists()) {
               const data = userDoc.data();
+              if (data.aktif === false) {
+                await signOut(auth).catch(() => {});
+                setUser(null);
+                setLoginError("Akun Anda telah dinonaktifkan oleh administrator!");
+                setIsAuthChecking(false);
+                return;
+              }
               role = data.role || UserRole.PIMPINAN;
               dbNama = data.nama || dbNama;
             } else {
               // Standard fallback rules
-              if (rawAccount.includes('admin') || rawAccount === 'budiansani@gmail.com' || rawAccount === 'budiansani') {
+              if (
+                email === 'admin@sirekap.com' ||
+                email === 'budiansani@gmail.com' ||
+                email === 'ianzbjx@gmail.com' ||
+                rawAccount.includes('admin')
+              ) {
                 role = UserRole.ADMIN;
               } else if (rawAccount.includes('operator')) {
                 role = UserRole.OPERATOR;
               }
-              // Save standard seeding account to Database so they can be modified
-              await setDoc(doc(db, "sibiru_pengguna", rawAccount), {
-                id: rawAccount,
-                email: rawAccount,
-                nama: rawAccount.includes('admin') ? "Administrator SIREKAP Bima" : rawAccount.includes('operator') ? "Operator Teknis Pertanahan" : "Kepala Bidang Pertanahan",
-                role: role,
-                aktif: true,
-                password: "bima2026"
-              }, { merge: true }).catch(err => console.warn("Notice: could not save initial user doc:", err));
+              // Save standard seeding account to Database using valid email ID
+              if (email && email.includes('@')) {
+                await setDoc(doc(db, "sibiru_pengguna", email), {
+                  id: email,
+                  email: email,
+                  nama: rawAccount.includes('admin') ? "Administrator SIREKAP Bima" : rawAccount.includes('operator') ? "Operator Teknis Pertanahan" : "Kepala Bidang Pertanahan",
+                  role: role,
+                  aktif: true
+                }, { merge: true }).catch(err => console.warn("Notice: could not save initial user doc:", err));
+              }
             }
           } catch (e) {
             console.warn("Could not retrieve user document from firestore:", e);
@@ -594,27 +634,8 @@ export default function App() {
     });
   }, []);
 
-  // Real-time snapshot listeners untuk Pengaturan Instansi & Daftar Pengguna (Aktif sebelum login)
+  // Real-time snapshot listener untuk Pengaturan Instansi (Terbuka sebelum login untuk logo & nama instansi)
   useEffect(() => {
-    const unsubPengguna = onSnapshot(collection(db, "sibiru_pengguna"), (snap) => {
-      const list = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Pengguna));
-      setPenggunas(list);
-
-      // Sinkronisasi otomatis ke cache nama akun lokal
-      try {
-        const cached = JSON.parse(localStorage.getItem('sibiru_user_names_cache') || '{}');
-        list.forEach(p => {
-          if (p.email && p.nama) {
-            cached[p.email.toLowerCase()] = p.nama;
-          }
-          if (p.id && p.nama) {
-            cached[p.id.toLowerCase()] = p.nama;
-          }
-        });
-        localStorage.setItem('sibiru_user_names_cache', JSON.stringify(cached));
-      } catch (e) {}
-    }, (err) => console.warn('Error listening pengguna:', err));
-
     const unsubSet = onSnapshot(doc(db, COLL_PENGATURAN, "aktif"), (docSnap) => {
       if (docSnap.exists()) {
         const d = docSnap.data();
@@ -635,18 +656,55 @@ export default function App() {
     }, (err) => console.warn('Error listening pengaturan:', err));
 
     return () => {
-      unsubPengguna();
       unsubSet();
     };
   }, []);
+
+  // Real-time snapshot listener Daftar Pengguna (Terkunci: hanya dibaca setelah login oleh Administrator)
+  useEffect(() => {
+    if (!user || userRole !== UserRole.ADMIN) {
+      setPenggunas([]);
+      return;
+    }
+
+    const unsubPengguna = onSnapshot(collection(db, "sibiru_pengguna"), (snap) => {
+      const list = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Pengguna));
+      setPenggunas(list);
+
+      // Sinkronisasi otomatis ke cache nama akun lokal
+      try {
+        const cached = JSON.parse(localStorage.getItem('sibiru_user_names_cache') || '{}');
+        list.forEach(p => {
+          if (p.email && p.nama) {
+            cached[p.email.toLowerCase()] = p.nama;
+          }
+          if (p.id && p.nama) {
+            cached[p.id.toLowerCase()] = p.nama;
+          }
+        });
+        localStorage.setItem('sibiru_user_names_cache', JSON.stringify(cached));
+      } catch (e) {}
+    }, (err) => console.warn('Error listening pengguna:', err));
+
+    return () => {
+      unsubPengguna();
+    };
+  }, [user, userRole]);
 
   // Real-time snap listeners for all firebase collections (saat user terautentikasi)
   useEffect(() => {
     if (!user) return;
 
     const unsubProg = onSnapshot(collection(db, COLL_PROGRAM), (snap) => {
+      permissionDeniedNotifiedRef.current = false;
       setPrograms(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Program)));
-    }, (err) => console.warn('Error listening program:', err));
+    }, (err: any) => {
+      console.warn('Error listening program:', err);
+      if (err?.code === 'permission-denied' && !permissionDeniedNotifiedRef.current) {
+        permissionDeniedNotifiedRef.current = true;
+        showToast('Akses Firestore ditolak (permission-denied). Harap publikasikan firestore.rules di Firebase Console sirekap-cf2b1.', 'error');
+      }
+    });
 
     const unsubKeg = onSnapshot(collection(db, COLL_KEGIATAN), (snap) => {
       setKegiatans(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Kegiatan)));
@@ -725,14 +783,18 @@ export default function App() {
       }));
     }, (err) => console.warn('Error listening logs:', err));
 
-    const unsubVisits = onSnapshot(collection(db, 'sibiru_visits'), (snap) => {
-      // We will set a beautiful baseline of 2145 to make it match existing system status vibe + actual count!
-      setTotalVisits(2145 + snap.size);
-    }, (err) => {
-      console.warn('Error listening visits:', err);
-    });
+    // Fetch total visits count using server aggregation (1 read per 1000 docs instead of reading all visit docs)
+    getCountFromServer(collection(db, 'sibiru_visits'))
+      .then((snap) => {
+        setTotalVisits(2145 + snap.data().count);
+      })
+      .catch((err) => {
+        console.warn('Error counting visits:', err);
+      });
 
-    const unsubPresence = onSnapshot(collection(db, COLL_PRESENCE), (snap) => {
+    // Listen only to currently online sessions instead of reading every historical logged-out session
+    const onlinePresenceQuery = query(collection(db, COLL_PRESENCE), where('status', '==', 'online'));
+    const unsubPresence = onSnapshot(onlinePresenceQuery, (snap) => {
       const now = Date.now();
       const list: SesiPenggunaOnline[] = [];
       let activeCount = 0;
@@ -740,7 +802,7 @@ export default function App() {
       snap.docs.forEach(docVal => {
         const d = docVal.data() as any;
         const lastActive = d.last_active || d.lastActive || 0;
-        const isOnline = (now - lastActive) < 60000 && d.status !== 'force_disconnected' && d.status !== 'logged_out';
+        const isOnline = (now - lastActive) < 120000 && d.status !== 'force_disconnected' && d.status !== 'logged_out';
 
         if (isOnline) {
           activeCount++;
@@ -767,8 +829,11 @@ export default function App() {
       list.sort((a, b) => (b.last_active || 0) - (a.last_active || 0));
       setOnlineSessions(list);
       setActiveUsersCount(Math.max(1, activeCount));
-    }, (err) => {
+    }, (err: any) => {
       console.warn('Error listening presence:', err);
+      if (err?.code === 'resource-exhausted') {
+        showToast('Kuota baca/tulis Firestore harian tercapai. Silakan periksa konsol Firebase Anda.', 'error');
+      }
     });
 
     return () => {
@@ -782,7 +847,6 @@ export default function App() {
       unsubMon();
       unsubDoc();
       unsubLogs();
-      unsubVisits();
       unsubPresence();
     };
 
@@ -864,40 +928,43 @@ export default function App() {
       : `${emailClean.replace(/[^a-z0-9._-]/g, '')}@sirekap.local`;
 
     try {
-      // 1. Validasi status dan password di Firestore sibiru_pengguna jika ada
-      try {
-        let userDocSnap = await getDoc(doc(db, "sibiru_pengguna", emailClean));
-        if (!userDocSnap.exists() && emailClean !== authEmail) {
-          userDocSnap = await getDoc(doc(db, "sibiru_pengguna", authEmail));
-        }
-        if (userDocSnap.exists()) {
-          const userData = userDocSnap.data();
-          if (userData.aktif === false) {
-            throw new Error("Akun Anda telah dinonaktifkan oleh administrator!");
-          }
-          if (userData.password && userData.password !== passwordInput) {
-            throw new Error("Nama akun atau kata sandi tidak cocok.");
-          }
-        }
-      } catch (checkErr: any) {
-        if (checkErr.message?.includes('dinonaktifkan') || checkErr.message?.includes('tidak cocok')) {
-          throw checkErr;
-        }
-      }
-
-      // 2. Authenticate dengan Firebase Auth
+      // 1. Authenticate dengan Firebase Auth terlebih dahulu (koleksi sibiru_pengguna terkunci sebelum login)
       try {
         await signInWithEmailAndPassword(auth, authEmail, passwordInput);
       } catch (authErr: any) {
-        if (authErr.code === 'auth/user-not-found' || authErr.code === 'auth/invalid-credential') {
+        if (authErr.code === 'auth/configuration-not-found' || authErr.code === 'auth/operation-not-allowed') {
+          throw new Error("Firebase Authentication (Email/Password) belum diaktifkan di Firebase Console project sirekap-cf2b1.");
+        } else if (authErr.code === 'auth/user-not-found' || authErr.code === 'auth/invalid-credential') {
           // If first run, auto-register in Auth
           try {
             await createUserWithEmailAndPassword(auth, authEmail, passwordInput);
           } catch (createErr: any) {
+            if (createErr?.code === 'auth/configuration-not-found' || createErr?.code === 'auth/operation-not-allowed') {
+              throw new Error("Firebase Authentication (Email/Password) belum diaktifkan di Firebase Console project sirekap-cf2b1.");
+            }
             throw new Error("Nama akun atau kata sandi tidak cocok.");
           }
         } else {
           throw authErr;
+        }
+      }
+
+      // 2. Validasi status keaktifan di Firestore sibiru_pengguna setelah terautentikasi
+      try {
+        let userDocSnap = await getDoc(doc(db, "sibiru_pengguna", authEmail));
+        if (!userDocSnap.exists() && emailClean !== authEmail) {
+          userDocSnap = await getDoc(doc(db, "sibiru_pengguna", emailClean));
+        }
+        if (userDocSnap.exists()) {
+          const userData = userDocSnap.data();
+          if (userData.aktif === false) {
+            await signOut(auth).catch(() => {});
+            throw new Error("Akun Anda telah dinonaktifkan oleh administrator!");
+          }
+        }
+      } catch (checkErr: any) {
+        if (checkErr.message?.includes('dinonaktifkan')) {
+          throw checkErr;
         }
       }
 

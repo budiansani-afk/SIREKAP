@@ -7,93 +7,211 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
-    // Helper functions
+    // ==================== HELPER FUNCTIONS ====================
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
     function isSignedIn() {
-      return request.auth != null;
+      return request.auth != null && request.auth.token.email != null;
+    }
+
+    function callerEmail() {
+      return request.auth.token.email.lower();
     }
 
     function isValidId(id) {
-      return id is string && id.size() > 0 && id.size() <= 512;
+      return id is string && id.size() > 0 && id.size() <= 512 && !id.matches('.*[/].*');
     }
 
-    // Rules for sibiru_program
-    match /sibiru_program/{id} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn() && isValidId(id);
+    function isValidEmail(val) {
+      return val is string
+        && val.size() >= 5
+        && val.size() <= 254
+        && val.matches('^[a-zA-Z0-9._%+\\-]+@[a-zA-Z0-9.\\-]+\\.[a-zA-Z]{2,}$');
     }
 
-    // Rules for sibiru_kegiatan
-    match /sibiru_kegiatan/{id} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn() && isValidId(id);
+    function isBootstrappedAdmin() {
+      return isSignedIn() && callerEmail() in [
+        'admin@sirekap.com',
+        'budiansani@gmail.com',
+        'ianzbjx@gmail.com'
+      ];
     }
 
-    // Rules for sibiru_sub_kegiatan
-    match /sibiru_sub_kegiatan/{id} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn() && isValidId(id);
+    function hasUserDoc() {
+      return exists(/databases/$(database)/documents/sibiru_pengguna/$(callerEmail()));
     }
 
-    // Rules for sibiru_rka
-    match /sibiru_rka/{id} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn() && isValidId(id);
+    function getUserDoc() {
+      return get(/databases/$(database)/documents/sibiru_pengguna/$(callerEmail())).data;
     }
 
-    // Rules for sibiru_realisasi
-    match /sibiru_realisasi/{id} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn() && isValidId(id);
+    function isActiveAccount() {
+      return !hasUserDoc() || getUserDoc().aktif != false;
     }
 
-    // Rules for sibiru_belanja_pihak_ketiga
-    match /sibiru_belanja_pihak_ketiga/{id} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn() && isValidId(id);
+    function isAdmin() {
+      return isSignedIn()
+        && isActiveAccount()
+        && (
+          isBootstrappedAdmin()
+          || (hasUserDoc() && getUserDoc().role == 'Administrator')
+        );
     }
 
-    // Rules for legacy sibiru_monitoring_fisik
-    match /sibiru_monitoring_fisik/{id} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn() && isValidId(id);
+    function isOperator() {
+      return isSignedIn()
+        && isActiveAccount()
+        && hasUserDoc()
+        && getUserDoc().role == 'Operator';
     }
 
-    // Rules for sibiru_dokumen
-    match /sibiru_dokumen/{id} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn() && isValidId(id);
+    function canWriteOperationalData() {
+      return isAdmin() || isOperator();
     }
 
-    // Rules for sibiru_pengguna (read permitted so login screen can auto-fill registered user names)
-    match /sibiru_pengguna/{id} {
-      allow read: if true;
-      allow write: if isSignedIn() && isValidId(id);
+    function isValidUserPayload(data) {
+      return data.keys().hasAll(['id', 'email', 'nama', 'role', 'aktif'])
+        && data.keys().hasOnly(['id', 'email', 'nama', 'role', 'aktif', 'password', 'username'])
+        && data.id is string
+        && data.id.size() > 0
+        && data.id.size() <= 254
+        && isValidEmail(data.email)
+        && data.nama is string
+        && data.nama.size() > 0
+        && data.nama.size() <= 150
+        && data.role in ['Administrator', 'Operator', 'Pimpinan']
+        && data.aktif is bool
+        && (!('password' in data) || (data.password is string && data.password.size() <= 128));
     }
 
-    // Rules for sibiru_log_aktivitas (Immutable audit logs)
-    match /sibiru_log_aktivitas/{id} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn() && isValidId(id);
-      allow update, delete: if false;
-    }
-
-    // Rules for sibiru_visits
-    match /sibiru_visits/{id} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn() && isValidId(id);
-      allow update, delete: if false;
-    }
-
-    // Rules for sibiru_presence
-    match /sibiru_presence/{id} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn() && isValidId(id);
-    }
-
-    // Rules for sibiru_pengaturan
+    // ==================== MASTER PENGATURAN (TERBUKA BACA UNTUK HALAMAN LOGIN) ====================
     match /sibiru_pengaturan/{id} {
       allow read: if true;
-      allow write: if isSignedIn() && isValidId(id);
+      allow create, update, delete: if isAdmin() && isValidId(id);
+    }
+
+    // ==================== PENGGUNA (TERKUNCI SEBELUM LOGIN, WAJIB EMAIL SAAT SIMPAN/EDIT ADMIN) ====================
+    match /sibiru_pengguna/{id} {
+      allow get: if isSignedIn() && (id.lower() == callerEmail() || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isValidId(id)
+        && isValidUserPayload(incoming())
+        && (
+          isAdmin()
+          || (
+            isSignedIn()
+            && id.lower() == callerEmail()
+            && incoming().email.lower() == callerEmail()
+            && (
+              incoming().role in ['Operator', 'Pimpinan']
+              || (isBootstrappedAdmin() && incoming().role == 'Administrator')
+            )
+          )
+        );
+      allow update: if isAdmin() && isValidId(id) && isValidUserPayload(incoming());
+      allow delete: if isAdmin() && isValidId(id) && id.lower() != callerEmail();
+    }
+
+    // ==================== DATA ANGGARAN & OPERASIONAL ====================
+    match /sibiru_program/{id} {
+      allow get: if isSignedIn() && isActiveAccount() && isValidId(id);
+      allow list: if isSignedIn() && isActiveAccount();
+      allow create, update, delete: if canWriteOperationalData() && isValidId(id);
+    }
+
+    match /sibiru_kegiatan/{id} {
+      allow get: if isSignedIn() && isActiveAccount() && isValidId(id);
+      allow list: if isSignedIn() && isActiveAccount();
+      allow create, update, delete: if canWriteOperationalData() && isValidId(id);
+    }
+
+    match /sibiru_sub_kegiatan/{id} {
+      allow get: if isSignedIn() && isActiveAccount() && isValidId(id);
+      allow list: if isSignedIn() && isActiveAccount();
+      allow create, update, delete: if canWriteOperationalData() && isValidId(id);
+    }
+
+    match /sibiru_rka/{id} {
+      allow get: if isSignedIn() && isActiveAccount() && isValidId(id);
+      allow list: if isSignedIn() && isActiveAccount();
+      allow create, update, delete: if canWriteOperationalData() && isValidId(id);
+    }
+
+    match /sibiru_realisasi/{id} {
+      allow get: if isSignedIn() && isActiveAccount() && isValidId(id);
+      allow list: if isSignedIn() && isActiveAccount();
+      allow create, update, delete: if canWriteOperationalData() && isValidId(id);
+    }
+
+    match /sibiru_belanja_pihak_ketiga/{id} {
+      allow get: if isSignedIn() && isActiveAccount() && isValidId(id);
+      allow list: if isSignedIn() && isActiveAccount();
+      allow create, update, delete: if canWriteOperationalData() && isValidId(id);
+    }
+
+    match /sibiru_monitoring_fisik/{id} {
+      allow get: if isSignedIn() && isActiveAccount() && isValidId(id);
+      allow list: if isSignedIn() && isActiveAccount();
+      allow create, update, delete: if canWriteOperationalData() && isValidId(id);
+    }
+
+    match /sibiru_dokumen/{id} {
+      allow get: if isSignedIn() && isActiveAccount() && isValidId(id);
+      allow list: if isSignedIn() && isActiveAccount();
+      allow create, update, delete: if canWriteOperationalData() && isValidId(id);
+    }
+
+    // ==================== LOG AKTIVITAS (IMMUTABLE) ====================
+    match /sibiru_log_aktivitas/{id} {
+      allow get: if isSignedIn() && isActiveAccount() && isValidId(id);
+      allow list: if isSignedIn() && isActiveAccount();
+      allow create: if isSignedIn()
+        && isActiveAccount()
+        && isValidId(id)
+        && incoming().keys().hasAll(['waktu', 'nama_pengguna', 'aksi', 'modul']);
+      allow update, delete: if false;
+    }
+
+    // ==================== KUNJUNGAN SISTEM (IMMUTABLE) ====================
+    match /sibiru_visits/{id} {
+      allow get: if isSignedIn() && isActiveAccount() && isValidId(id);
+      allow list: if isSignedIn() && isActiveAccount();
+      allow create: if isSignedIn()
+        && isActiveAccount()
+        && isValidId(id)
+        && incoming().keys().hasAll(['waktu', 'email']);
+      allow update, delete: if false;
+    }
+
+    // ==================== PRESENSI & PEMUTUSAN SESI ONLINE ====================
+    match /sibiru_presence/{id} {
+      allow get: if isSignedIn() && isActiveAccount() && isValidId(id);
+      allow list: if isSignedIn() && isActiveAccount();
+      allow create: if isSignedIn()
+        && isActiveAccount()
+        && isValidId(id)
+        && (
+          isAdmin()
+          || (incoming().email is string && incoming().email.lower() == callerEmail())
+        );
+      allow update: if isSignedIn()
+        && isActiveAccount()
+        && isValidId(id)
+        && (
+          isAdmin()
+          || (
+            existing().email is string
+            && existing().email.lower() == callerEmail()
+            && (!('email' in incoming()) || incoming().email.lower() == callerEmail())
+          )
+        );
+      allow delete: if isAdmin() && isValidId(id);
     }
   }
 }

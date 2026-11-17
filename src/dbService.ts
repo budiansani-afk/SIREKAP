@@ -708,89 +708,33 @@ export async function restoreDatabaseFromJSON(backupData: Record<string, any[]>,
   }
 }
 
-// 4. Clean up any previously seeded dummy/sample data and set up system configurations
+// 4. Set up initial system configurations and default user accounts if missing (quota-safe)
 export async function seedInitialDataIfEmpty() {
   if (!auth.currentUser) {
     return;
   }
+  const seedKey = 'sirekap_cf2b1_init_checked';
   try {
-    const dummyProgramIds = ["2.10.01", "2.10.02", "2.10.03"];
-    const dummyKegiatanIds = ["2.10.01.2.01", "2.10.01.2.06", "2.10.02.2.01", "2.10.02.2.02", "2.10.03.2.01"];
-    const dummySubKegiatansIds = ["2.10.01.2.01.01", "2.10.01.2.06.01", "2.10.01.2.06.02", "2.10.02.2.01.01", "2.10.02.2.01.02", "2.10.02.2.02.01", "2.10.03.2.01.01"];
-    const dummyRkaIds = ["rka_seed_1", "rka_seed_2", "rka_seed_3", "rka_seed_4", "rka_seed_5", "rka_seed_6", "rka_seed_7", "rka_seed_8", "rka_seed_9"];
-    const dummyRealisasiIds = ["real_seed_1", "real_seed_2", "real_seed_3"];
-    const dummyPihakKetigaIds = ["mon_seed_1", "mon_seed_2"];
-
-    let deletedAny = false;
-
-    for (const id of dummyProgramIds) {
-      const docRef = doc(db, COLL_PROGRAM, id);
-      const snap = await getDoc(docRef).catch(() => null);
-      if (snap && snap.exists()) {
-        await deleteDoc(docRef).catch(() => null);
-        deletedAny = true;
-      }
-    }
-    for (const id of dummyKegiatanIds) {
-      const docRef = doc(db, COLL_KEGIATAN, id);
-      const snap = await getDoc(docRef).catch(() => null);
-      if (snap && snap.exists()) {
-        await deleteDoc(docRef).catch(() => null);
-        deletedAny = true;
-      }
-    }
-    for (const id of dummySubKegiatansIds) {
-      const docRef = doc(db, COLL_SUB_KEGIATAN, id);
-      const snap = await getDoc(docRef).catch(() => null);
-      if (snap && snap.exists()) {
-        await deleteDoc(docRef).catch(() => null);
-        deletedAny = true;
-      }
-    }
-    for (const id of dummyRkaIds) {
-      const docRef = doc(db, COLL_RKA, id);
-      const snap = await getDoc(docRef).catch(() => null);
-      if (snap && snap.exists()) {
-        await deleteDoc(docRef).catch(() => null);
-        deletedAny = true;
-      }
-    }
-    for (const id of dummyRealisasiIds) {
-      const docRef = doc(db, COLL_REALISASI, id);
-      const snap = await getDoc(docRef).catch(() => null);
-      if (snap && snap.exists()) {
-        await deleteDoc(docRef).catch(() => null);
-        deletedAny = true;
-      }
-    }
-    for (const id of dummyPihakKetigaIds) {
-      const docRef = doc(db, COLL_BELANJA_PIHAK_KETIGA, id);
-      const snap = await getDoc(docRef).catch(() => null);
-      if (snap && snap.exists()) {
-        await deleteDoc(docRef).catch(() => null);
-        deletedAny = true;
-      }
+    if (sessionStorage.getItem(seedKey) === 'true') {
+      return;
     }
 
-    if (deletedAny) {
-      console.log("Existing dummy/seeded data successfully cleaned up from Firestore!");
-      await synchronizeCalculations();
-    }
-
-    // 2. Only seed settings & users if they are completely missing, so system functions normally
-    const qSettings = await getDocs(collection(db, COLL_PENGATURAN)).catch(() => null) as any;
-    if (!qSettings || qSettings.empty) {
+    // Only check settings & users if they are completely missing, using 2 lightweight doc reads
+    const settingsRef = doc(db, COLL_PENGATURAN, "aktif");
+    const settingsSnap = await getDoc(settingsRef).catch(() => null);
+    if (settingsSnap && !settingsSnap.exists()) {
       const initSettings: PengaturanSistem = {
         id: "aktif",
         tahun_anggaran_aktif: 2026,
         nama_instansi: "Dinas Perumahan dan Kawasan Permukiman",
-        logo_instansi: "https://firebasestorage.googleapis.com/v0/b/bidang-pertanahan.firebasestorage.app/o/bimatanahku%2Flogo%20kab.png?alt=media&token=678421d5-13c6-44d5-9e9e-82283be5e25f"
+        logo_instansi: ""
       };
-      await setDoc(doc(db, COLL_PENGATURAN, initSettings.id), initSettings);
+      await setDoc(settingsRef, initSettings);
     }
 
-    const qUsers = await getDocs(collection(db, COLL_PENGGUNA)).catch(() => null) as any;
-    if (!qUsers || qUsers.empty) {
+    const adminRef = doc(db, COLL_PENGGUNA, "admin@sirekap.com");
+    const adminSnap = await getDoc(adminRef).catch(() => null);
+    if (adminSnap && !adminSnap.exists()) {
       const sampleUsers: Pengguna[] = [
         {
           id: "admin@sirekap.com",
@@ -822,6 +766,8 @@ export async function seedInitialDataIfEmpty() {
         await setDoc(doc(db, COLL_PENGGUNA, u.id), u);
       }
     }
+
+    sessionStorage.setItem(seedKey, 'true');
   } catch (error) {
     console.warn("Notice during initial data check/cleanup:", error);
   }

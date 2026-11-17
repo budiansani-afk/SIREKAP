@@ -1,0 +1,14 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Aturan terbuka khusus folder sirekap (untuk integrasi lintas proyek dari sirekap-cf2b1)
+    match /sirekap/{allPaths=**} {
+      allow read, write: if true;
+    }
+
+    // Tolak seluruh path lain di luar folder sirekap
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

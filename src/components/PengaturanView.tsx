@@ -43,7 +43,7 @@ import {
 } from '../firebaseStorageService';
 import { runFirebaseStorageMigration, MigrationProgressData } from '../migrationStorageService';
 import { formatDuration, formatWaktuMasuk } from '../utils/deviceHelper';
-import { db } from '../firebase';
+import { db, STORAGE_BUCKET } from '../firebase';
 import { doc, setDoc, deleteDoc } from 'firebase/firestore';
 import { 
   isNotificationSupported, 
@@ -88,7 +88,7 @@ export default function PengaturanView({
   const activeOnlineSessions = useMemo(() => {
     return onlineSessions.filter(s => {
       if (s.status === 'force_disconnected' || s.status === 'logged_out') return false;
-      return (now - (s.last_active || 0)) < 60000;
+      return (now - (s.last_active || 0)) < 120000;
     });
   }, [onlineSessions, now]);
 
@@ -168,7 +168,7 @@ export default function PengaturanView({
   useEffect(() => {
     if (settings) {
       setInstNama(settings.nama_instansi || 'Dinas Perumahan dan Kawasan Permukiman Kabupaten Bima');
-      setExistingLogoUrl(settings.logo_instansi || 'https://firebasestorage.googleapis.com/v0/b/bidang-pertanahan.firebasestorage.app/o/bimatanahku%2Flogo%20kab.png?alt=media&token=678421d5-13c6-44d5-9e9e-82283be5e25f');
+      setExistingLogoUrl(settings.logo_instansi || '');
       setLogoFile(null);
       setFiscalYear(settings.tahun_anggaran_aktif || 2026);
       setNamaPejabatTtd(settings.nama_pejabat_ttd || '');
@@ -285,7 +285,7 @@ export default function PengaturanView({
   // Run on-demand Firebase Storage Migration and verification
   const handleRunMigration = async () => {
     const isConfirmed = window.confirm(
-      "Apakah Anda ingin memulai sinkronisasi & verifikasi pemindahan semua foto/berkas ke storage bidang-pertanahan.firebasestorage.app/sirekap?\n\nProses ini akan memeriksa seluruh berkas di database (Realisasi, Belanja Pihak Ketiga, Dokumen, dan Pengaturan Logo) dan memindahkannya ke hierarki folder Firebase Storage."
+      `Apakah Anda ingin memulai sinkronisasi & verifikasi pemindahan semua foto/berkas ke storage ${STORAGE_BUCKET}/sirekap?\n\nProses ini akan memeriksa seluruh berkas di database (Realisasi, Belanja Pihak Ketiga, Dokumen, dan Pengaturan Logo) dan memindahkannya ke hierarki folder Firebase Storage.`
     );
     if (!isConfirmed) return;
 
@@ -382,6 +382,9 @@ export default function PengaturanView({
     reader.readAsText(file);
   };
 
+  const isValidEmailFormat = (emailVal: string) =>
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailVal.trim());
+
   // Save or edit user profile to Firestore
   const handleSaveUser = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -390,23 +393,30 @@ export default function PengaturanView({
 
     const emailClean = emailState.trim().toLowerCase();
     if (!emailClean) {
-      setUserActionError("Nama Akun wajib diisi!");
+      setUserActionError("Alamat Email wajib diisi!");
+      return;
+    }
+    if (!isValidEmailFormat(emailClean)) {
+      setUserActionError("Alamat Email wajib menggunakan format email yang valid (contoh: nama@instansi.go.id)!");
       return;
     }
     if (!namaState.trim()) {
-      setUserActionError("Nama Lengkap/Nama Akun wajib diisi!");
+      setUserActionError("Nama Lengkap/Nama Anggota wajib diisi!");
       return;
     }
-    if (!passwordState.trim()) {
-      setUserActionError("Kata Sandi/Password wajib diisi!");
+    if (!passwordState.trim() || passwordState.trim().length < 6) {
+      setUserActionError("Kata Sandi/Password wajib diisi (minimal 6 karakter)!");
       return;
     }
 
     setIsSubmittingUser(true);
     try {
-      // Jika admin mengedit dan mengubah email ID dari dokumen lama
+      // Jika admin mengedit dan mengubah email/ID dari dokumen lama (termasuk migrasi akun non-email)
       if (editingUserId && editingUserId.toLowerCase() !== emailClean) {
-        await deleteDoc(doc(db, "sibiru_pengguna", editingUserId.toLowerCase())).catch(() => {});
+        await deleteDoc(doc(db, "sibiru_pengguna", editingUserId)).catch(() => {});
+        if (editingUserId.toLowerCase() !== editingUserId) {
+          await deleteDoc(doc(db, "sibiru_pengguna", editingUserId.toLowerCase())).catch(() => {});
+        }
       }
 
       const userPayload: any = {
@@ -670,7 +680,7 @@ export default function PengaturanView({
                 <img src={logoFile ? URL.createObjectURL(logoFile) : existingLogoUrl} alt="Preview_Logo" className="w-12 h-12 object-contain bg-white p-1 rounded" referrerPolicy="no-referrer" />
                 <div>
                   <p className="font-bold text-slate-850">Preview Logo Terlampir</p>
-                  <p className="text-[10px] text-blue-700 font-semibold font-mono">Penyimpanan: Firebase Storage (bidang-pertanahan.firebasestorage.app)</p>
+                  <p className="text-[10px] text-blue-700 font-semibold font-mono">Penyimpanan: Firebase Storage ({STORAGE_BUCKET})</p>
                 </div>
               </div>
             )}
@@ -764,7 +774,7 @@ export default function PengaturanView({
                 Penyimpanan Berkas (Firebase Storage Cloud)
               </span>
               <span className="text-[10px] bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full font-mono font-semibold">
-                bidang-pertanahan.firebasestorage.app
+                {STORAGE_BUCKET}
               </span>
             </h4>
 
@@ -1029,15 +1039,21 @@ export default function PengaturanView({
           {/* Add / Edit Form Panel */}
           <div className="bg-slate-50/75 border border-slate-100 rounded-xl p-4 text-xs space-y-3.5">
             <span className="font-extrabold uppercase tracking-widest text-[10px] text-blue-800 block border-b pb-1">
-              {editingUserId ? "🖋️ Edit Parameter Akun" : "➕ Tambah Akun Baru"}
+              {editingUserId ? "🖋️ Edit Parameter Akun (Wajib Email)" : "➕ Tambah Akun Baru (Wajib Email)"}
             </span>
+
+            {editingUserId && !isValidEmailFormat(emailState) && (
+              <div className="p-2.5 bg-amber-50 border border-amber-200 text-amber-900 rounded-lg text-[11px] font-semibold">
+                Akun lama <span className="font-mono font-bold">{editingUserId}</span> belum menggunakan email valid. Harap perbarui ke alamat email aktif agar sesuai aturan keamanan Firestore.
+              </div>
+            )}
 
             <form onSubmit={handleSaveUser} className="space-y-3">
               <div>
-                <label className="block text-slate-700 font-extrabold mb-1">Nama Akun (Bebas / Tidak Wajib Email)</label>
+                <label className="block text-slate-700 font-extrabold mb-1">Alamat Email Akun (Wajib Email Valid)</label>
                 <input 
-                  type="text"
-                  placeholder="Cth: admin, operator1, atau surel"
+                  type="email"
+                  placeholder="Cth: operator@instansi.go.id"
                   value={emailState}
                   onChange={(e) => setEmailState(e.target.value)}
                   className="w-full p-2 border border-slate-200 rounded-lg bg-white outline-blue-600 font-bold text-slate-900"
@@ -1167,9 +1183,20 @@ export default function PengaturanView({
                     </td>
                   </tr>
                 ) : (
-                  filteredUsers.map((item) => (
+                  filteredUsers.map((item) => {
+                    const hasValidEmail = isValidEmailFormat(item.email || '');
+                    return (
                     <tr key={item.id} className="hover:bg-slate-50/50 transition-colors">
-                      <td className="px-3 py-2 font-mono text-blue-700">{item.email}</td>
+                      <td className="px-3 py-2 font-mono text-blue-700">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span>{item.email}</span>
+                          {!hasValidEmail && (
+                            <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 text-[9px] font-sans font-extrabold">
+                              Wajib Update Email
+                            </span>
+                          )}
+                        </div>
+                      </td>
                       <td className="px-3 py-2 text-slate-900 font-bold max-w-[150px] truncate" title={item.nama}>{item.nama}</td>
                       <td className="px-3 py-2 font-mono text-slate-500">{item.password || <span className="text-[10px] italic text-slate-400">bima2026 (Default)</span>}</td>
                       <td className="px-3 py-2">
@@ -1210,7 +1237,8 @@ export default function PengaturanView({
                         </div>
                       </td>
                     </tr>
-                  ))
+                    );
+                  })
                 )}
               </tbody>
             </table>

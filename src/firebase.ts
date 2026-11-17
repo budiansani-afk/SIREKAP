@@ -1,13 +1,59 @@
-import { initializeApp } from 'firebase/app';
+import { initializeApp, getApps } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
+import { initializeFirestore, getFirestore, doc, getDocFromServer, Firestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import firebaseConfig from '../firebase-applet-config.json';
 
-const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+export const STORAGE_PROJECT_ID = 'bidang-pertanahan';
+export const STORAGE_BUCKET = 'bidang-pertanahan.firebasestorage.app';
+
+const storageFirebaseConfig = {
+  projectId: STORAGE_PROJECT_ID,
+  appId: '1:208169868343:web:2124bb1860a530125e33b2',
+  apiKey: 'AIzaSyCZCsaPlKCWC_1ZB1J7lcQke5PCKRdLg0c',
+  authDomain: 'bidang-pertanahan.firebaseapp.com',
+  storageBucket: STORAGE_BUCKET,
+  messagingSenderId: '208169868343'
+};
+
+const app = getApps().find(a => a.name === '[DEFAULT]') || initializeApp(firebaseConfig);
+const storageApp =
+  getApps().find(a => a.name === 'sirekap-storage') ||
+  initializeApp(storageFirebaseConfig, 'sirekap-storage');
+
+function createFirestoreInstance(): Firestore {
+  const databaseId = firebaseConfig.firestoreDatabaseId || undefined;
+  try {
+    return initializeFirestore(
+      app,
+      { experimentalAutoDetectLongPolling: true },
+      databaseId
+    );
+  } catch {
+    return databaseId ? getFirestore(app, databaseId) : getFirestore(app);
+  }
+}
+
+export const db = createFirestoreInstance();
 export const auth = getAuth(app);
-export const storage = getStorage(app, firebaseConfig.storageBucket);
+export const storage = getStorage(storageApp, `gs://${STORAGE_BUCKET}`);
+
+export async function testConnection() {
+  try {
+    await getDocFromServer(doc(db, 'test', 'connection'));
+  } catch (error) {
+    if (error instanceof Error) {
+      if (error.message.includes('the client is offline')) {
+        console.error('Please check your Firebase configuration.');
+      } else if (error.message.includes('Quota exceeded') || error.message.includes('resource-exhausted')) {
+        console.error('Firestore quota exceeded:', error.message);
+      } else if (error.message.includes('does not exist') || error.message.includes('NOT_FOUND')) {
+        console.error('Firestore database does not exist yet on this project:', error.message);
+      }
+    }
+  }
+}
+testConnection();
 
 export enum OperationType {
   CREATE = 'create',

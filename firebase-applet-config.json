@@ -1,12 +1,12 @@
 {
-  "projectId": "bidang-pertanahan",
-  "appId": "1:208169868343:web:2124bb1860a530125e33b2",
-  "apiKey": "AIzaSyCZCsaPlKCWC_1ZB1J7lcQke5PCKRdLg0c",
-  "authDomain": "bidang-pertanahan.firebaseapp.com",
-  "firestoreDatabaseId": "sirekap",
-  "storageBucket": "bidang-pertanahan.firebasestorage.app",
-  "messagingSenderId": "208169868343",
+  "projectId": "sirekap-cf2b1",
+  "appId": "1:129720648217:web:5b7a5b73d6c124dc39e088",
+  "apiKey": "AIzaSyC5qNvW3_q-pd9tTpIXCaOMNGvzkpHIbS4",
+  "authDomain": "sirekap-cf2b1.firebaseapp.com",
+  "firestoreDatabaseId": "",
+  "storageBucket": "sirekap-cf2b1.firebasestorage.app",
+  "messagingSenderId": "129720648217",
   "measurementId": "",
-  "oAuthClientId": "208169868343-9g64echrdubbn1pejbhie1an51e33ko1.apps.googleusercontent.com",
+  "oAuthClientId": "",
   "recaptchaSiteKey": ""
 }
