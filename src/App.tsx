@@ -1041,7 +1041,7 @@ export default function App() {
   // Prefill login input shortcut helper
   const handleQuickLogin = (email: string) => {
     setEmailInput(email);
-    setPasswordInput("bima2026");
+    setPasswordInput(email.toLowerCase() === 'admin@sirekap.com' ? "admin123" : "bima2026");
     const resolved = resolveUserNameFromEmail(email);
     setNamaPenggunaInput(resolved);
   };

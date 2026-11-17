@@ -742,7 +742,7 @@ export async function seedInitialDataIfEmpty() {
           email: "admin@sirekap.com",
           role: UserRole.ADMIN,
           aktif: true,
-          password: "bima2026"
+          password: "admin123"
         },
         {
           id: "operator@sirekap.com",
