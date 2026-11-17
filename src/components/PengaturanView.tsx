@@ -43,7 +43,7 @@ import {
 } from '../firebaseStorageService';
 import { runFirebaseStorageMigration, MigrationProgressData } from '../migrationStorageService';
 import { formatDuration, formatWaktuMasuk } from '../utils/deviceHelper';
-import { db, STORAGE_BUCKET } from '../firebase';
+import { db, STORAGE_BUCKET, ensureUserInFirebaseAuth } from '../firebase';
 import { doc, setDoc, deleteDoc } from 'firebase/firestore';
 import { 
   isNotificationSupported, 
@@ -157,6 +157,7 @@ export default function PengaturanView({
   const [aktifState, setAktifState] = useState(true);
 
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
+  const [editingPreviousPassword, setEditingPreviousPassword] = useState<string>('');
   const [userSearchText, setUserSearchText] = useState('');
   const [userRoleFilter, setUserRoleFilter] = useState<string>('ALL');
   const [userActionSuccess, setUserActionSuccess] = useState<string | null>(null);
@@ -411,7 +412,32 @@ export default function PengaturanView({
 
     setIsSubmittingUser(true);
     try {
-      // Jika admin mengedit dan mengubah email/ID dari dokumen lama (termasuk migrasi akun non-email)
+      const passwordClean = passwordState.trim();
+      const namaClean = namaState.trim();
+
+      // 1. Daftarkan / sinkronkan akun ke Firebase Authentication terlebih dahulu (tanpa memutus sesi Admin)
+      let authSyncStatus: 'created' | 'already_exists' | 'password_updated' = 'created';
+      try {
+        const authRes = await ensureUserInFirebaseAuth(
+          emailClean,
+          passwordClean,
+          namaClean,
+          editingUserId ? editingPreviousPassword : undefined
+        );
+        authSyncStatus = authRes.status;
+      } catch (authErr: any) {
+        const code = authErr?.code || '';
+        if (code === 'auth/weak-password') {
+          throw new Error("Kata sandi terlalu lemah (minimal 6 karakter untuk Firebase Authentication).");
+        } else if (code === 'auth/invalid-email') {
+          throw new Error("Format alamat email tidak valid untuk Firebase Authentication.");
+        } else if (code === 'auth/configuration-not-found' || code === 'auth/operation-not-allowed') {
+          throw new Error("Metode login Email/Password belum diaktifkan di Firebase Console Authentication.");
+        }
+        throw authErr;
+      }
+
+      // 2. Jika admin mengedit dan mengubah email/ID dari dokumen lama (termasuk migrasi akun non-email)
       if (editingUserId && editingUserId.toLowerCase() !== emailClean) {
         await deleteDoc(doc(db, "sibiru_pengguna", editingUserId)).catch(() => {});
         if (editingUserId.toLowerCase() !== editingUserId) {
@@ -422,10 +448,10 @@ export default function PengaturanView({
       const userPayload: any = {
         id: emailClean,
         email: emailClean,
-        nama: namaState.trim(),
+        nama: namaClean,
         role: roleState,
         aktif: aktifState,
-        password: passwordState.trim()
+        password: passwordClean
       };
 
       await setDoc(doc(db, "sibiru_pengguna", emailClean), userPayload, { merge: true });
@@ -436,7 +462,7 @@ export default function PengaturanView({
         if (editingUserId && editingUserId.toLowerCase() !== emailClean) {
           delete cached[editingUserId.toLowerCase()];
         }
-        cached[emailClean] = namaState.trim();
+        cached[emailClean] = namaClean;
         localStorage.setItem('sibiru_user_names_cache', JSON.stringify(cached));
       } catch (e) {}
       
@@ -446,15 +472,22 @@ export default function PengaturanView({
         editingUserId ? "EDIT SEMUA PARAMETER AKUN PENGGUNA" : "TAMBAH AKUN PENGGUNA",
         "MANAJEMEN_AKUN",
         editingUserId ? { id: editingUserId } : null,
-        { email: emailClean, role: roleState, nama: namaState.trim(), aktif: aktifState }
+        { email: emailClean, role: roleState, nama: namaClean, aktif: aktifState, firebaseAuthStatus: authSyncStatus }
       );
 
-      setUserActionSuccess(`Akun "${emailClean}" berhasil ${editingUserId ? 'diperbarui semua parameternya' : 'disimpan'} di sistem!`);
+      if (authSyncStatus === 'created') {
+        setUserActionSuccess(`Akun "${emailClean}" berhasil didaftarkan ke Firebase Authentication dan disimpan di sistem!`);
+      } else if (authSyncStatus === 'password_updated') {
+        setUserActionSuccess(`Akun "${emailClean}" berhasil diperbarui di sistem beserta kata sandinya di Firebase Authentication!`);
+      } else {
+        setUserActionSuccess(`Akun "${emailClean}" berhasil ${editingUserId ? 'diperbarui' : 'disimpan'} di Firestore (email sudah terdaftar di Firebase Authentication).`);
+      }
       
       // Reset State
       setEmailState('');
       setNamaState('');
       setPasswordState('');
+      setEditingPreviousPassword('');
       setRoleState(UserRole.OPERATOR);
       setAktifState(true);
       setEditingUserId(null);
@@ -472,7 +505,9 @@ export default function PengaturanView({
     setEditingUserId(targetUser.id);
     setEmailState(targetUser.email);
     setNamaState(targetUser.nama);
-    setPasswordState(targetUser.password || 'bima2026');
+    const currentPwd = targetUser.password || 'bima2026';
+    setPasswordState(currentPwd);
+    setEditingPreviousPassword(targetUser.password || '');
     setRoleState(targetUser.role);
     setAktifState(targetUser.aktif);
   };
@@ -1148,6 +1183,7 @@ export default function PengaturanView({
                       setEmailState('');
                       setNamaState('');
                       setPasswordState('');
+                      setEditingPreviousPassword('');
                       setRoleState(UserRole.OPERATOR);
                       setAktifState(true);
                       setUserActionSuccess(null);

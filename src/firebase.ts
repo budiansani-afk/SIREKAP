@@ -1,5 +1,12 @@
 import { initializeApp, getApps } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
+import {
+  getAuth,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  updatePassword,
+  updateProfile,
+  signOut
+} from 'firebase/auth';
 import { initializeFirestore, getFirestore, doc, getDocFromServer, Firestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import firebaseConfig from '../firebase-applet-config.json';
@@ -20,6 +27,9 @@ const app = getApps().find(a => a.name === '[DEFAULT]') || initializeApp(firebas
 const storageApp =
   getApps().find(a => a.name === 'sirekap-storage') ||
   initializeApp(storageFirebaseConfig, 'sirekap-storage');
+const provisioningApp =
+  getApps().find(a => a.name === 'sirekap-user-provisioning') ||
+  initializeApp(firebaseConfig, 'sirekap-user-provisioning');
 
 function createFirestoreInstance(): Firestore {
   const databaseId = firebaseConfig.firestoreDatabaseId || undefined;
@@ -36,7 +46,55 @@ function createFirestoreInstance(): Firestore {
 
 export const db = createFirestoreInstance();
 export const auth = getAuth(app);
+export const provisioningAuth = getAuth(provisioningApp);
 export const storage = getStorage(storageApp, `gs://${STORAGE_BUCKET}`);
+
+export interface ProvisionAuthResult {
+  status: 'created' | 'already_exists' | 'password_updated';
+  uid?: string;
+}
+
+/**
+ * Mendaftarkan akun ke Firebase Authentication menggunakan instance Auth sekunder
+ * agar sesi Administrator yang sedang login tidak ter-logout.
+ */
+export async function ensureUserInFirebaseAuth(
+  email: string,
+  password: string,
+  displayName?: string,
+  previousPassword?: string
+): Promise<ProvisionAuthResult> {
+  const cleanEmail = email.trim().toLowerCase();
+  try {
+    const cred = await createUserWithEmailAndPassword(provisioningAuth, cleanEmail, password);
+    if (displayName?.trim()) {
+      await updateProfile(cred.user, { displayName: displayName.trim() }).catch(() => {});
+    }
+    const uid = cred.user.uid;
+    await signOut(provisioningAuth).catch(() => {});
+    return { status: 'created', uid };
+  } catch (err: any) {
+    if (err?.code === 'auth/email-already-in-use') {
+      if (previousPassword && previousPassword !== password) {
+        try {
+          const cred = await signInWithEmailAndPassword(provisioningAuth, cleanEmail, previousPassword);
+          await updatePassword(cred.user, password);
+          if (displayName?.trim()) {
+            await updateProfile(cred.user, { displayName: displayName.trim() }).catch(() => {});
+          }
+          const uid = cred.user.uid;
+          await signOut(provisioningAuth).catch(() => {});
+          return { status: 'password_updated', uid };
+        } catch {
+          await signOut(provisioningAuth).catch(() => {});
+        }
+      }
+      return { status: 'already_exists' };
+    }
+    await signOut(provisioningAuth).catch(() => {});
+    throw err;
+  }
+}
 
 export async function testConnection() {
   try {

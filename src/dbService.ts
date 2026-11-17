@@ -11,7 +11,7 @@ import {
   where,
   writeBatch
 } from 'firebase/firestore';
-import { db, auth, handleFirestoreError, OperationType } from './firebase';
+import { db, auth, handleFirestoreError, OperationType, ensureUserInFirebaseAuth } from './firebase';
 import { 
   Program, 
   Kegiatan, 
@@ -683,6 +683,9 @@ export async function restoreDatabaseFromJSON(backupData: Record<string, any[]>,
       for (const item of items) {
         const { id, ...data } = item;
         if (id) {
+          if (collName === COLL_PENGGUNA && id.includes('@') && typeof data.password === 'string' && data.password.length >= 6) {
+            await ensureUserInFirebaseAuth(id, data.password, data.nama).catch(() => null);
+          }
           await setDoc(doc(db, collName, id), data).catch(err => handleFirestoreError(err, OperationType.WRITE, `${collName}/${id}`));
         }
       }
@@ -763,6 +766,7 @@ export async function seedInitialDataIfEmpty() {
       ];
 
       for (const u of sampleUsers) {
+        await ensureUserInFirebaseAuth(u.email, u.password || 'bima2026', u.nama).catch(() => null);
         await setDoc(doc(db, COLL_PENGGUNA, u.id), u);
       }
     }
