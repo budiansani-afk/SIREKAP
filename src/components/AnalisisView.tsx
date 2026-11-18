@@ -1142,8 +1142,8 @@ export default function AnalisisView({
         </div>
 
         {/* Recharts LineChart dengan Penanda Titik untuk Tiap Bulan yang Terlewati */}
-        <div className="h-80 w-full pt-2">
-          <ResponsiveContainer width="100%" height="100%">
+        <div className="h-80 min-h-[320px] w-full pt-2">
+          <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={300}>
             <LineChart
               data={cumulativeTrendData}
               margin={{ top: 20, right: 25, left: 10, bottom: 25 }}
@@ -1344,8 +1344,8 @@ export default function AnalisisView({
         </div>
 
         {/* Visualisasi BarChart Recharts */}
-        <div className="h-80 w-full pt-2">
-          <ResponsiveContainer width="100%" height="100%">
+        <div className="h-80 min-h-[320px] w-full pt-2">
+          <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={300}>
             <BarChart
               data={programComparisonData}
               margin={{ top: 20, right: 20, left: 10, bottom: 25 }}
@@ -1450,8 +1450,8 @@ export default function AnalisisView({
             <TrendingUp size={14} className="text-blue-800" />
             Fluktuasi Realisasi Belanja Bulanan (Tren Kas)
           </h4>
-          <div className="h-64 w-full">
-            <ResponsiveContainer width="100%" height="100%">
+          <div className="h-64 min-h-[256px] w-full">
+            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={240}>
               <AreaChart data={trendChartData}>
                 <defs>
                   <linearGradient id="colorRealisasi" x1="0" y1="0" x2="0" y2="1">
@@ -1476,8 +1476,8 @@ export default function AnalisisView({
               Alokasi Pagu vs Realisasi per Program Kegiatan
             </h4>
           </div>
-          <div className="h-64 w-full">
-            <ResponsiveContainer width="100%" height="100%">
+          <div className="h-64 min-h-[256px] w-full">
+            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={240}>
               <BarChart data={programComparisonData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
                 <defs>
                   <linearGradient id="paguGrad" x1="0" y1="0" x2="0" y2="1">

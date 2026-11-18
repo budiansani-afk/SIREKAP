@@ -94,7 +94,7 @@ service cloud.firestore {
 
     function isValidBackupConfigPayload(data) {
       return data.keys().hasAll(['id', 'enabled', 'daysOfWeek', 'hour', 'timeOfDay', 'timezone', 'updatedAt', 'updatedBy'])
-        && data.keys().hasOnly(['id', 'enabled', 'daysOfWeek', 'dayNames', 'hour', 'timeOfDay', 'timezone', 'updatedAt', 'updatedBy'])
+        && data.keys().hasOnly(['id', 'enabled', 'daysOfWeek', 'dayNames', 'hour', 'minute', 'timeOfDay', 'timezone', 'updatedAt', 'updatedBy'])
         && data.id == 'backup_config'
         && data.enabled is bool
         && data.daysOfWeek is list
@@ -104,8 +104,9 @@ service cloud.firestore {
         && data.hour is int
         && data.hour >= 0
         && data.hour <= 23
+        && (!('minute' in data) || (data.minute is int && data.minute >= 0 && data.minute <= 59))
         && data.timeOfDay is string
-        && data.timeOfDay.matches('^([01][0-9]|2[0-3]):00$')
+        && data.timeOfDay.matches('^([01][0-9]|2[0-3]):[0-5][0-9]$')
         && data.timezone is string
         && data.timezone.size() > 0
         && data.timezone.size() <= 64

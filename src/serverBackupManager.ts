@@ -25,7 +25,8 @@ export interface AutoBackupServerConfig {
   enabled: boolean;
   daysOfWeek: number[]; // 0 (Minggu) .. 6 (Sabtu)
   hour: number; // 0..23
-  timeOfDay: string; // "00:00" .. "23:00"
+  minute: number; // 0..59
+  timeOfDay: string; // "HH:MM" e.g. "23:00"
   timezone: string; // e.g. "Asia/Makassar"
   syncKey: string;
   refreshToken: string;
@@ -43,6 +44,7 @@ export interface AutoBackupPublicStatus {
   enabled: boolean;
   daysOfWeek: number[];
   hour: number;
+  minute: number;
   timeOfDay: string;
   timezone: string;
   lastRunAt: string | null;
@@ -74,6 +76,7 @@ function defaultConfig(): AutoBackupServerConfig {
     enabled: false,
     daysOfWeek: [1, 2, 3, 4, 5],
     hour: 23,
+    minute: 0,
     timeOfDay: "23:00",
     timezone: "Asia/Makassar",
     syncKey: crypto.randomBytes(24).toString("hex"),
@@ -119,16 +122,31 @@ export function saveAutoBackupConfig(cfg: AutoBackupServerConfig) {
   fs.writeFileSync(CONFIG_FILE, JSON.stringify(cfg, null, 2), "utf8");
 }
 
+function resolveHourAndMinute(c: Partial<AutoBackupServerConfig>): { hour: number; minute: number; formattedTime: string } {
+  const parts = typeof c.timeOfDay === "string" ? /^(\d{2}):(\d{2})$/.exec(c.timeOfDay.trim()) : null;
+  const fallbackHour = parts ? Number(parts[1]) : 23;
+  const fallbackMinute = parts ? Number(parts[2]) : 0;
+
+  const safeHour = Number.isInteger(c.hour) && (c.hour as number) >= 0 && (c.hour as number) <= 23
+    ? (c.hour as number)
+    : (fallbackHour >= 0 && fallbackHour <= 23 ? fallbackHour : 23);
+
+  const safeMinute = Number.isInteger(c.minute) && (c.minute as number) >= 0 && (c.minute as number) <= 59
+    ? (c.minute as number)
+    : (fallbackMinute >= 0 && fallbackMinute <= 59 ? fallbackMinute : 0);
+
+  const formattedTime = `${String(safeHour).padStart(2, "0")}:${String(safeMinute).padStart(2, "0")}`;
+  return { hour: safeHour, minute: safeMinute, formattedTime };
+}
+
 export function getPublicBackupStatus(cfg?: AutoBackupServerConfig): AutoBackupPublicStatus {
   const c = cfg || loadAutoBackupConfig();
-  const safeHour = Number.isInteger(c.hour) && c.hour >= 0 && c.hour <= 23
-    ? c.hour
-    : Number((c.timeOfDay || "23:00").split(":")[0]) || 23;
-  const formattedTime = `${String(safeHour).padStart(2, "0")}:00`;
+  const { hour: safeHour, minute: safeMinute, formattedTime } = resolveHourAndMinute(c);
   return {
     enabled: Boolean(c.enabled),
     daysOfWeek: Array.isArray(c.daysOfWeek) ? c.daysOfWeek : [],
     hour: safeHour,
+    minute: safeMinute,
     timeOfDay: formattedTime,
     timezone: c.timezone || "Asia/Makassar",
     lastRunAt: c.lastRunAt || null,
@@ -458,13 +476,20 @@ export async function syncBackupConfigFromFirestore(cfg: AutoBackupServerConfig)
     const localUpdated = cfg.updatedAt ? new Date(String(cfg.updatedAt)).getTime() : 0;
 
     if (remoteUpdated >= localUpdated) {
-      const hourInt = Number.isInteger(Number(remote.hour)) ? Math.min(23, Math.max(0, Number(remote.hour))) : cfg.hour;
+      const timeMatch = typeof remote.timeOfDay === "string" ? /^(\d{2}):(\d{2})$/.exec(remote.timeOfDay.trim()) : null;
+      const hourInt = Number.isInteger(Number(remote.hour))
+        ? Math.min(23, Math.max(0, Number(remote.hour)))
+        : (timeMatch ? Math.min(23, Math.max(0, Number(timeMatch[1]))) : cfg.hour);
+      const minuteInt = remote.minute !== undefined && remote.minute !== null && Number.isInteger(Number(remote.minute))
+        ? Math.min(59, Math.max(0, Number(remote.minute)))
+        : (timeMatch ? Math.min(59, Math.max(0, Number(timeMatch[2]))) : (Number.isInteger(cfg.minute) ? cfg.minute : 0));
       cfg.enabled = Boolean(remote.enabled);
       cfg.daysOfWeek = Array.isArray(remote.daysOfWeek)
         ? remote.daysOfWeek.map(Number).filter((d) => Number.isInteger(d) && d >= 0 && d <= 6)
         : cfg.daysOfWeek;
       cfg.hour = hourInt;
-      cfg.timeOfDay = `${String(hourInt).padStart(2, "0")}:00`;
+      cfg.minute = minuteInt;
+      cfg.timeOfDay = `${String(hourInt).padStart(2, "0")}:${String(minuteInt).padStart(2, "0")}`;
       if (typeof remote.timezone === "string" && remote.timezone.trim()) {
         cfg.timezone = remote.timezone.trim();
       }
@@ -497,11 +522,8 @@ export function startAutoBackupScheduler() {
         return;
       }
 
-      const hourInt = Number.isInteger(cfg.hour) && cfg.hour >= 0 && cfg.hour <= 23
-        ? cfg.hour
-        : (parseHHmmMinutes(cfg.timeOfDay) !== null ? Math.floor((parseHHmmMinutes(cfg.timeOfDay) || 0) / 60) : 23);
-      const formattedTime = `${String(hourInt).padStart(2, "0")}:00`;
-      const targetMinutes = hourInt * 60;
+      const { hour: hourInt, minute: minuteInt, formattedTime } = resolveHourAndMinute(cfg);
+      const targetMinutes = hourInt * 60 + minuteInt;
 
       const tz = cfg.timezone || "Asia/Makassar";
       const now = new Date();
@@ -516,7 +538,7 @@ export function startAutoBackupScheduler() {
         return;
       }
 
-      // Execute at exact minute :00 of chosen hour (with 3-min grace window)
+      // Execute at exact chosen hour & minute (with 3-min grace window)
       const diffMinutes = zoned.totalMinutes - targetMinutes;
       if (diffMinutes < 0 || diffMinutes > 3) {
         return;

@@ -822,8 +822,8 @@ export default function DashboardView({
             </div>
           </div>
           
-          <div className="my-auto py-2 h-52 w-full text-[10px]" id="chart-months-bars-container" onClick={(e) => e.stopPropagation()}>
-            <ResponsiveContainer width="100%" height="100%">
+          <div className="my-auto py-2 h-52 min-h-[208px] w-full text-[10px]" id="chart-months-bars-container" onClick={(e) => e.stopPropagation()}>
+            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={200}>
               <BarChart
                 data={monthlyData}
                 margin={{ top: 10, right: 10, left: -10, bottom: 0 }}
@@ -959,8 +959,8 @@ export default function DashboardView({
               <p className="text-slate-600 font-bold text-xs">Belum Ada Program TA {selectedYear}</p>
             </div>
           ) : (
-            <div className="my-auto py-2 h-52 w-full text-[10px]" id="chart-comparison-recharts">
-              <ResponsiveContainer width="100%" height="100%">
+            <div className="my-auto py-2 h-52 min-h-[208px] w-full text-[10px]" id="chart-comparison-recharts">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={200}>
                 <BarChart
                   data={programChartData}
                   margin={{ top: 10, right: 10, left: -10, bottom: 0 }}

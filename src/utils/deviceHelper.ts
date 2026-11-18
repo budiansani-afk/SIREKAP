@@ -85,27 +85,39 @@ export function getDeviceDetails(uaString?: string): DeviceInfo {
  * Fetches the client's current IP address with robust fallbacks
  */
 export async function getClientIp(): Promise<string> {
-  // 1. Try local server endpoint first
   try {
-    const res = await fetch('/api/client-info', { method: 'GET', signal: AbortSignal.timeout(3000) });
-    if (res.ok) {
-      const data = await res.json();
-      if (data.ip && data.ip !== '127.0.0.1' && data.ip !== '::1') {
-        return data.ip;
-      }
-    }
-  } catch (e) {
-    // Proceed to next fallback
-  }
+    const cached = sessionStorage.getItem('sirekap_client_ip');
+    if (cached) return cached;
+  } catch {}
 
-  // 2. Try public IP service
+  // 1. Try public IP service first (works cleanly on static Firebase Hosting without 404)
   try {
     const res = await fetch('https://api.ipify.org?format=json', { signal: AbortSignal.timeout(3000) });
     if (res.ok) {
       const data = await res.json();
-      if (data.ip) return data.ip;
+      if (data.ip) {
+        try { sessionStorage.setItem('sirekap_client_ip', data.ip); } catch {}
+        return data.ip;
+      }
     }
-  } catch (e) {
+  } catch {
+    // Proceed to fallback
+  }
+
+  // 2. Optional local Express server endpoint if available
+  try {
+    if (sessionStorage.getItem('sirekap_backend_api') !== 'unavailable') {
+      const res = await fetch('/api/client-info', { method: 'GET', signal: AbortSignal.timeout(2000) });
+      const contentType = res.headers.get('content-type') || '';
+      if (res.ok && contentType.includes('application/json')) {
+        const data = await res.json();
+        if (data.ip && data.ip !== '127.0.0.1' && data.ip !== '::1') {
+          try { sessionStorage.setItem('sirekap_client_ip', data.ip); } catch {}
+          return data.ip;
+        }
+      }
+    }
+  } catch {
     // Proceed to fallback
   }
 

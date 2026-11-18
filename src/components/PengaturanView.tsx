@@ -237,6 +237,7 @@ export default function PengaturanView({
   const [autoBackupEnabled, setAutoBackupEnabled] = useState(false);
   const [autoBackupDays, setAutoBackupDays] = useState<number[]>([1, 2, 3, 4, 5]);
   const [autoBackupHour, setAutoBackupHour] = useState<number>(23);
+  const [autoBackupMinute, setAutoBackupMinute] = useState<number>(0);
   const [autoBackupTimezone, setAutoBackupTimezone] = useState('Asia/Makassar');
   const [firestoreBackupMeta, setFirestoreBackupMeta] = useState<{ updatedAt: string; updatedBy: string } | null>(null);
   const [serverBackupStatus, setServerBackupStatus] = useState<AutoBackupPublicStatus | null>(null);
@@ -252,11 +253,12 @@ export default function PengaturanView({
 
     const loadServerStatusAndSyncLocal = async () => {
       try {
-        const status = await fetchAutoBackupStatus();
+        const idToken = await auth.currentUser?.getIdToken().catch(() => undefined);
+        const status = await fetchAutoBackupStatus(idToken);
         if (cancelled) return;
         latestServerStatus = status;
         setServerBackupStatus(status);
-        // Apply server values as initial fallback before Firestore snapshot arrives
+        // Apply server/local values as initial fallback before Firestore snapshot arrives
         setAutoBackupEnabled(prev => prev || Boolean(status.enabled));
         if (Array.isArray(status.daysOfWeek) && status.daysOfWeek.length > 0) {
           setAutoBackupDays(status.daysOfWeek);
@@ -264,11 +266,18 @@ export default function PengaturanView({
         if (Number.isInteger(status.hour)) {
           setAutoBackupHour(status.hour);
         }
+        if (Number.isInteger(status.minute)) {
+          setAutoBackupMinute(status.minute);
+        } else if (typeof status.timeOfDay === 'string' && status.timeOfDay.includes(':')) {
+          const parsedMin = Number(status.timeOfDay.split(':')[1]);
+          if (Number.isInteger(parsedMin) && parsedMin >= 0 && parsedMin <= 59) {
+            setAutoBackupMinute(parsedMin);
+          }
+        }
         if (status.timezone) {
           setAutoBackupTimezone(status.timezone);
         }
 
-        const idToken = await auth.currentUser?.getIdToken().catch(() => undefined);
         await syncLatestBackupToLocalStorage({ idToken });
         if (!cancelled) {
           setLocalBackupMeta(readLocalBackupMeta());
@@ -290,14 +299,19 @@ export default function PengaturanView({
         const fsDays = Array.isArray(data.daysOfWeek)
           ? data.daysOfWeek.map(Number).filter((d) => Number.isInteger(d) && d >= 0 && d <= 6)
           : [1, 2, 3, 4, 5];
+        const timeParts = typeof data.timeOfDay === 'string' ? data.timeOfDay.split(':') : [];
         const fsHour = Number.isInteger(Number(data.hour))
           ? Math.min(23, Math.max(0, Number(data.hour)))
-          : (typeof data.timeOfDay === 'string' ? Number(data.timeOfDay.split(':')[0]) || 23 : 23);
+          : (timeParts[0] ? Math.min(23, Math.max(0, Number(timeParts[0]) || 23)) : 23);
+        const fsMinute = data.minute !== undefined && data.minute !== null && Number.isInteger(Number(data.minute))
+          ? Math.min(59, Math.max(0, Number(data.minute)))
+          : (timeParts[1] && Number.isInteger(Number(timeParts[1])) ? Math.min(59, Math.max(0, Number(timeParts[1]))) : 0);
         const fsTz = typeof data.timezone === 'string' && data.timezone.trim() ? data.timezone.trim() : 'Asia/Makassar';
 
         setAutoBackupEnabled(fsEnabled);
         setAutoBackupDays(fsDays);
         setAutoBackupHour(fsHour);
+        setAutoBackupMinute(fsMinute);
         setAutoBackupTimezone(fsTz);
         setFirestoreBackupMeta({
           updatedAt: data.updatedAt || '',
@@ -315,7 +329,8 @@ export default function PengaturanView({
                 enabled: fsEnabled,
                 daysOfWeek: fsDays,
                 hour: fsHour,
-                timeOfDay: `${String(fsHour).padStart(2, '0')}:00`,
+                minute: fsMinute,
+                timeOfDay: `${String(fsHour).padStart(2, '0')}:${String(fsMinute).padStart(2, '0')}`,
                 timezone: fsTz,
                 refreshToken: auth.currentUser.refreshToken || ''
               });
@@ -537,7 +552,8 @@ export default function PengaturanView({
     };
 
     const hourInt = Math.min(23, Math.max(0, Math.floor(Number(autoBackupHour))));
-    const timeStr = `${String(hourInt).padStart(2, '0')}:00`;
+    const minuteInt = Math.min(59, Math.max(0, Math.floor(Number(autoBackupMinute))));
+    const timeStr = `${String(hourInt).padStart(2, '0')}:${String(minuteInt).padStart(2, '0')}`;
     const sortedDays = [...autoBackupDays].sort((a, b) => a - b);
     const nowIso = new Date().toISOString();
     const updatedBy = currentUserEmail || auth.currentUser.email || 'admin@sirekap.com';
@@ -548,6 +564,7 @@ export default function PengaturanView({
       daysOfWeek: sortedDays,
       dayNames: sortedDays.map((d) => DAY_NAMES_ID[d]).filter(Boolean),
       hour: hourInt,
+      minute: minuteInt,
       timeOfDay: timeStr,
       timezone: autoBackupTimezone,
       updatedAt: nowIso,
@@ -567,6 +584,7 @@ export default function PengaturanView({
         enabled: autoBackupEnabled,
         daysOfWeek: sortedDays,
         hour: hourInt,
+        minute: minuteInt,
         timeOfDay: timeStr,
         timezone: autoBackupTimezone,
         refreshToken
@@ -1175,31 +1193,55 @@ export default function PengaturanView({
                     </div>
                   </div>
 
-                  {/* Hour (00-23) & Timezone Selection */}
+                  {/* Hour (00-23), Minute (00-59) & Timezone Selection */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wide mb-1">
-                        Jam Eksekusi (00–23)
+                        Waktu Eksekusi (Jam & Menit)
                       </label>
-                      <div className="relative">
-                        <Clock size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
-                        <select
-                          value={autoBackupHour}
-                          onChange={(e) => setAutoBackupHour(Number(e.target.value))}
-                          className="w-full p-2 pl-8 border border-slate-200 rounded-lg bg-white text-slate-900 font-bold outline-emerald-600"
-                        >
-                          {Array.from({ length: 24 }, (_, h) => {
-                            const hh = String(h).padStart(2, '0');
-                            return (
-                              <option key={h} value={h}>
-                                Pukul {hh}:00 (Jam {hh})
-                              </option>
-                            );
-                          })}
-                        </select>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="relative">
+                          <Clock size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
+                          <select
+                            aria-label="Jam Eksekusi (00-23)"
+                            value={autoBackupHour}
+                            onChange={(e) => setAutoBackupHour(Number(e.target.value))}
+                            className="w-full p-2 pl-8 border border-slate-200 rounded-lg bg-white text-slate-900 font-bold outline-emerald-600"
+                          >
+                            {Array.from({ length: 24 }, (_, h) => {
+                              const hh = String(h).padStart(2, '0');
+                              return (
+                                <option key={h} value={h}>
+                                  Jam {hh}
+                                </option>
+                              );
+                            })}
+                          </select>
+                        </div>
+                        <div>
+                          <select
+                            aria-label="Menit Eksekusi (00-59)"
+                            value={autoBackupMinute}
+                            onChange={(e) => setAutoBackupMinute(Number(e.target.value))}
+                            className="w-full p-2 border border-slate-200 rounded-lg bg-white text-slate-900 font-bold outline-emerald-600"
+                          >
+                            {Array.from({ length: 60 }, (_, m) => {
+                              const mm = String(m).padStart(2, '0');
+                              return (
+                                <option key={m} value={m}>
+                                  Menit :{mm}
+                                </option>
+                              );
+                            })}
+                          </select>
+                        </div>
                       </div>
                       <p className="text-[10px] text-slate-500 mt-1">
-                        Berjalan otomatis tepat pada menit <span className="font-mono font-bold">:00</span> di hari terpilih.
+                        Berjalan otomatis pukul{' '}
+                        <span className="font-mono font-bold text-emerald-700">
+                          {String(autoBackupHour).padStart(2, '0')}:{String(autoBackupMinute).padStart(2, '0')}
+                        </span>{' '}
+                        di hari terpilih.
                       </p>
                     </div>
                     <div>
@@ -1221,7 +1263,9 @@ export default function PengaturanView({
                   {/* Status & LocalStorage Monitor */}
                   <div className="bg-white border border-slate-200 rounded-lg p-3 space-y-1.5 text-[11px]">
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <span className="font-bold text-slate-700">Status Server Scheduler:</span>
+                      <span className="font-bold text-slate-700">
+                        Status Penjadwal ({serverBackupStatus?.executionMode === 'server_hybrid' ? 'Server + Browser' : 'Browser Mandiri'}):
+                      </span>
                       <span className={`px-2 py-0.5 rounded font-extrabold text-[10px] ${
                         serverBackupStatus?.lastStatus === 'success'
                           ? 'bg-emerald-100 text-emerald-800'

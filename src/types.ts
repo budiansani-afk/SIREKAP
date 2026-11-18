@@ -182,7 +182,8 @@ export interface BackupScheduleConfig {
   daysOfWeek: number[]; // 0 = Minggu .. 6 = Sabtu
   dayNames?: string[];
   hour: number; // 0..23
-  timeOfDay: string; // "00:00" .. "23:00"
+  minute?: number; // 0..59
+  timeOfDay: string; // "HH:MM" e.g. "23:00"
   timezone: string;
   updatedAt: string;
   updatedBy: string;

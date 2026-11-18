@@ -314,7 +314,7 @@ app.post("/api/backup/config", async (req, res) => {
       return res.status(403).json({ error: "Hanya Administrator terautentikasi yang dapat mengatur jadwal backup otomatis." });
     }
 
-    const { enabled, daysOfWeek, hour, timeOfDay, timezone, refreshToken } = req.body || {};
+    const { enabled, daysOfWeek, hour, minute, timeOfDay, timezone, refreshToken } = req.body || {};
     const validDays = Array.isArray(daysOfWeek)
       ? Array.from(new Set(daysOfWeek.map(Number).filter((d) => Number.isInteger(d) && d >= 0 && d <= 6))).sort()
       : [];
@@ -323,6 +323,9 @@ app.post("/api/backup/config", async (req, res) => {
       return res.status(400).json({ error: "Pilih minimal satu hari pelaksanaan backup otomatis." });
     }
 
+    const timeStrRaw = typeof timeOfDay === "string" ? timeOfDay.trim() : "23:00";
+    const timeMatch = /^(\d{2}):(\d{2})$/.exec(timeStrRaw);
+
     let parsedHour: number;
     if (hour !== undefined && hour !== null) {
       parsedHour = Number(hour);
@@ -330,23 +333,35 @@ app.post("/api/backup/config", async (req, res) => {
         return res.status(400).json({ error: "Jam eksekusi harus berupa bilangan bulat antara 00 sampai 23." });
       }
     } else {
-      const timeStrRaw = typeof timeOfDay === "string" ? timeOfDay.trim() : "23:00";
-      const match = /^(\d{2}):\d{2}$/.exec(timeStrRaw);
-      if (!match) {
+      if (!timeMatch) {
         return res.status(400).json({ error: "Format jam tidak valid. Gunakan pilihan jam 00 sampai 23." });
       }
-      parsedHour = Number(match[1]);
+      parsedHour = Number(timeMatch[1]);
       if (parsedHour < 0 || parsedHour > 23) {
         return res.status(400).json({ error: "Jam eksekusi harus antara 00 sampai 23." });
       }
     }
 
-    const timeStr = `${String(parsedHour).padStart(2, "0")}:00`;
+    let parsedMinute = 0;
+    if (minute !== undefined && minute !== null) {
+      parsedMinute = Number(minute);
+      if (!Number.isInteger(parsedMinute) || parsedMinute < 0 || parsedMinute > 59) {
+        return res.status(400).json({ error: "Menit eksekusi harus berupa bilangan bulat antara 00 sampai 59." });
+      }
+    } else if (timeMatch) {
+      parsedMinute = Number(timeMatch[2]);
+      if (parsedMinute < 0 || parsedMinute > 59) {
+        return res.status(400).json({ error: "Menit eksekusi harus antara 00 sampai 59." });
+      }
+    }
+
+    const timeStr = `${String(parsedHour).padStart(2, "0")}:${String(parsedMinute).padStart(2, "0")}`;
 
     const cfg = loadAutoBackupConfig();
     cfg.enabled = Boolean(enabled);
     cfg.daysOfWeek = validDays;
     cfg.hour = parsedHour;
+    cfg.minute = parsedMinute;
     cfg.timeOfDay = timeStr;
     if (typeof timezone === "string" && timezone.trim()) {
       cfg.timezone = timezone.trim();
