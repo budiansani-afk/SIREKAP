@@ -32,7 +32,10 @@ import {
   Activity,
   Bell,
   BellRing,
-  BellOff
+  BellOff,
+  Calendar,
+  Play,
+  Save
 } from 'lucide-react';
 import { AppSettings, UserRole, Pengguna, SesiPenggunaOnline } from '../types';
 import {
@@ -50,7 +53,7 @@ import {
 } from '../firebaseStorageService';
 import { runFirebaseStorageMigration, MigrationProgressData } from '../migrationStorageService';
 import { formatDuration, formatWaktuMasuk } from '../utils/deviceHelper';
-import { db, STORAGE_BUCKET, ensureUserInFirebaseAuth } from '../firebase';
+import { auth, db, STORAGE_BUCKET, ensureUserInFirebaseAuth } from '../firebase';
 import { doc, setDoc, deleteDoc } from 'firebase/firestore';
 import { 
   isNotificationSupported, 
@@ -58,6 +61,19 @@ import {
   requestNotificationPermission, 
   sendWebNotification 
 } from '../utils/notifications';
+import {
+  AUTO_BACKUP_SYNC_EVENT,
+  AutoBackupPublicStatus,
+  LS_AUTO_BACKUP_DATA_KEY,
+  LocalBackupMeta,
+  downloadLocalStorageBackupFile,
+  fetchAutoBackupStatus,
+  readLocalBackupMeta,
+  saveAutoBackupSchedule,
+  saveBackupSnapshotToLocalStorage,
+  syncLatestBackupToLocalStorage,
+  triggerServerAutoBackupNow
+} from '../autoBackupClient';
 
 interface PengaturanViewProps {
   settings: AppSettings | null;
@@ -216,6 +232,50 @@ export default function PengaturanView({
   const [backupFileUrl, setBackupFileUrl] = useState('');
   const [restoreMessage, setRestoreMessage] = useState<string | null>(null);
 
+  // Auto-Backup Scheduler states (Admin-only, hybrid server + localStorage overwrite)
+  const [autoBackupEnabled, setAutoBackupEnabled] = useState(false);
+  const [autoBackupDays, setAutoBackupDays] = useState<number[]>([1, 2, 3, 4, 5]);
+  const [autoBackupTime, setAutoBackupTime] = useState('23:00');
+  const [autoBackupTimezone, setAutoBackupTimezone] = useState('Asia/Makassar');
+  const [serverBackupStatus, setServerBackupStatus] = useState<AutoBackupPublicStatus | null>(null);
+  const [localBackupMeta, setLocalBackupMeta] = useState<LocalBackupMeta | null>(() => readLocalBackupMeta());
+  const [isSavingAutoBackup, setIsSavingAutoBackup] = useState(false);
+  const [isRunningAutoBackupNow, setIsRunningAutoBackupNow] = useState(false);
+  const [autoBackupFeedback, setAutoBackupFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  useEffect(() => {
+    if (!canEdit) return;
+    let cancelled = false;
+    const loadBackupConfig = async () => {
+      try {
+        const status = await fetchAutoBackupStatus();
+        if (cancelled) return;
+        setServerBackupStatus(status);
+        setAutoBackupEnabled(Boolean(status.enabled));
+        setAutoBackupDays(Array.isArray(status.daysOfWeek) && status.daysOfWeek.length > 0 ? status.daysOfWeek : [1, 2, 3, 4, 5]);
+        setAutoBackupTime(status.timeOfDay || '23:00');
+        setAutoBackupTimezone(status.timezone || 'Asia/Makassar');
+        const idToken = await auth.currentUser?.getIdToken().catch(() => undefined);
+        await syncLatestBackupToLocalStorage({ idToken });
+        if (!cancelled) {
+          setLocalBackupMeta(readLocalBackupMeta());
+        }
+      } catch (err) {
+        console.warn('Gagal memuat status backup otomatis:', err);
+      }
+    };
+    loadBackupConfig();
+
+    const onSynced = () => {
+      setLocalBackupMeta(readLocalBackupMeta());
+    };
+    window.addEventListener(AUTO_BACKUP_SYNC_EVENT, onSynced);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(AUTO_BACKUP_SYNC_EVENT, onSynced);
+    };
+  }, [canEdit]);
+
   // Firebase Storage Migration state
   const [isMigrating, setIsMigrating] = useState(false);
   const [migrationProgress, setMigrationProgress] = useState<MigrationProgressData | null>(null);
@@ -359,6 +419,12 @@ export default function PengaturanView({
       link.click();
       document.body.removeChild(link);
 
+      saveBackupSnapshotToLocalStorage(dataObj, {
+        exportedAt: new Date().toISOString(),
+        source: 'manual_admin'
+      });
+      setLocalBackupMeta(readLocalBackupMeta());
+
       await createAuditLog(
         currentUserEmail,
         currentUserRole,
@@ -369,6 +435,97 @@ export default function PengaturanView({
       );
     } catch (err) {
       alert("Gagal melakukan export backup: " + (err instanceof Error ? err.message : String(err)));
+    }
+  };
+
+  const toggleBackupDay = (dayIdx: number) => {
+    setAutoBackupDays(prev =>
+      prev.includes(dayIdx)
+        ? prev.filter(d => d !== dayIdx)
+        : [...prev, dayIdx].sort((a, b) => a - b)
+    );
+  };
+
+  const handleSaveAutoBackupSchedule = async () => {
+    setAutoBackupFeedback(null);
+    if (autoBackupEnabled && autoBackupDays.length === 0) {
+      setAutoBackupFeedback({ type: 'error', message: 'Pilih minimal satu hari pelaksanaan untuk mengaktifkan jadwal otomatis.' });
+      return;
+    }
+    if (!auth.currentUser) {
+      setAutoBackupFeedback({ type: 'error', message: 'Sesi Administrator tidak ditemukan. Silakan masuk ulang.' });
+      return;
+    }
+
+    setIsSavingAutoBackup(true);
+    try {
+      const idToken = await auth.currentUser.getIdToken(true);
+      const refreshToken = auth.currentUser.refreshToken || '';
+      const res = await saveAutoBackupSchedule(idToken, {
+        enabled: autoBackupEnabled,
+        daysOfWeek: autoBackupDays,
+        timeOfDay: autoBackupTime,
+        timezone: autoBackupTimezone,
+        refreshToken
+      });
+      setServerBackupStatus(res.status);
+      setAutoBackupFeedback({
+        type: 'success',
+        message: autoBackupEnabled
+          ? `Jadwal backup otomatis aktif (${autoBackupDays.length} hari terpilih pukul ${autoBackupTime} ${autoBackupTimezone}). Server akan mengekspor otomatis tanpa perlu ada pengguna yang login.`
+          : 'Penjadwal backup otomatis berhasil dinonaktifkan.'
+      });
+
+      await createAuditLog(
+        currentUserEmail,
+        currentUserRole,
+        "PENGATURAN BACKUP OTOMATIS JSON",
+        "DATABASE_BACK_RECOV",
+        null,
+        {
+          enabled: autoBackupEnabled,
+          daysOfWeek: autoBackupDays,
+          timeOfDay: autoBackupTime,
+          timezone: autoBackupTimezone
+        }
+      );
+    } catch (err: any) {
+      setAutoBackupFeedback({ type: 'error', message: err?.message || 'Gagal menyimpan jadwal backup otomatis.' });
+    } finally {
+      setIsSavingAutoBackup(false);
+    }
+  };
+
+  const handleRunAutoBackupNow = async () => {
+    setAutoBackupFeedback(null);
+    if (!auth.currentUser) {
+      setAutoBackupFeedback({ type: 'error', message: 'Sesi Administrator tidak ditemukan.' });
+      return;
+    }
+    setIsRunningAutoBackupNow(true);
+    try {
+      const idToken = await auth.currentUser.getIdToken(true);
+      const res = await triggerServerAutoBackupNow(idToken);
+      setServerBackupStatus(res.status);
+      setLocalBackupMeta(readLocalBackupMeta());
+      setAutoBackupFeedback({
+        type: 'success',
+        message: `Ekspor server berhasil (${res.snapshot.totalRecords} dokumen) dan key utama localStorage (${LS_AUTO_BACKUP_DATA_KEY}) telah ditimpa dengan versi terbaru.`
+      });
+    } catch (err: any) {
+      setAutoBackupFeedback({ type: 'error', message: err?.message || 'Gagal menjalankan ekspor otomatis sekarang.' });
+    } finally {
+      setIsRunningAutoBackupNow(false);
+    }
+  };
+
+  const handleDownloadLocalStorageBackup = () => {
+    const ok = downloadLocalStorageBackupFile();
+    if (!ok) {
+      setAutoBackupFeedback({
+        type: 'error',
+        message: 'Belum ada snapshot JSON di localStorage browser ini. Jalankan "Jalankan & Sinkronkan Sekarang" atau tunggu jadwal otomatis berjalan.'
+      });
     }
   };
 
@@ -839,6 +996,210 @@ export default function PengaturanView({
                   Ekspor Semua Basis Data (JSON)
                 </button>
               </div>
+
+              {/* Admin-Only Auto-Backup Scheduler (Hybrid Server + LocalStorage Overwrite) */}
+              {canEdit && (
+                <div className="p-4 bg-slate-50 border border-slate-200 text-slate-900 rounded-lg space-y-3" id="auto-backup-scheduler-box">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-black flex items-center gap-1.5 text-slate-900">
+                        <Calendar size={14} className="text-emerald-700" />
+                        Penjadwal Backup Otomatis Mandiri (Server + LocalStorage)
+                      </p>
+                      <p className="text-[11px] text-slate-600 mt-0.5 leading-relaxed">
+                        Server menjalankan ekspor JSON secara mandiri sesuai hari dan jam tanpa perlu ada pengguna login, lalu otomatis menimpa key utama <code className="font-mono bg-white px-1 py-0.5 rounded border border-slate-200 text-[10px]">{LS_AUTO_BACKUP_DATA_KEY}</code> di <code className="font-mono">localStorage</code> saat browser terbuka.
+                      </p>
+                    </div>
+                    <label className="inline-flex items-center cursor-pointer shrink-0 select-none">
+                      <input
+                        type="checkbox"
+                        checked={autoBackupEnabled}
+                        onChange={(e) => setAutoBackupEnabled(e.target.checked)}
+                        className="sr-only peer"
+                      />
+                      <div className="w-9 h-5 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all relative peer-checked:bg-emerald-600"></div>
+                      <span className={`ml-2 text-[11px] font-extrabold ${autoBackupEnabled ? 'text-emerald-700' : 'text-slate-500'}`}>
+                        {autoBackupEnabled ? 'AKTIF' : 'NONAKTIF'}
+                      </span>
+                    </label>
+                  </div>
+
+                  {/* Day Selection */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wide">
+                        Pilih Hari Pelaksanaan
+                      </span>
+                      <div className="flex items-center gap-2 text-[10px] font-bold">
+                        <button
+                          type="button"
+                          onClick={() => setAutoBackupDays([0, 1, 2, 3, 4, 5, 6])}
+                          className="text-emerald-700 hover:underline cursor-pointer"
+                        >
+                          Setiap Hari
+                        </button>
+                        <span className="text-slate-300">|</span>
+                        <button
+                          type="button"
+                          onClick={() => setAutoBackupDays([1, 2, 3, 4, 5])}
+                          className="text-blue-700 hover:underline cursor-pointer"
+                        >
+                          Hari Kerja
+                        </button>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-7 gap-1.5">
+                      {[
+                        { idx: 1, label: 'Sen' },
+                        { idx: 2, label: 'Sel' },
+                        { idx: 3, label: 'Rab' },
+                        { idx: 4, label: 'Kam' },
+                        { idx: 5, label: 'Jum' },
+                        { idx: 6, label: 'Sab' },
+                        { idx: 0, label: 'Min' }
+                      ].map((day) => {
+                        const selected = autoBackupDays.includes(day.idx);
+                        return (
+                          <button
+                            key={day.idx}
+                            type="button"
+                            onClick={() => toggleBackupDay(day.idx)}
+                            className={`py-1.5 rounded-md font-extrabold text-[11px] border transition cursor-pointer ${
+                              selected
+                                ? 'bg-emerald-700 text-white border-emerald-800 shadow-3xs'
+                                : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
+                            }`}
+                          >
+                            {day.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Time & Timezone Selection */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wide mb-1">
+                        Pukul Eksekusi (Setiap Hari Terpilih)
+                      </label>
+                      <div className="relative">
+                        <Clock size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
+                        <input
+                          type="time"
+                          value={autoBackupTime}
+                          onChange={(e) => setAutoBackupTime(e.target.value)}
+                          className="w-full p-2 pl-8 border border-slate-200 rounded-lg bg-white text-slate-900 font-bold outline-emerald-600"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wide mb-1">
+                        Zona Waktu Jadwal
+                      </label>
+                      <select
+                        value={autoBackupTimezone}
+                        onChange={(e) => setAutoBackupTimezone(e.target.value)}
+                        className="w-full p-2 border border-slate-200 rounded-lg bg-white text-slate-900 font-bold outline-emerald-600"
+                      >
+                        <option value="Asia/Makassar">WITA (Asia/Makassar — Bima)</option>
+                        <option value="Asia/Jakarta">WIB (Asia/Jakarta)</option>
+                        <option value="Asia/Jayapura">WIT (Asia/Jayapura)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Status & LocalStorage Monitor */}
+                  <div className="bg-white border border-slate-200 rounded-lg p-3 space-y-1.5 text-[11px]">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="font-bold text-slate-700">Status Server Scheduler:</span>
+                      <span className={`px-2 py-0.5 rounded font-extrabold text-[10px] ${
+                        serverBackupStatus?.lastStatus === 'success'
+                          ? 'bg-emerald-100 text-emerald-800'
+                          : serverBackupStatus?.lastStatus === 'error'
+                          ? 'bg-rose-100 text-rose-800'
+                          : serverBackupStatus?.lastStatus === 'running'
+                          ? 'bg-blue-100 text-blue-800'
+                          : 'bg-slate-100 text-slate-700'
+                      }`}>
+                        {serverBackupStatus?.lastStatus === 'success'
+                          ? 'TERJADWAL & BERHASIL'
+                          : serverBackupStatus?.lastStatus === 'error'
+                          ? 'GAGAL TERAKHIR'
+                          : serverBackupStatus?.lastStatus === 'running'
+                          ? 'SEDANG BERJALAN...'
+                          : 'MENUNGGU JADWAL'}
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap justify-between text-slate-600">
+                      <span>Backup Server Terakhir:</span>
+                      <span className="font-mono font-bold text-slate-800">
+                        {serverBackupStatus?.lastRunAt
+                          ? `${new Date(serverBackupStatus.lastRunAt).toLocaleString('id-ID')} (${serverBackupStatus.lastTotalRecords} dok)`
+                          : 'Belum pernah dijalankan'}
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap justify-between text-slate-600">
+                      <span>Snapshot di LocalStorage Browser:</span>
+                      <span className="font-mono font-bold text-emerald-800">
+                        {localBackupMeta
+                          ? `${new Date(localBackupMeta.exportedAt).toLocaleString('id-ID')} • ${(localBackupMeta.sizeBytes / 1024).toFixed(1)} KB`
+                          : 'Belum tersinkron di browser ini'}
+                      </span>
+                    </div>
+                    {serverBackupStatus?.lastError && (
+                      <p className="text-[10px] text-rose-700 font-semibold bg-rose-50 p-1.5 rounded border border-rose-200">
+                        Catatan Error Server: {serverBackupStatus.lastError}
+                      </p>
+                    )}
+                  </div>
+
+                  {autoBackupFeedback && (
+                    <div className={`p-2.5 rounded-lg text-[11px] font-bold flex items-start gap-2 ${
+                      autoBackupFeedback.type === 'success'
+                        ? 'bg-emerald-50 text-emerald-900 border border-emerald-200'
+                        : 'bg-rose-50 text-rose-900 border border-rose-200'
+                    }`}>
+                      {autoBackupFeedback.type === 'success' ? (
+                        <CheckCircle size={14} className="shrink-0 mt-0.5 text-emerald-700" />
+                      ) : (
+                        <AlertCircle size={14} className="shrink-0 mt-0.5 text-rose-700" />
+                      )}
+                      <span>{autoBackupFeedback.message}</span>
+                    </div>
+                  )}
+
+                  {/* Action Buttons */}
+                  <div className="flex flex-wrap items-center gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={handleSaveAutoBackupSchedule}
+                      disabled={isSavingAutoBackup}
+                      className="px-3.5 py-2 bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white font-bold rounded-lg shadow-xs flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Save size={13} />
+                      {isSavingAutoBackup ? 'Menyimpan...' : 'Simpan Jadwal Otomatis'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleRunAutoBackupNow}
+                      disabled={isRunningAutoBackupNow}
+                      className="px-3.5 py-2 bg-blue-700 hover:bg-blue-800 disabled:opacity-50 text-white font-bold rounded-lg shadow-xs flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Play size={13} className={isRunningAutoBackupNow ? 'animate-pulse' : ''} />
+                      {isRunningAutoBackupNow ? 'Memproses...' : 'Jalankan & Sinkronkan Sekarang'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleDownloadLocalStorageBackup}
+                      className="px-3 py-2 bg-white hover:bg-slate-100 text-slate-800 border border-slate-300 font-bold rounded-lg flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Download size={13} />
+                      Unduh JSON LocalStorage
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* Database Restore Action Box */}
               {canEdit ? (

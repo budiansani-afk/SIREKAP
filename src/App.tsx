@@ -73,6 +73,10 @@ import {
   createAuditLog,
   forceDisconnectSession
 } from './dbService';
+import {
+  LS_AUTO_BACKUP_SYNC_KEY,
+  syncLatestBackupToLocalStorage
+} from './autoBackupClient';
 import { 
   Program, 
   Kegiatan, 
@@ -544,6 +548,53 @@ export default function App() {
     const interval = setInterval(updateDateTime, 1000);
     return () => clearInterval(interval);
   }, []);
+
+  // Hybrid Auto-Backup Background Sync -> LocalStorage (berjalan walaupun belum ada yang masuk)
+  useEffect(() => {
+    let isCancelled = false;
+
+    const runSync = async () => {
+      try {
+        let idToken: string | undefined = undefined;
+        if (user && userRole === UserRole.ADMIN && auth.currentUser) {
+          idToken = await auth.currentUser.getIdToken().catch(() => undefined);
+          if (idToken && !localStorage.getItem(LS_AUTO_BACKUP_SYNC_KEY)) {
+            const statusRes = await fetch('/api/backup/status', {
+              headers: { Authorization: `Bearer ${idToken}` },
+              cache: 'no-store'
+            }).catch(() => null);
+            if (statusRes && statusRes.ok) {
+              const statusJson = await statusRes.json().catch(() => null);
+              if (statusJson?.syncKey) {
+                localStorage.setItem(LS_AUTO_BACKUP_SYNC_KEY, statusJson.syncKey);
+              }
+            }
+          }
+        }
+
+        if (!isCancelled) {
+          await syncLatestBackupToLocalStorage({ idToken });
+        }
+      } catch {
+        // Silent background sync
+      }
+    };
+
+    runSync();
+    const syncTimer = setInterval(runSync, 60_000);
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        runSync();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+
+    return () => {
+      isCancelled = true;
+      clearInterval(syncTimer);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [user, userRole]);
 
   // Auto seed check after authentication is established
   useEffect(() => {

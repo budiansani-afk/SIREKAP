@@ -3,6 +3,16 @@ import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
+import {
+  loadAutoBackupConfig,
+  saveAutoBackupConfig,
+  getPublicBackupStatus,
+  loadLatestSnapshot,
+  verifySyncKey,
+  verifyAdminIdToken,
+  runServerBackupNow,
+  startAutoBackupScheduler
+} from "./src/serverBackupManager";
 
 const app = express();
 const PORT = 3000;
@@ -270,6 +280,129 @@ app.all(["/api/gemini/analisis-pergeseran", "/api/gemini/analisis-pergeseran/"],
   next();
 });
 
+// ==================== AUTO BACKUP SCHEDULER API ROUTES ====================
+function extractBearerToken(req: express.Request): string {
+  const authHeader = req.headers.authorization || "";
+  if (authHeader.startsWith("Bearer ")) {
+    return authHeader.slice(7).trim();
+  }
+  return "";
+}
+
+app.get("/api/backup/status", async (req, res) => {
+  try {
+    const cfg = loadAutoBackupConfig();
+    const status = getPublicBackupStatus(cfg);
+    const token = extractBearerToken(req);
+    if (token) {
+      const admin = await verifyAdminIdToken(token);
+      if (admin) {
+        return res.json({ ...status, syncKey: cfg.syncKey });
+      }
+    }
+    res.json(status);
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || "Gagal memuat status backup." });
+  }
+});
+
+app.post("/api/backup/config", async (req, res) => {
+  try {
+    const token = extractBearerToken(req);
+    const admin = await verifyAdminIdToken(token);
+    if (!admin) {
+      return res.status(403).json({ error: "Hanya Administrator terautentikasi yang dapat mengatur jadwal backup otomatis." });
+    }
+
+    const { enabled, daysOfWeek, timeOfDay, timezone, refreshToken } = req.body || {};
+    const validDays = Array.isArray(daysOfWeek)
+      ? Array.from(new Set(daysOfWeek.map(Number).filter((d) => Number.isInteger(d) && d >= 0 && d <= 6))).sort()
+      : [];
+
+    if (Boolean(enabled) && validDays.length === 0) {
+      return res.status(400).json({ error: "Pilih minimal satu hari pelaksanaan backup otomatis." });
+    }
+
+    const timeStr = typeof timeOfDay === "string" ? timeOfDay.trim() : "23:00";
+    if (!/^\d{2}:\d{2}$/.test(timeStr)) {
+      return res.status(400).json({ error: "Format jam tidak valid. Gunakan format HH:mm (contoh: 23:00)." });
+    }
+
+    const cfg = loadAutoBackupConfig();
+    cfg.enabled = Boolean(enabled);
+    cfg.daysOfWeek = validDays;
+    cfg.timeOfDay = timeStr;
+    if (typeof timezone === "string" && timezone.trim()) {
+      cfg.timezone = timezone.trim();
+    }
+    if (typeof refreshToken === "string" && refreshToken.trim()) {
+      cfg.refreshToken = refreshToken.trim();
+    }
+    cfg.adminEmail = admin.email;
+    cfg.updatedAt = new Date().toISOString();
+    saveAutoBackupConfig(cfg);
+
+    res.json({
+      status: getPublicBackupStatus(cfg),
+      syncKey: cfg.syncKey
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || "Gagal menyimpan konfigurasi backup otomatis." });
+  }
+});
+
+app.post("/api/backup/run-now", async (req, res) => {
+  try {
+    const token = extractBearerToken(req);
+    const admin = await verifyAdminIdToken(token);
+    if (!admin) {
+      return res.status(403).json({ error: "Hanya Administrator terautentikasi yang dapat menjalankan ekspor server." });
+    }
+
+    const snapshot = await runServerBackupNow({
+      overrideIdToken: token,
+      source: "manual_trigger"
+    });
+    const cfg = loadAutoBackupConfig();
+    res.json({
+      status: getPublicBackupStatus(cfg),
+      syncKey: cfg.syncKey,
+      snapshot
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || "Gagal menjalankan backup otomatis." });
+  }
+});
+
+app.get("/api/backup/latest", async (req, res) => {
+  try {
+    const syncKeyHeader = req.headers["x-backup-sync-key"];
+    const syncKey = typeof syncKeyHeader === "string" ? syncKeyHeader : "";
+    let authorized = verifySyncKey(syncKey);
+
+    if (!authorized) {
+      const token = extractBearerToken(req);
+      if (token) {
+        const admin = await verifyAdminIdToken(token);
+        if (admin) authorized = true;
+      }
+    }
+
+    if (!authorized) {
+      return res.status(401).json({ error: "Otorisasi sinkronisasi backup tidak valid." });
+    }
+
+    const snapshot = loadLatestSnapshot();
+    if (!snapshot) {
+      return res.status(404).json({ error: "Belum ada hasil backup otomatis di server." });
+    }
+
+    res.json(snapshot);
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || "Gagal mengambil snapshot backup terbaru." });
+  }
+});
+
 // Vite Middleware & SPA serving
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
@@ -288,6 +421,7 @@ async function startServer() {
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT} (Firebase Storage Mode)`);
+    startAutoBackupScheduler();
   });
 }
 
