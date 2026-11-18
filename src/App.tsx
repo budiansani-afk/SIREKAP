@@ -13,7 +13,6 @@ import {
 import { 
   onAuthStateChanged, 
   signInWithEmailAndPassword, 
-  createUserWithEmailAndPassword, 
   signOut,
   setPersistence,
   browserLocalPersistence
@@ -66,6 +65,9 @@ import {
   COLL_LOG_AKTIVITAS, 
   COLL_PENGATURAN, 
   COLL_PRESENCE,
+  COLL_AKUN_LOOKUP,
+  normalizeUsernameKey,
+  isValidEmailAddress,
   seedInitialDataIfEmpty,
   synchronizeCalculations,
   createAuditLog,
@@ -566,15 +568,20 @@ export default function App() {
           
           // Determine Role based on User Document in Firestore if it exists
           const email = currentUser.email?.toLowerCase() || '';
-          const rawAccount = email.endsWith('@sirekap.local') ? email.replace('@sirekap.local', '') : email;
+          if (!isValidEmailAddress(email)) {
+            await signOut(auth).catch(() => {});
+            setUser(null);
+            setLoginError("Akun Anda belum memiliki alamat email yang valid di User Authentication. Hubungi Administrator.");
+            setIsAuthChecking(false);
+            return;
+          }
+
+          const rawAccount = email;
           let role = UserRole.PIMPINAN; // Fallback standard role
           let dbNama = rawAccount.split('@')[0];
           
           try {
-            let userDoc = await getDoc(doc(db, "sibiru_pengguna", email));
-            if (!userDoc.exists() && rawAccount !== email) {
-              userDoc = await getDoc(doc(db, "sibiru_pengguna", rawAccount));
-            }
+            const userDoc = await getDoc(doc(db, "sibiru_pengguna", email));
             if (userDoc.exists()) {
               const data = userDoc.data();
               if (data.aktif === false) {
@@ -584,8 +591,15 @@ export default function App() {
                 setIsAuthChecking(false);
                 return;
               }
+              if (!isValidEmailAddress(data.email)) {
+                await signOut(auth).catch(() => {});
+                setUser(null);
+                setLoginError("Akun Anda belum dilengkapi alamat email valid oleh Administrator. Silakan hubungi Administrator.");
+                setIsAuthChecking(false);
+                return;
+              }
               role = data.role || UserRole.PIMPINAN;
-              dbNama = data.nama || dbNama;
+              dbNama = data.nama || data.username || dbNama;
             } else {
               // Standard fallback rules
               if (
@@ -598,15 +612,27 @@ export default function App() {
               } else if (rawAccount.includes('operator')) {
                 role = UserRole.OPERATOR;
               }
-              // Save standard seeding account to Database using valid email ID
-              if (email && email.includes('@')) {
-                await setDoc(doc(db, "sibiru_pengguna", email), {
-                  id: email,
+              const defaultNama = rawAccount.includes('admin')
+                ? "Administrator SIREKAP Bima"
+                : rawAccount.includes('operator')
+                  ? "Operator Teknis Pertanahan"
+                  : "Kepala Bidang Pertanahan";
+              const defaultUsername = rawAccount.split('@')[0];
+              await setDoc(doc(db, "sibiru_pengguna", email), {
+                id: email,
+                username: defaultUsername,
+                email: email,
+                nama: defaultNama,
+                role: role,
+                aktif: true
+              }, { merge: true }).catch(err => console.warn("Notice: could not save initial user doc:", err));
+              if (role === UserRole.ADMIN && defaultUsername) {
+                await setDoc(doc(db, COLL_AKUN_LOOKUP, normalizeUsernameKey(defaultUsername)), {
+                  username: defaultUsername,
                   email: email,
-                  nama: rawAccount.includes('admin') ? "Administrator SIREKAP Bima" : rawAccount.includes('operator') ? "Operator Teknis Pertanahan" : "Kepala Bidang Pertanahan",
-                  role: role,
+                  nama: defaultNama,
                   aktif: true
-                }, { merge: true }).catch(err => console.warn("Notice: could not save initial user doc:", err));
+                }, { merge: true }).catch(() => {});
               }
             }
           } catch (e) {
@@ -677,6 +703,9 @@ export default function App() {
         list.forEach(p => {
           if (p.email && p.nama) {
             cached[p.email.toLowerCase()] = p.nama;
+          }
+          if (p.username && p.nama) {
+            cached[p.username.toLowerCase()] = p.nama;
           }
           if (p.id && p.nama) {
             cached[p.id.toLowerCase()] = p.nama;
@@ -902,11 +931,12 @@ export default function App() {
     });
   }, [pihakKetigas, selectedYear]);
 
-  // Handle Authentication attempts
+  // Handle Authentication attempts (supports Nama Akun bebas or Email, verified against Firebase Auth)
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!emailInput.trim()) {
-      setLoginError("Nama Akun wajib diisi!");
+    const rawIdentifier = emailInput.trim();
+    if (!rawIdentifier) {
+      setLoginError("Nama Akun atau Email wajib diisi!");
       return;
     }
     if (!passwordInput) {
@@ -914,7 +944,7 @@ export default function App() {
       return;
     }
 
-    const resolvedName = namaPenggunaInput.trim() || resolveUserNameFromEmail(emailInput) || emailInput.split('@')[0];
+    let resolvedName = namaPenggunaInput.trim() || resolveUserNameFromEmail(rawIdentifier) || rawIdentifier.split('@')[0];
     setNamaPenggunaInput(resolvedName);
 
     setIsLoggingIn(true);
@@ -922,71 +952,122 @@ export default function App() {
     setInactivityNotice(null);
     setForceDisconnectedNotice(null);
 
-    const emailClean = emailInput.trim().toLowerCase();
-    const authEmail = emailClean.includes('@')
-      ? emailClean
-      : `${emailClean.replace(/[^a-z0-9._-]/g, '')}@sirekap.local`;
+    const identifierClean = rawIdentifier.toLowerCase();
 
     try {
-      // 1. Authenticate dengan Firebase Auth terlebih dahulu (koleksi sibiru_pengguna terkunci sebelum login)
+      // 1. Resolusi Nama Akun atau Email menjadi alamat email valid di User Authentication
+      let authEmail = '';
+      let lookupDisplayName = '';
+
+      if (identifierClean.includes('@')) {
+        if (!isValidEmailAddress(identifierClean)) {
+          throw new Error("Format alamat email tidak valid. Gunakan alamat email resmi yang terdaftar di User Authentication.");
+        }
+        authEmail = identifierClean;
+      } else {
+        const usernameKey = normalizeUsernameKey(rawIdentifier);
+        let lookupSnap = null;
+        try {
+          lookupSnap = await getDoc(doc(db, COLL_AKUN_LOOKUP, usernameKey));
+        } catch (lookupErr: any) {
+          if (lookupErr?.code === 'permission-denied') {
+            if (usernameKey === 'admin') {
+              authEmail = 'admin@sirekap.com';
+            } else {
+              throw new Error("Pencarian Nama Akun ditolak oleh Firestore Rules (pastikan firestore.rules terbaru sudah dipublikasikan), atau login menggunakan Alamat Email yang terdaftar.");
+            }
+          } else {
+            throw lookupErr;
+          }
+        }
+
+        if (!authEmail) {
+          if (lookupSnap && lookupSnap.exists()) {
+            const lookupData = lookupSnap.data();
+            if (lookupData.aktif === false) {
+              throw new Error("Akun Anda telah dinonaktifkan oleh administrator!");
+            }
+            if (!isValidEmailAddress(lookupData.email)) {
+              throw new Error("Akun Anda belum dilengkapi alamat email valid oleh Administrator. Silakan hubungi Administrator.");
+            }
+            authEmail = lookupData.email.trim().toLowerCase();
+            lookupDisplayName = lookupData.nama || lookupData.username || '';
+          } else if (usernameKey === 'admin') {
+            // Bootstrap fallback agar Administrator tetap dapat masuk pertama kali
+            authEmail = 'admin@sirekap.com';
+          } else {
+            throw new Error("Nama akun tidak ditemukan atau belum dilengkapi alamat email valid oleh Administrator. Silakan login menggunakan alamat email terdaftar atau hubungi Administrator.");
+          }
+        }
+      }
+
+      // 2. Authenticate dengan Firebase User Authentication (tidak membuat akun otomatis)
       try {
         await signInWithEmailAndPassword(auth, authEmail, passwordInput);
       } catch (authErr: any) {
         if (authErr.code === 'auth/configuration-not-found' || authErr.code === 'auth/operation-not-allowed') {
           throw new Error("Firebase Authentication (Email/Password) belum diaktifkan di Firebase Console project sirekap-cf2b1.");
-        } else if (authErr.code === 'auth/user-not-found' || authErr.code === 'auth/invalid-credential') {
-          // If first run, auto-register in Auth
-          try {
-            await createUserWithEmailAndPassword(auth, authEmail, passwordInput);
-          } catch (createErr: any) {
-            if (createErr?.code === 'auth/configuration-not-found' || createErr?.code === 'auth/operation-not-allowed') {
-              throw new Error("Firebase Authentication (Email/Password) belum diaktifkan di Firebase Console project sirekap-cf2b1.");
-            }
-            throw new Error("Nama akun atau kata sandi tidak cocok.");
-          }
+        } else if (
+          authErr.code === 'auth/user-not-found' ||
+          authErr.code === 'auth/wrong-password' ||
+          authErr.code === 'auth/invalid-credential'
+        ) {
+          throw new Error("Nama akun/email atau kata sandi tidak cocok, atau email belum terdaftar di User Authentication.");
+        } else if (authErr.code === 'auth/too-many-requests') {
+          throw new Error("Terlalu banyak percobaan login gagal. Silakan tunggu beberapa saat sebelum mencoba lagi.");
         } else {
           throw authErr;
         }
       }
 
-      // 2. Validasi status keaktifan di Firestore sibiru_pengguna setelah terautentikasi
+      // 3. Validasi status keaktifan & kelengkapan email di Firestore sibiru_pengguna setelah terautentikasi
       try {
-        let userDocSnap = await getDoc(doc(db, "sibiru_pengguna", authEmail));
-        if (!userDocSnap.exists() && emailClean !== authEmail) {
-          userDocSnap = await getDoc(doc(db, "sibiru_pengguna", emailClean));
-        }
+        const userDocSnap = await getDoc(doc(db, "sibiru_pengguna", authEmail));
         if (userDocSnap.exists()) {
           const userData = userDocSnap.data();
           if (userData.aktif === false) {
             await signOut(auth).catch(() => {});
             throw new Error("Akun Anda telah dinonaktifkan oleh administrator!");
           }
+          if (!isValidEmailAddress(userData.email)) {
+            await signOut(auth).catch(() => {});
+            throw new Error("Akun Anda belum dilengkapi alamat email valid oleh Administrator. Silakan hubungi Administrator.");
+          }
+          if (userData.nama || userData.username) {
+            resolvedName = userData.nama || userData.username;
+          }
+        } else if (lookupDisplayName) {
+          resolvedName = lookupDisplayName;
         }
       } catch (checkErr: any) {
-        if (checkErr.message?.includes('dinonaktifkan')) {
+        if (
+          checkErr.message?.includes('dinonaktifkan') ||
+          checkErr.message?.includes('belum dilengkapi alamat email')
+        ) {
           throw checkErr;
         }
       }
 
-      // 3. Simpan nama pengguna aktif
+      // 4. Simpan nama pengguna aktif
       localStorage.setItem('nama_pengguna_aktif', resolvedName);
       setNamaPenggunaAktif(resolvedName);
       setUserDisplayName(resolvedName);
+      setNamaPenggunaInput(resolvedName);
       lastActivityRef.current = Date.now();
       localStorage.setItem('sirekap_last_activity', String(Date.now()));
 
-      // 4. Audit Log saat login berhasil (mencatat Nama Pengguna)
+      // 5. Audit Log saat login berhasil
       createAuditLog(
         resolvedName,
         userRole,
         "LOGIN MASUK SISTEM",
         "AUTENTIKASI",
         null,
-        { nama_pengguna: resolvedName, nama_akun: emailClean, waktu: new Date().toISOString() }
+        { nama_pengguna: resolvedName, nama_akun: rawIdentifier, email_auth: authEmail, waktu: new Date().toISOString() }
       ).catch(() => {});
 
     } catch (err: any) {
-      setLoginError(err.message || `Nama akun atau kata sandi tidak cocok.`);
+      setLoginError(err.message || "Nama akun/email atau kata sandi tidak cocok.");
     } finally {
       setIsLoggingIn(false);
     }
@@ -1160,10 +1241,10 @@ export default function App() {
             )}
 
             <form className="space-y-4 text-xs font-medium" onSubmit={handleLogin}>
-              {/* 1. Input Nama Akun (Manual, Tidak Wajib Email) */}
+              {/* 1. Input Nama Akun atau Email (Terhubung ke User Authentication) */}
               <div>
                 <label className="block text-slate-700 font-bold mb-1 uppercase tracking-wider text-[11px]">
-                  Nama Akun <span className="text-red-500">*</span>
+                  Nama Akun atau Email <span className="text-red-500">*</span>
                 </label>
                 <div className="relative">
                   <User className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-600" size={15} />
@@ -1171,12 +1252,15 @@ export default function App() {
                     type="text"
                     required
                     autoComplete="username"
-                    placeholder="Masukkan nama akun..."
+                    placeholder="Ketik nama akun atau alamat email..."
                     value={emailInput}
                     onChange={(e) => handleEmailInputChange(e.target.value)}
                     className="w-full p-2.5 pl-9 border border-slate-300 bg-white focus:bg-blue-50/20 rounded-lg outline-blue-600 focus:border-blue-600 text-slate-900 font-bold transition shadow-xs"
                   />
                 </div>
+                <p className="mt-1 text-[10px] text-slate-500 font-medium">
+                  Akun harus memiliki alamat email terdaftar di User Authentication (hubungi Admin jika belum dilengkapi).
+                </p>
               </div>
 
               {/* 2. Nama Pengguna (Otomatis Terisi & Tidak Dapat Diubah) */}

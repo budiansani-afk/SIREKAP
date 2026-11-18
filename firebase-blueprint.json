@@ -151,10 +151,11 @@
     },
     "Pengguna": {
       "title": "Pengguna",
-      "description": "Pengguna aplikasi dan role mereka (wajib alamat email valid)",
+      "description": "Pengguna aplikasi dan role mereka (nama akun bebas + wajib alamat email valid)",
       "type": "object",
       "properties": {
         "id": { "type": "string", "maxLength": 254 },
+        "username": { "type": "string", "maxLength": 100 },
         "nama": { "type": "string", "maxLength": 150 },
         "email": {
           "type": "string",
@@ -166,6 +167,23 @@
         "aktif": { "type": "boolean" }
       },
       "required": ["id", "nama", "email", "role", "aktif"]
+    },
+    "AkunLookup": {
+      "title": "AkunLookup",
+      "description": "Indeks resolusi Nama Akun bebas ke alamat email terdaftar untuk login",
+      "type": "object",
+      "properties": {
+        "username": { "type": "string", "maxLength": 100 },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "maxLength": 254,
+          "pattern": "^[a-zA-Z0-9._%+\\-]+@[a-zA-Z0-9.\\-]+\\.[a-zA-Z]{2,}$"
+        },
+        "nama": { "type": "string", "maxLength": 150 },
+        "aktif": { "type": "boolean" }
+      },
+      "required": ["username", "email", "aktif"]
     },
     "LogAktivitas": {
       "title": "LogAktivitas",
@@ -272,6 +290,10 @@
     "sibiru_pengguna": {
       "schema": { "$ref": "#/entities/Pengguna" },
       "description": "Koleksi data pengguna system (terkunci hingga login, wajib email)"
+    },
+    "sibiru_akun_lookup": {
+      "schema": { "$ref": "#/entities/AkunLookup" },
+      "description": "Indeks resolusi Nama Akun bebas ke Email Firebase Authentication"
     },
     "sibiru_log_aktivitas": {
       "schema": { "$ref": "#/entities/LogAktivitas" },

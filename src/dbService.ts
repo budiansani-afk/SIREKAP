@@ -36,8 +36,20 @@ export const COLL_BELANJA_PIHAK_KETIGA = 'sibiru_belanja_pihak_ketiga';
 export const COLL_DOKUMEN = 'sibiru_dokumen';
 export const COLL_LOG_AKTIVITAS = 'sibiru_log_aktivitas';
 export const COLL_PENGGUNA = 'sibiru_pengguna';
+export const COLL_AKUN_LOOKUP = 'sibiru_akun_lookup';
 export const COLL_PENGATURAN = 'sibiru_pengaturan';
 export const COLL_PRESENCE = 'sibiru_presence';
+
+export function normalizeUsernameKey(username: string): string {
+  return username.trim().toLowerCase().replace(/\//g, '_');
+}
+
+export function isValidEmailAddress(email?: string | null): boolean {
+  if (!email) return false;
+  const clean = email.trim().toLowerCase();
+  if (clean.endsWith('@sirekap.local')) return false;
+  return /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(clean);
+}
 
 // Standard User-Agent / IP helper for client
 const getClientMeta = () => {
@@ -683,8 +695,21 @@ export async function restoreDatabaseFromJSON(backupData: Record<string, any[]>,
       for (const item of items) {
         const { id, ...data } = item;
         if (id) {
-          if (collName === COLL_PENGGUNA && id.includes('@') && typeof data.password === 'string' && data.password.length >= 6) {
-            await ensureUserInFirebaseAuth(id, data.password, data.nama).catch(() => null);
+          if (collName === COLL_PENGGUNA && isValidEmailAddress(data.email || id)) {
+            const targetEmail = (data.email || id).trim().toLowerCase();
+            if (typeof data.password === 'string' && data.password.length >= 6) {
+              await ensureUserInFirebaseAuth(targetEmail, data.password, data.username || data.nama).catch(() => null);
+            }
+            const uname = (data.username || data.nama || targetEmail.split('@')[0]).trim();
+            const uKey = normalizeUsernameKey(uname);
+            if (uKey) {
+              await setDoc(doc(db, COLL_AKUN_LOOKUP, uKey), {
+                username: uname,
+                email: targetEmail,
+                nama: data.nama || uname,
+                aktif: data.aktif !== false
+              }, { merge: true }).catch(() => null);
+            }
           }
           await setDoc(doc(db, collName, id), data).catch(err => handleFirestoreError(err, OperationType.WRITE, `${collName}/${id}`));
         }
@@ -741,6 +766,7 @@ export async function seedInitialDataIfEmpty() {
       const sampleUsers: Pengguna[] = [
         {
           id: "admin@sirekap.com",
+          username: "admin",
           nama: "Administrator SIREKAP Bima",
           email: "admin@sirekap.com",
           role: UserRole.ADMIN,
@@ -749,6 +775,7 @@ export async function seedInitialDataIfEmpty() {
         },
         {
           id: "operator@sirekap.com",
+          username: "operator",
           nama: "Operator Teknis Pertanahan",
           email: "operator@sirekap.com",
           role: UserRole.OPERATOR,
@@ -757,6 +784,7 @@ export async function seedInitialDataIfEmpty() {
         },
         {
           id: "pimpinan@sirekap.com",
+          username: "pimpinan",
           nama: "Kepala Bidang Pertanahan",
           email: "pimpinan@sirekap.com",
           role: UserRole.PIMPINAN,
@@ -766,8 +794,16 @@ export async function seedInitialDataIfEmpty() {
       ];
 
       for (const u of sampleUsers) {
-        await ensureUserInFirebaseAuth(u.email, u.password || 'bima2026', u.nama).catch(() => null);
+        await ensureUserInFirebaseAuth(u.email, u.password || 'bima2026', u.username || u.nama).catch(() => null);
         await setDoc(doc(db, COLL_PENGGUNA, u.id), u);
+        if (u.username) {
+          await setDoc(doc(db, COLL_AKUN_LOOKUP, normalizeUsernameKey(u.username)), {
+            username: u.username,
+            email: u.email,
+            nama: u.nama,
+            aktif: u.aktif
+          }, { merge: true }).catch(() => null);
+        }
       }
     }
 

@@ -112,6 +112,7 @@ export interface DokumenArsip {
 
 export interface Pengguna {
   id: string; // user uid or email
+  username?: string; // Nama Akun bebas untuk tampilan & login alias
   nama: string;
   email: string;
   role: UserRole;

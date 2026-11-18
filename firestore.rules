@@ -32,6 +32,7 @@ service cloud.firestore {
       return val is string
         && val.size() >= 5
         && val.size() <= 254
+        && !val.lower().matches('.*@sirekap\\.local$')
         && val.matches('^[a-zA-Z0-9._%+\\-]+@[a-zA-Z0-9.\\-]+\\.[a-zA-Z]{2,}$');
     }
 
@@ -87,6 +88,7 @@ service cloud.firestore {
         && data.nama.size() <= 150
         && data.role in ['Administrator', 'Operator', 'Pimpinan']
         && data.aktif is bool
+        && (!('username' in data) || (data.username is string && data.username.size() > 0 && data.username.size() <= 100))
         && (!('password' in data) || (data.password is string && data.password.size() <= 128));
     }
 
@@ -116,6 +118,23 @@ service cloud.firestore {
         );
       allow update: if isAdmin() && isValidId(id) && isValidUserPayload(incoming());
       allow delete: if isAdmin() && isValidId(id) && id.lower() != callerEmail();
+    }
+
+    // ==================== INDEKS RESOLUSI NAMA AKUN -> EMAIL (GET TUNGGAL UNTUK LOGIN, NO PUBLIC LIST) ====================
+    match /sibiru_akun_lookup/{id} {
+      allow get: if isValidId(id);
+      allow list: if isAdmin();
+      allow create, update: if isAdmin()
+        && isValidId(id)
+        && incoming().keys().hasAll(['username', 'email', 'aktif'])
+        && incoming().keys().hasOnly(['username', 'email', 'nama', 'aktif'])
+        && incoming().username is string
+        && incoming().username.size() > 0
+        && incoming().username.size() <= 100
+        && isValidEmail(incoming().email)
+        && (!('nama' in incoming()) || (incoming().nama is string && incoming().nama.size() <= 150))
+        && incoming().aktif is bool;
+      allow delete: if isAdmin() && isValidId(id);
     }
 
     // ==================== DATA ANGGARAN & OPERASIONAL ====================

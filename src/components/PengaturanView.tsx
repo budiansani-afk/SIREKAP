@@ -35,7 +35,14 @@ import {
   BellOff
 } from 'lucide-react';
 import { AppSettings, UserRole, Pengguna, SesiPenggunaOnline } from '../types';
-import { backupDatabaseToJSON, restoreDatabaseFromJSON, createAuditLog } from '../dbService';
+import {
+  backupDatabaseToJSON,
+  restoreDatabaseFromJSON,
+  createAuditLog,
+  COLL_AKUN_LOOKUP,
+  normalizeUsernameKey,
+  isValidEmailAddress
+} from '../dbService';
 import { 
   uploadFileToFirebaseStorage, 
   deleteFileFromFirebaseStorage, 
@@ -150,6 +157,7 @@ export default function PengaturanView({
   const [nipBendahara, setNipBendahara] = useState('');
 
   // User Management Board state controllers
+  const [usernameState, setUsernameState] = useState('');
   const [emailState, setEmailState] = useState('');
   const [namaState, setNamaState] = useState('');
   const [passwordState, setPasswordState] = useState('');
@@ -157,7 +165,9 @@ export default function PengaturanView({
   const [aktifState, setAktifState] = useState(true);
 
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
+  const [editingOldUsername, setEditingOldUsername] = useState<string>('');
   const [editingPreviousPassword, setEditingPreviousPassword] = useState<string>('');
+  const syncedLookupsRef = React.useRef<Set<string>>(new Set());
   const [userSearchText, setUserSearchText] = useState('');
   const [userRoleFilter, setUserRoleFilter] = useState<string>('ALL');
   const [userActionSuccess, setUserActionSuccess] = useState<string | null>(null);
@@ -165,6 +175,27 @@ export default function PengaturanView({
   const [isSubmittingUser, setIsSubmittingUser] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [webNotifPerm, setWebNotifPerm] = useState<NotificationPermission>(() => getNotificationPermission());
+
+  const canEdit = currentUserRole === UserRole.ADMIN;
+
+  useEffect(() => {
+    if (!canEdit || !penggunas || penggunas.length === 0) return;
+    penggunas.forEach((u) => {
+      if (!isValidEmailAddress(u.email)) return;
+      const uname = (u.username || (!isValidEmailAddress(u.id) ? u.id : u.nama) || u.email.split('@')[0]).trim();
+      const uKey = normalizeUsernameKey(uname);
+      if (!uKey) return;
+      const cacheKey = `${uKey}:${u.email.toLowerCase()}:${u.aktif !== false}`;
+      if (syncedLookupsRef.current.has(cacheKey)) return;
+      syncedLookupsRef.current.add(cacheKey);
+      setDoc(doc(db, COLL_AKUN_LOOKUP, uKey), {
+        username: uname,
+        email: u.email.trim().toLowerCase(),
+        nama: u.nama || uname,
+        aktif: u.aktif !== false
+      }, { merge: true }).catch(() => {});
+    });
+  }, [canEdit, penggunas]);
 
   useEffect(() => {
     if (settings) {
@@ -189,8 +220,6 @@ export default function PengaturanView({
   const [isMigrating, setIsMigrating] = useState(false);
   const [migrationProgress, setMigrationProgress] = useState<MigrationProgressData | null>(null);
   const [migrationStatusLog, setMigrationStatusLog] = useState<string[]>([]);
-
-  const canEdit = currentUserRole === UserRole.ADMIN;
 
   // Handle Logo Upload
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -383,45 +412,59 @@ export default function PengaturanView({
     reader.readAsText(file);
   };
 
-  const isValidEmailFormat = (emailVal: string) =>
-    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailVal.trim());
+  const isValidEmailFormat = (emailVal: string) => isValidEmailAddress(emailVal);
 
-  // Save or edit user profile to Firestore
+  // Save or edit user profile to Firestore + Firebase Authentication + Akun Lookup
   const handleSaveUser = async (e: React.FormEvent) => {
     e.preventDefault();
     setUserActionSuccess(null);
     setUserActionError(null);
 
+    const usernameClean = usernameState.trim();
     const emailClean = emailState.trim().toLowerCase();
+    const passwordClean = passwordState.trim();
+
+    if (!usernameClean) {
+      setUserActionError("Nama Akun wajib diisi (bebas, tidak harus berupa email)!");
+      return;
+    }
     if (!emailClean) {
-      setUserActionError("Alamat Email wajib diisi!");
+      setUserActionError("Alamat Email wajib diisi untuk disimpan di User Authentication dan digunakan saat login!");
       return;
     }
     if (!isValidEmailFormat(emailClean)) {
-      setUserActionError("Alamat Email wajib menggunakan format email yang valid (contoh: nama@instansi.go.id)!");
+      setUserActionError("Format Alamat Email tidak valid (contoh: nama@instansi.go.id)!");
       return;
     }
-    if (!namaState.trim()) {
-      setUserActionError("Nama Lengkap/Nama Anggota wajib diisi!");
+    if (!passwordClean || passwordClean.length < 6) {
+      setUserActionError("Kata Sandi/Password wajib diisi minimal 6 karakter!");
       return;
     }
-    if (!passwordState.trim() || passwordState.trim().length < 6) {
-      setUserActionError("Kata Sandi/Password wajib diisi (minimal 6 karakter)!");
+
+    const usernameKey = normalizeUsernameKey(usernameClean);
+    const duplicateUsername = penggunas.find((u) => {
+      const existingUname = (u.username || (!isValidEmailFormat(u.id) ? u.id : '') || '').trim();
+      const isSameTarget = editingUserId && (u.id === editingUserId || u.email?.toLowerCase() === emailClean);
+      return !isSameTarget && existingUname && normalizeUsernameKey(existingUname) === usernameKey;
+    });
+    if (duplicateUsername) {
+      setUserActionError(`Nama Akun "${usernameClean}" sudah digunakan oleh akun ${duplicateUsername.email}. Gunakan Nama Akun yang berbeda.`);
       return;
     }
+
+    const displayNama = (namaState.trim() && namaState.trim() !== editingOldUsername)
+      ? namaState.trim()
+      : usernameClean;
 
     setIsSubmittingUser(true);
     try {
-      const passwordClean = passwordState.trim();
-      const namaClean = namaState.trim();
-
-      // 1. Daftarkan / sinkronkan akun ke Firebase Authentication terlebih dahulu (tanpa memutus sesi Admin)
+      // 1. Daftarkan / sinkronkan email & password ke Firebase Authentication (tanpa memutus sesi Admin)
       let authSyncStatus: 'created' | 'already_exists' | 'password_updated' = 'created';
       try {
         const authRes = await ensureUserInFirebaseAuth(
           emailClean,
           passwordClean,
-          namaClean,
+          displayNama,
           editingUserId ? editingPreviousPassword : undefined
         );
         authSyncStatus = authRes.status;
@@ -437,24 +480,34 @@ export default function PengaturanView({
         throw authErr;
       }
 
-      // 2. Jika admin mengedit dan mengubah email/ID dari dokumen lama (termasuk migrasi akun non-email)
+      // 2. Bersihkan dokumen lama jika ID atau Nama Akun berubah
       if (editingUserId && editingUserId.toLowerCase() !== emailClean) {
         await deleteDoc(doc(db, "sibiru_pengguna", editingUserId)).catch(() => {});
         if (editingUserId.toLowerCase() !== editingUserId) {
           await deleteDoc(doc(db, "sibiru_pengguna", editingUserId.toLowerCase())).catch(() => {});
         }
       }
+      if (editingOldUsername && normalizeUsernameKey(editingOldUsername) !== usernameKey) {
+        await deleteDoc(doc(db, COLL_AKUN_LOOKUP, normalizeUsernameKey(editingOldUsername))).catch(() => {});
+      }
 
-      const userPayload: any = {
+      const userPayload: Pengguna = {
         id: emailClean,
+        username: usernameClean,
         email: emailClean,
-        nama: namaClean,
+        nama: displayNama,
         role: roleState,
         aktif: aktifState,
         password: passwordClean
       };
 
       await setDoc(doc(db, "sibiru_pengguna", emailClean), userPayload, { merge: true });
+      await setDoc(doc(db, COLL_AKUN_LOOKUP, usernameKey), {
+        username: usernameClean,
+        email: emailClean,
+        nama: displayNama,
+        aktif: aktifState
+      }, { merge: true });
 
       // Sinkronisasi cache nama akun lokal untuk auto-fill di menu login
       try {
@@ -462,31 +515,37 @@ export default function PengaturanView({
         if (editingUserId && editingUserId.toLowerCase() !== emailClean) {
           delete cached[editingUserId.toLowerCase()];
         }
-        cached[emailClean] = namaClean;
+        if (editingOldUsername && editingOldUsername.toLowerCase() !== usernameClean.toLowerCase()) {
+          delete cached[editingOldUsername.toLowerCase()];
+        }
+        cached[emailClean] = displayNama;
+        cached[usernameClean.toLowerCase()] = displayNama;
         localStorage.setItem('sibiru_user_names_cache', JSON.stringify(cached));
       } catch (e) {}
       
       await createAuditLog(
         currentUserEmail,
         currentUserRole,
-        editingUserId ? "EDIT SEMUA PARAMETER AKUN PENGGUNA" : "TAMBAH AKUN PENGGUNA",
+        editingUserId ? "EDIT PARAMETER AKUN PENGGUNA" : "TAMBAH AKUN PENGGUNA",
         "MANAJEMEN_AKUN",
-        editingUserId ? { id: editingUserId } : null,
-        { email: emailClean, role: roleState, nama: namaClean, aktif: aktifState, firebaseAuthStatus: authSyncStatus }
+        editingUserId ? { id: editingUserId, username: editingOldUsername } : null,
+        { username: usernameClean, email: emailClean, role: roleState, nama: displayNama, aktif: aktifState, firebaseAuthStatus: authSyncStatus }
       );
 
       if (authSyncStatus === 'created') {
-        setUserActionSuccess(`Akun "${emailClean}" berhasil didaftarkan ke Firebase Authentication dan disimpan di sistem!`);
+        setUserActionSuccess(`Akun "${usernameClean}" (${emailClean}) berhasil didaftarkan ke Firebase Authentication & Firestore!`);
       } else if (authSyncStatus === 'password_updated') {
-        setUserActionSuccess(`Akun "${emailClean}" berhasil diperbarui di sistem beserta kata sandinya di Firebase Authentication!`);
+        setUserActionSuccess(`Akun "${usernameClean}" (${emailClean}) berhasil diperbarui beserta kata sandinya di Firebase Authentication!`);
       } else {
-        setUserActionSuccess(`Akun "${emailClean}" berhasil ${editingUserId ? 'diperbarui' : 'disimpan'} di Firestore (email sudah terdaftar di Firebase Authentication).`);
+        setUserActionSuccess(`Akun "${usernameClean}" (${emailClean}) berhasil ${editingUserId ? 'diperbarui' : 'disimpan'} dan terhubung ke Firebase Authentication.`);
       }
       
       // Reset State
+      setUsernameState('');
       setEmailState('');
       setNamaState('');
       setPasswordState('');
+      setEditingOldUsername('');
       setEditingPreviousPassword('');
       setRoleState(UserRole.OPERATOR);
       setAktifState(true);
@@ -502,10 +561,13 @@ export default function PengaturanView({
   const handleEditUserClick = (targetUser: Pengguna) => {
     setUserActionSuccess(null);
     setUserActionError(null);
+    const resolvedUsername = targetUser.username || (!isValidEmailFormat(targetUser.id) ? targetUser.id : targetUser.nama || targetUser.email.split('@')[0]);
     setEditingUserId(targetUser.id);
-    setEmailState(targetUser.email);
-    setNamaState(targetUser.nama);
-    const currentPwd = targetUser.password || 'bima2026';
+    setEditingOldUsername(resolvedUsername);
+    setUsernameState(resolvedUsername);
+    setEmailState(isValidEmailFormat(targetUser.email) ? targetUser.email : '');
+    setNamaState(targetUser.nama || resolvedUsername);
+    const currentPwd = targetUser.password || '';
     setPasswordState(currentPwd);
     setEditingPreviousPassword(targetUser.password || '');
     setRoleState(targetUser.role);
@@ -513,13 +575,18 @@ export default function PengaturanView({
   };
 
   // Perform Firestore user document deletion
-  const handleDeleteUser = async (emailToDelete: string) => {
-    if (emailToDelete.toLowerCase() === currentUserEmail.toLowerCase()) {
+  const handleDeleteUser = async (targetUser: Pengguna) => {
+    const emailToDelete = targetUser.id;
+    if (
+      emailToDelete.toLowerCase() === currentUserEmail.toLowerCase() ||
+      (targetUser.email && targetUser.email.toLowerCase() === currentUserEmail.toLowerCase())
+    ) {
       alert("TINDAKAN DITOLAK: Anda sedang masuk dengan akun ini dan tidak dapat menghapusnya!");
       return;
     }
 
-    const isConfirmed = window.confirm(`Apakah Anda yakin ingin menghapus akun "${emailToDelete}" secara permanen dari Firestore?`);
+    const displayLabel = targetUser.username || targetUser.email || emailToDelete;
+    const isConfirmed = window.confirm(`Apakah Anda yakin ingin menghapus akun "${displayLabel}" secara permanen dari Firestore?`);
     if (!isConfirmed) return;
 
     setUserActionSuccess(null);
@@ -527,17 +594,21 @@ export default function PengaturanView({
 
     try {
       await deleteDoc(doc(db, "sibiru_pengguna", emailToDelete));
+      const uname = targetUser.username || (!isValidEmailFormat(targetUser.id) ? targetUser.id : '');
+      if (uname) {
+        await deleteDoc(doc(db, COLL_AKUN_LOOKUP, normalizeUsernameKey(uname))).catch(() => {});
+      }
       
       await createAuditLog(
         currentUserEmail,
         currentUserRole,
         "HAPUS AKUN PENGGUNA",
         "MANAJEMEN_AKUN",
-        { id: emailToDelete },
+        { id: emailToDelete, username: uname, email: targetUser.email },
         { status: 'DELETED' }
       );
 
-      setUserActionSuccess(`Akun "${emailToDelete}" berhasil dihapus secara permanen dari sistem.`);
+      setUserActionSuccess(`Akun "${displayLabel}" berhasil dihapus secara permanen dari sistem.`);
     } catch (err) {
       setUserActionError("Gagal menghapus akun: " + (err instanceof Error ? err.message : String(err)));
     }
@@ -550,8 +621,9 @@ export default function PengaturanView({
     
     if (searchLower) {
       list = list.filter(u => 
-        u.email.toLowerCase().includes(searchLower) || 
-        u.nama.toLowerCase().includes(searchLower)
+        (u.username || '').toLowerCase().includes(searchLower) ||
+        (u.email || '').toLowerCase().includes(searchLower) || 
+        (u.nama || '').toLowerCase().includes(searchLower)
       );
     }
     
@@ -1074,42 +1146,49 @@ export default function PengaturanView({
           {/* Add / Edit Form Panel */}
           <div className="bg-slate-50/75 border border-slate-100 rounded-xl p-4 text-xs space-y-3.5">
             <span className="font-extrabold uppercase tracking-widest text-[10px] text-blue-800 block border-b pb-1">
-              {editingUserId ? "🖋️ Edit Parameter Akun (Wajib Email)" : "➕ Tambah Akun Baru (Wajib Email)"}
+              {editingUserId ? "🖋️ Edit Akun Pengguna" : "➕ Tambah Akun Baru"}
             </span>
 
             {editingUserId && !isValidEmailFormat(emailState) && (
               <div className="p-2.5 bg-amber-50 border border-amber-200 text-amber-900 rounded-lg text-[11px] font-semibold">
-                Akun lama <span className="font-mono font-bold">{editingUserId}</span> belum menggunakan email valid. Harap perbarui ke alamat email aktif agar sesuai aturan keamanan Firestore.
+                Akun lama <span className="font-mono font-bold">{editingOldUsername || editingUserId}</span> belum memiliki alamat email valid. Harap lengkapi alamat email agar tersimpan di Firebase Authentication dan bisa login.
               </div>
             )}
 
             <form onSubmit={handleSaveUser} className="space-y-3">
               <div>
-                <label className="block text-slate-700 font-extrabold mb-1">Alamat Email Akun (Wajib Email Valid)</label>
+                <label className="block text-slate-700 font-extrabold mb-1">
+                  Nama Akun (Bebas) <span className="text-red-500">*</span>
+                </label>
+                <input 
+                  type="text"
+                  placeholder="Cth: admin, operator1, budi_pertanahan"
+                  value={usernameState}
+                  onChange={(e) => setUsernameState(e.target.value)}
+                  className="w-full p-2 border border-slate-200 rounded-lg bg-white outline-blue-600 font-bold text-slate-900"
+                  required
+                />
+                <p className="text-[10px] text-slate-500 mt-0.5">Digunakan sebagai nama akun bebas yang terhubung ke email autentikasi.</p>
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-extrabold mb-1">
+                  Alamat Email (Wajib untuk User Authentication & Login) <span className="text-red-500">*</span>
+                </label>
                 <input 
                   type="email"
                   placeholder="Cth: operator@instansi.go.id"
                   value={emailState}
                   onChange={(e) => setEmailState(e.target.value)}
-                  className="w-full p-2 border border-slate-200 rounded-lg bg-white outline-blue-600 font-bold text-slate-900"
+                  className="w-full p-2 border border-slate-200 rounded-lg bg-white outline-blue-600 font-mono font-bold text-slate-900"
                   required
                 />
               </div>
 
               <div>
-                <label className="block text-slate-700 font-extrabold mb-1">Nama Anggota / Deskripsi Akun (Bebas)</label>
-                <input 
-                  type="text"
-                  placeholder="cth: Nama"
-                  value={namaState}
-                  onChange={(e) => setNamaState(e.target.value)}
-                  className="w-full p-2 border border-slate-200 rounded-lg bg-white outline-blue-600 font-bold text-slate-900"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-slate-700 font-extrabold mb-1">Kata Sandi / Password</label>
+                <label className="block text-slate-700 font-extrabold mb-1">
+                  Kata Sandi / Password <span className="text-red-500">*</span>
+                </label>
                 <div className="relative">
                   <input 
                     type={showPassword ? "text" : "password"}
@@ -1180,6 +1259,8 @@ export default function PengaturanView({
                     type="button"
                     onClick={() => {
                       setEditingUserId(null);
+                      setEditingOldUsername('');
+                      setUsernameState('');
                       setEmailState('');
                       setNamaState('');
                       setPasswordState('');
@@ -1204,7 +1285,7 @@ export default function PengaturanView({
               <thead className="bg-slate-50 text-slate-750 font-bold uppercase tracking-wider">
                 <tr>
                   <th className="px-3 py-2 text-left">Nama Akun</th>
-                  <th className="px-3 py-2 text-left">Nama Anggota/Karyawan</th>
+                  <th className="px-3 py-2 text-left">Email Authentication</th>
                   <th className="px-3 py-2 text-left">Password</th>
                   <th className="px-3 py-2 text-left">Hak Akses (Role)</th>
                   <th className="px-3 py-2 text-center">Status</th>
@@ -1221,20 +1302,23 @@ export default function PengaturanView({
                 ) : (
                   filteredUsers.map((item) => {
                     const hasValidEmail = isValidEmailFormat(item.email || '');
+                    const displayUsername = item.username || (!isValidEmailFormat(item.id) ? item.id : item.nama || item.id);
                     return (
                     <tr key={item.id} className="hover:bg-slate-50/50 transition-colors">
+                      <td className="px-3 py-2 text-slate-900 font-bold max-w-[160px] truncate" title={displayUsername}>
+                        {displayUsername}
+                      </td>
                       <td className="px-3 py-2 font-mono text-blue-700">
                         <div className="flex flex-wrap items-center gap-1.5">
-                          <span>{item.email}</span>
+                          <span>{hasValidEmail ? item.email : (item.email || '-')}</span>
                           {!hasValidEmail && (
                             <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 text-[9px] font-sans font-extrabold">
-                              Wajib Update Email
+                              Wajib Lengkapi Email
                             </span>
                           )}
                         </div>
                       </td>
-                      <td className="px-3 py-2 text-slate-900 font-bold max-w-[150px] truncate" title={item.nama}>{item.nama}</td>
-                      <td className="px-3 py-2 font-mono text-slate-500">{item.password || <span className="text-[10px] italic text-slate-400">bima2026 (Default)</span>}</td>
+                      <td className="px-3 py-2 font-mono text-slate-500">{item.password || <span className="text-[10px] italic text-slate-400">Tersimpan di Auth</span>}</td>
                       <td className="px-3 py-2">
                         <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black ${
                           item.role === UserRole.ADMIN ? 'bg-amber-100 text-amber-900' : 
@@ -1264,7 +1348,7 @@ export default function PengaturanView({
                           </button>
                           
                           <button 
-                            onClick={() => handleDeleteUser(item.id)}
+                            onClick={() => handleDeleteUser(item)}
                             title="Hapus Akun Permanen"
                             className="p-1 text-red-700 hover:bg-red-50 hover:text-red-950 rounded transition"
                           >
