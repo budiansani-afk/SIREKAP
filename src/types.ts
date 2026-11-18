@@ -176,6 +176,18 @@ export interface PengaturanSistem {
   nip_bendahara?: string;
 }
 
+export interface BackupScheduleConfig {
+  id: 'backup_config';
+  enabled: boolean;
+  daysOfWeek: number[]; // 0 = Minggu .. 6 = Sabtu
+  dayNames?: string[];
+  hour: number; // 0..23
+  timeOfDay: string; // "00:00" .. "23:00"
+  timezone: string;
+  updatedAt: string;
+  updatedBy: string;
+}
+
 // Type Aliases for compatibility
 export type ActivityLog = LogAktivitas;
 export type AppSettings = PengaturanSistem;

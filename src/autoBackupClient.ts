@@ -6,6 +6,7 @@ export const AUTO_BACKUP_SYNC_EVENT = "sirekap:autobackup-synced";
 export interface AutoBackupPublicStatus {
   enabled: boolean;
   daysOfWeek: number[];
+  hour: number;
   timeOfDay: string;
   timezone: string;
   lastRunAt: string | null;
@@ -110,6 +111,7 @@ export async function saveAutoBackupSchedule(
   payload: {
     enabled: boolean;
     daysOfWeek: number[];
+    hour: number;
     timeOfDay: string;
     timezone?: string;
     refreshToken?: string;

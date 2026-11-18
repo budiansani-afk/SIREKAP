@@ -24,7 +24,8 @@ const BOOTSTRAPPED_ADMIN_EMAILS = new Set([
 export interface AutoBackupServerConfig {
   enabled: boolean;
   daysOfWeek: number[]; // 0 (Minggu) .. 6 (Sabtu)
-  timeOfDay: string; // "HH:mm" 24-hour
+  hour: number; // 0..23
+  timeOfDay: string; // "00:00" .. "23:00"
   timezone: string; // e.g. "Asia/Makassar"
   syncKey: string;
   refreshToken: string;
@@ -41,6 +42,7 @@ export interface AutoBackupServerConfig {
 export interface AutoBackupPublicStatus {
   enabled: boolean;
   daysOfWeek: number[];
+  hour: number;
   timeOfDay: string;
   timezone: string;
   lastRunAt: string | null;
@@ -71,6 +73,7 @@ function defaultConfig(): AutoBackupServerConfig {
   return {
     enabled: false,
     daysOfWeek: [1, 2, 3, 4, 5],
+    hour: 23,
     timeOfDay: "23:00",
     timezone: "Asia/Makassar",
     syncKey: crypto.randomBytes(24).toString("hex"),
@@ -118,10 +121,15 @@ export function saveAutoBackupConfig(cfg: AutoBackupServerConfig) {
 
 export function getPublicBackupStatus(cfg?: AutoBackupServerConfig): AutoBackupPublicStatus {
   const c = cfg || loadAutoBackupConfig();
+  const safeHour = Number.isInteger(c.hour) && c.hour >= 0 && c.hour <= 23
+    ? c.hour
+    : Number((c.timeOfDay || "23:00").split(":")[0]) || 23;
+  const formattedTime = `${String(safeHour).padStart(2, "0")}:00`;
   return {
     enabled: Boolean(c.enabled),
     daysOfWeek: Array.isArray(c.daysOfWeek) ? c.daysOfWeek : [],
-    timeOfDay: c.timeOfDay || "23:00",
+    hour: safeHour,
+    timeOfDay: formattedTime,
     timezone: c.timezone || "Asia/Makassar",
     lastRunAt: c.lastRunAt || null,
     lastRunSlot: c.lastRunSlot || null,
@@ -427,17 +435,73 @@ function parseHHmmMinutes(hhmm: string): number | null {
   return h * 60 + min;
 }
 
+let lastFirestoreConfigSyncMs = 0;
+
+export async function syncBackupConfigFromFirestore(cfg: AutoBackupServerConfig): Promise<AutoBackupServerConfig> {
+  if (!cfg.refreshToken) return cfg;
+  try {
+    const exchanged = await exchangeRefreshTokenForIdToken(cfg.refreshToken);
+    if (exchanged.refreshToken && exchanged.refreshToken !== cfg.refreshToken) {
+      cfg.refreshToken = exchanged.refreshToken;
+    }
+    const dbId = firebaseConfig.firestoreDatabaseId || "(default)";
+    const url = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/${encodeURIComponent(dbId)}/documents/sibiru_pengaturan/backup_config`;
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${exchanged.idToken}` }
+    });
+    if (!res.ok) return cfg;
+    const json: any = await res.json();
+    const remote = decodeFirestoreFields(json.fields || {});
+    if (typeof remote.enabled !== "boolean") return cfg;
+
+    const remoteUpdated = remote.updatedAt ? new Date(String(remote.updatedAt)).getTime() : 0;
+    const localUpdated = cfg.updatedAt ? new Date(String(cfg.updatedAt)).getTime() : 0;
+
+    if (remoteUpdated >= localUpdated) {
+      const hourInt = Number.isInteger(Number(remote.hour)) ? Math.min(23, Math.max(0, Number(remote.hour))) : cfg.hour;
+      cfg.enabled = Boolean(remote.enabled);
+      cfg.daysOfWeek = Array.isArray(remote.daysOfWeek)
+        ? remote.daysOfWeek.map(Number).filter((d) => Number.isInteger(d) && d >= 0 && d <= 6)
+        : cfg.daysOfWeek;
+      cfg.hour = hourInt;
+      cfg.timeOfDay = `${String(hourInt).padStart(2, "0")}:00`;
+      if (typeof remote.timezone === "string" && remote.timezone.trim()) {
+        cfg.timezone = remote.timezone.trim();
+      }
+      if (remote.updatedAt) {
+        cfg.updatedAt = String(remote.updatedAt);
+      }
+      saveAutoBackupConfig(cfg);
+    }
+  } catch (err) {
+    console.warn("[AutoBackup] Gagal sinkron backup_config dari Firestore:", err);
+  }
+  return cfg;
+}
+
 export function startAutoBackupScheduler() {
   if (schedulerTimer) return;
 
   const tick = async () => {
     try {
-      const cfg = loadAutoBackupConfig();
+      let cfg = loadAutoBackupConfig();
+
+      // Reconcile config from Firestore sibiru_pengaturan/backup_config every 10 minutes
+      const nowMs = Date.now();
+      if (cfg.refreshToken && (lastFirestoreConfigSyncMs === 0 || nowMs - lastFirestoreConfigSyncMs > 600_000)) {
+        lastFirestoreConfigSyncMs = nowMs;
+        cfg = await syncBackupConfigFromFirestore(cfg);
+      }
+
       if (!cfg.enabled || !Array.isArray(cfg.daysOfWeek) || cfg.daysOfWeek.length === 0) {
         return;
       }
-      const targetMinutes = parseHHmmMinutes(cfg.timeOfDay);
-      if (targetMinutes === null) return;
+
+      const hourInt = Number.isInteger(cfg.hour) && cfg.hour >= 0 && cfg.hour <= 23
+        ? cfg.hour
+        : (parseHHmmMinutes(cfg.timeOfDay) !== null ? Math.floor((parseHHmmMinutes(cfg.timeOfDay) || 0) / 60) : 23);
+      const formattedTime = `${String(hourInt).padStart(2, "0")}:00`;
+      const targetMinutes = hourInt * 60;
 
       const tz = cfg.timezone || "Asia/Makassar";
       const now = new Date();
@@ -447,12 +511,12 @@ export function startAutoBackupScheduler() {
         return;
       }
 
-      const slotKey = `${zoned.dateStr}@${cfg.timeOfDay}`;
+      const slotKey = `${zoned.dateStr}@${formattedTime}`;
       if (cfg.lastRunSlot === slotKey) {
         return;
       }
 
-      // Allow exact minute match or up to 3 minutes grace window in case of brief server sleep
+      // Execute at exact minute :00 of chosen hour (with 3-min grace window)
       const diffMinutes = zoned.totalMinutes - targetMinutes;
       if (diffMinutes < 0 || diffMinutes > 3) {
         return;

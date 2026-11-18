@@ -92,10 +92,37 @@ service cloud.firestore {
         && (!('password' in data) || (data.password is string && data.password.size() <= 128));
     }
 
-    // ==================== MASTER PENGATURAN (TERBUKA BACA UNTUK HALAMAN LOGIN) ====================
+    function isValidBackupConfigPayload(data) {
+      return data.keys().hasAll(['id', 'enabled', 'daysOfWeek', 'hour', 'timeOfDay', 'timezone', 'updatedAt', 'updatedBy'])
+        && data.keys().hasOnly(['id', 'enabled', 'daysOfWeek', 'dayNames', 'hour', 'timeOfDay', 'timezone', 'updatedAt', 'updatedBy'])
+        && data.id == 'backup_config'
+        && data.enabled is bool
+        && data.daysOfWeek is list
+        && data.daysOfWeek.size() <= 7
+        && (!data.enabled || data.daysOfWeek.size() > 0)
+        && (!('dayNames' in data) || (data.dayNames is list && data.dayNames.size() <= 7))
+        && data.hour is int
+        && data.hour >= 0
+        && data.hour <= 23
+        && data.timeOfDay is string
+        && data.timeOfDay.matches('^([01][0-9]|2[0-3]):00$')
+        && data.timezone is string
+        && data.timezone.size() > 0
+        && data.timezone.size() <= 64
+        && data.updatedAt is string
+        && data.updatedAt.size() <= 64
+        && data.updatedBy is string
+        && data.updatedBy.size() <= 254;
+    }
+
+    // ==================== MASTER PENGATURAN (aktif terbuka untuk halaman login, backup_config terkunci Admin) ====================
     match /sibiru_pengaturan/{id} {
-      allow read: if true;
-      allow create, update, delete: if isAdmin() && isValidId(id);
+      allow get: if id == 'backup_config' ? isAdmin() : isValidId(id);
+      allow list: if isAdmin();
+      allow create, update: if isAdmin()
+        && isValidId(id)
+        && (id != 'backup_config' || isValidBackupConfigPayload(incoming()));
+      allow delete: if isAdmin() && isValidId(id);
     }
 
     // ==================== PENGGUNA (TERKUNCI SEBELUM LOGIN, WAJIB EMAIL SAAT SIMPAN/EDIT ADMIN) ====================

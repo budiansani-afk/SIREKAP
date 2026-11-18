@@ -252,6 +252,23 @@
         "nip_bendahara": { "type": "string" }
       },
       "required": ["tahun_anggaran_aktif", "nama_instansi"]
+    },
+    "BackupConfig": {
+      "title": "BackupConfig",
+      "description": "Konfigurasi jadwal backup otomatis JSON (dokumen backup_config pada sibiru_pengaturan, khusus Admin)",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "enabled": { "type": "boolean" },
+        "daysOfWeek": { "type": "array", "items": { "type": "number" } },
+        "dayNames": { "type": "array", "items": { "type": "string" } },
+        "hour": { "type": "number" },
+        "timeOfDay": { "type": "string", "pattern": "^([01][0-9]|2[0-3]):00$" },
+        "timezone": { "type": "string" },
+        "updatedAt": { "type": "string" },
+        "updatedBy": { "type": "string" }
+      },
+      "required": ["id", "enabled", "daysOfWeek", "hour", "timeOfDay", "timezone", "updatedAt", "updatedBy"]
     }
   },
   "firestore": {
