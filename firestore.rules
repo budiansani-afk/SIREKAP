@@ -93,9 +93,9 @@ service cloud.firestore {
     }
 
     function isValidBackupConfigPayload(data) {
-      return data.keys().hasAll(['id', 'enabled', 'daysOfWeek', 'hour', 'timeOfDay', 'timezone', 'updatedAt', 'updatedBy'])
-        && data.keys().hasOnly(['id', 'enabled', 'daysOfWeek', 'dayNames', 'hour', 'minute', 'timeOfDay', 'timezone', 'updatedAt', 'updatedBy'])
-        && data.id == 'backup_config'
+      return data.keys().hasAll(['enabled', 'daysOfWeek', 'hour', 'timeOfDay', 'timezone', 'updatedAt', 'updatedBy'])
+        && data.keys().hasOnly(['id', 'enabled', 'daysOfWeek', 'dayNames', 'hour', 'minute', 'timeOfDay', 'timezone', 'autoDownload', 'updatedAt', 'updatedBy'])
+        && (!('id' in data) || data.id == 'backup_config')
         && data.enabled is bool
         && data.daysOfWeek is list
         && data.daysOfWeek.size() <= 7
@@ -110,6 +110,7 @@ service cloud.firestore {
         && data.timezone is string
         && data.timezone.size() > 0
         && data.timezone.size() <= 64
+        && (!('autoDownload' in data) || data.autoDownload is bool)
         && data.updatedAt is string
         && data.updatedAt.size() <= 64
         && data.updatedBy is string
@@ -122,7 +123,8 @@ service cloud.firestore {
       allow list: if isAdmin();
       allow create, update: if isAdmin()
         && isValidId(id)
-        && (id != 'backup_config' || isValidBackupConfigPayload(incoming()));
+        && (id != 'backup_config' || isValidBackupConfigPayload(incoming()))
+        && (!('backup_schedule' in incoming()) || isValidBackupConfigPayload(incoming().backup_schedule));
       allow delete: if isAdmin() && isValidId(id);
     }
 

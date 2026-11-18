@@ -314,7 +314,7 @@ app.post("/api/backup/config", async (req, res) => {
       return res.status(403).json({ error: "Hanya Administrator terautentikasi yang dapat mengatur jadwal backup otomatis." });
     }
 
-    const { enabled, daysOfWeek, hour, minute, timeOfDay, timezone, refreshToken } = req.body || {};
+    const { enabled, daysOfWeek, hour, minute, timeOfDay, timezone, autoDownload, refreshToken } = req.body || {};
     const validDays = Array.isArray(daysOfWeek)
       ? Array.from(new Set(daysOfWeek.map(Number).filter((d) => Number.isInteger(d) && d >= 0 && d <= 6))).sort()
       : [];
@@ -363,6 +363,9 @@ app.post("/api/backup/config", async (req, res) => {
     cfg.hour = parsedHour;
     cfg.minute = parsedMinute;
     cfg.timeOfDay = timeStr;
+    if (typeof autoDownload === "boolean") {
+      cfg.autoDownload = autoDownload;
+    }
     if (typeof timezone === "string" && timezone.trim()) {
       cfg.timezone = timezone.trim();
     }

@@ -74,7 +74,8 @@ import {
   forceDisconnectSession
 } from './dbService';
 import {
-  tickAutoBackupBackground
+  tickAutoBackupBackground,
+  syncClientBackupConfigFromRemote
 } from './autoBackupClient';
 import { 
   Program, 
@@ -548,6 +549,11 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
+  const backupYearRef = useRef<number>(2026);
+  useEffect(() => {
+    backupYearRef.current = appSettings?.tahun_anggaran_aktif || selectedYear || 2026;
+  }, [appSettings?.tahun_anggaran_aktif, selectedYear]);
+
   // Hybrid Auto-Backup Background Runner -> LocalStorage (berjalan walaupun belum ada yang masuk)
   useEffect(() => {
     let isCancelled = false;
@@ -559,7 +565,7 @@ export default function App() {
           idToken = await auth.currentUser.getIdToken().catch(() => undefined);
         }
         if (!isCancelled) {
-          await tickAutoBackupBackground({ idToken });
+          await tickAutoBackupBackground({ idToken, tahunAnggaran: backupYearRef.current });
         }
       } catch {
         // Silent background sync
@@ -713,8 +719,12 @@ export default function App() {
           nip_pejabat_ttd: d.nip_pejabat_ttd || "",
           nama_bendahara: d.nama_bendahara || "",
           jabatan_bendahara: d.jabatan_bendahara || "",
-          nip_bendahara: d.nip_bendahara || ""
+          nip_bendahara: d.nip_bendahara || "",
+          backup_schedule: d.backup_schedule || undefined
         });
+        if (d.backup_schedule) {
+          syncClientBackupConfigFromRemote(d.backup_schedule);
+        }
       }
     }, (err) => console.warn('Error listening pengaturan:', err));
 

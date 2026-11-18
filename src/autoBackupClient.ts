@@ -1,23 +1,13 @@
 import firebaseConfig from "../firebase-applet-config.json";
-import { backupDatabaseToJSON } from "./dbService";
+import { auth } from "./firebase";
+import { BACKUP_COLLECTIONS, backupDatabaseToJSON } from "./dbService";
+import { BackupScheduleConfig } from "./types";
 
 export const LS_AUTO_BACKUP_DATA_KEY = "sirekap_auto_backup_latest";
 export const LS_AUTO_BACKUP_META_KEY = "sirekap_auto_backup_meta";
 export const LS_AUTO_BACKUP_SYNC_KEY = "sirekap_backup_sync_key";
 export const LS_AUTO_BACKUP_CLIENT_CFG_KEY = "sirekap_auto_backup_client_cfg";
 export const AUTO_BACKUP_SYNC_EVENT = "sirekap:autobackup-synced";
-
-const BACKUP_COLLECTIONS = [
-  "sibiru_program",
-  "sibiru_kegiatan",
-  "sibiru_sub_kegiatan",
-  "sibiru_rka",
-  "sibiru_realisasi",
-  "sibiru_belanja_pihak_ketiga",
-  "sibiru_dokumen",
-  "sibiru_pengguna",
-  "sibiru_pengaturan"
-] as const;
 
 export interface AutoBackupPublicStatus {
   enabled: boolean;
@@ -26,6 +16,7 @@ export interface AutoBackupPublicStatus {
   minute: number;
   timeOfDay: string;
   timezone: string;
+  autoDownload: boolean;
   lastRunAt: string | null;
   lastRunSlot: string | null;
   lastStatus: "idle" | "running" | "success" | "error";
@@ -49,6 +40,7 @@ export interface LocalBackupMeta {
 
 interface ClientBackupConfig extends AutoBackupPublicStatus {
   refreshToken?: string;
+  lastAutoDownloadedSlot?: string | null;
 }
 
 let cachedBackendAvailable: boolean | null = null;
@@ -94,6 +86,7 @@ function readClientBackupConfig(): ClientBackupConfig {
     minute: 0,
     timeOfDay: "23:00",
     timezone: "Asia/Makassar",
+    autoDownload: false,
     lastRunAt: localMeta?.exportedAt || null,
     lastRunSlot: localMeta?.lastRunSlot || null,
     lastStatus: localMeta ? "success" : "idle",
@@ -103,6 +96,7 @@ function readClientBackupConfig(): ClientBackupConfig {
     hasLatestSnapshot: hasLocalData,
     hasCredentials: false,
     updatedAt: null,
+    lastAutoDownloadedSlot: null,
     executionMode: "browser_standalone"
   };
 
@@ -123,6 +117,7 @@ function readClientBackupConfig(): ClientBackupConfig {
       hour,
       minute,
       timeOfDay: `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`,
+      autoDownload: Boolean(parsed.autoDownload),
       hasLatestSnapshot: hasLocalData || Boolean(parsed.hasLatestSnapshot),
       hasCredentials: Boolean(parsed.refreshToken),
       executionMode: "browser_standalone"
@@ -146,6 +141,36 @@ function writeClientBackupConfig(cfg: Partial<ClientBackupConfig>): ClientBackup
   return next;
 }
 
+export function syncClientBackupConfigFromRemote(remote: Partial<BackupScheduleConfig> | null | undefined) {
+  if (!remote || typeof remote.enabled !== "boolean") return;
+  const current = readClientBackupConfig();
+  const remoteUpdated = remote.updatedAt ? new Date(String(remote.updatedAt)).getTime() : 0;
+  const localUpdated = current.updatedAt ? new Date(String(current.updatedAt)).getTime() : 0;
+  if (remoteUpdated < localUpdated) return;
+
+  const timeMatch = typeof remote.timeOfDay === "string" ? /^(\d{2}):(\d{2})$/.exec(remote.timeOfDay.trim()) : null;
+  const hour = remote.hour !== undefined && remote.hour !== null && Number.isInteger(Number(remote.hour))
+    ? Math.min(23, Math.max(0, Number(remote.hour)))
+    : (timeMatch ? Math.min(23, Math.max(0, Number(timeMatch[1]))) : current.hour);
+  const minute = remote.minute !== undefined && remote.minute !== null && Number.isInteger(Number(remote.minute))
+    ? Math.min(59, Math.max(0, Number(remote.minute)))
+    : (timeMatch ? Math.min(59, Math.max(0, Number(timeMatch[2]))) : current.minute);
+  const days = Array.isArray(remote.daysOfWeek)
+    ? remote.daysOfWeek.map(Number).filter((d) => Number.isInteger(d) && d >= 0 && d <= 6)
+    : current.daysOfWeek;
+
+  writeClientBackupConfig({
+    enabled: Boolean(remote.enabled),
+    daysOfWeek: days,
+    hour,
+    minute,
+    timeOfDay: `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`,
+    timezone: typeof remote.timezone === "string" && remote.timezone.trim() ? remote.timezone.trim() : current.timezone,
+    autoDownload: typeof remote.autoDownload === "boolean" ? remote.autoDownload : current.autoDownload,
+    updatedAt: remote.updatedAt || current.updatedAt
+  });
+}
+
 export function readLocalBackupMeta(): LocalBackupMeta | null {
   try {
     const raw = localStorage.getItem(LS_AUTO_BACKUP_META_KEY);
@@ -164,6 +189,39 @@ export function readLocalBackupRawJson(): string | null {
   }
 }
 
+export function downloadDatabaseJsonFile(
+  backupDataOrRaw: Record<string, any[]> | string,
+  options?: { tahunAnggaran?: number; exportedAt?: string }
+): boolean {
+  try {
+    let dataStr: string;
+    if (typeof backupDataOrRaw === "string") {
+      try {
+        dataStr = JSON.stringify(JSON.parse(backupDataOrRaw), null, 2);
+      } catch {
+        dataStr = backupDataOrRaw;
+      }
+    } else {
+      dataStr = JSON.stringify(backupDataOrRaw, null, 2);
+    }
+
+    const tahun = options?.tahunAnggaran || 2026;
+    const datePart = (options?.exportedAt || new Date().toISOString()).substring(0, 10);
+    const blob = new Blob([dataStr], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `SIREKAP_TANAH_BackUp_Database_TA${tahun}_${datePart}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function saveBackupSnapshotToLocalStorage(
   backupData: Record<string, any[]>,
   info: {
@@ -173,17 +231,16 @@ export function saveBackupSnapshotToLocalStorage(
     lastRunSlot?: string | null;
   }
 ): { ok: boolean; error?: string; meta?: LocalBackupMeta } {
-  try {
-    const jsonStr = JSON.stringify(backupData);
-    const sizeBytes = new Blob([jsonStr]).size;
-    const totalRecords =
-      typeof info.totalRecords === "number"
-        ? info.totalRecords
-        : Object.values(backupData).reduce(
-            (sum, arr) => sum + (Array.isArray(arr) ? arr.length : 0),
-            0
-          );
+  const totalRecords =
+    typeof info.totalRecords === "number"
+      ? info.totalRecords
+      : Object.values(backupData).reduce(
+          (sum, arr) => sum + (Array.isArray(arr) ? arr.length : 0),
+          0
+        );
 
+  const tryPersist = (jsonStr: string): { ok: boolean; error?: string; meta?: LocalBackupMeta } => {
+    const sizeBytes = new Blob([jsonStr]).size;
     const meta: LocalBackupMeta = {
       exportedAt: info.exportedAt,
       syncedAt: new Date().toISOString(),
@@ -192,20 +249,27 @@ export function saveBackupSnapshotToLocalStorage(
       sizeBytes,
       lastRunSlot: info.lastRunSlot || null
     };
-
-    // Selalu timpa key utama agar selalu menyimpan versi snapshot terbaru
     localStorage.setItem(LS_AUTO_BACKUP_DATA_KEY, jsonStr);
     localStorage.setItem(LS_AUTO_BACKUP_META_KEY, JSON.stringify(meta));
-
     if (typeof window !== "undefined") {
       window.dispatchEvent(new CustomEvent(AUTO_BACKUP_SYNC_EVENT, { detail: meta }));
     }
-
     return { ok: true, meta };
+  };
+
+  try {
+    // Format JSON identik (pretty-printed) dengan tombol "Ekspor Semua Basis Data (JSON)"
+    return tryPersist(JSON.stringify(backupData, null, 2));
   } catch (err: any) {
     const isQuota =
       err?.name === "QuotaExceededError" ||
       String(err?.message || "").toLowerCase().includes("quota");
+    if (isQuota) {
+      try {
+        // Fallback ke format kompak bila kuota localStorage ketat
+        return tryPersist(JSON.stringify(backupData));
+      } catch {}
+    }
     return {
       ok: false,
       error: isQuota
@@ -297,6 +361,8 @@ async function runBrowserAutonomousBackup(options?: {
   idToken?: string;
   slotKey?: string;
   source?: string;
+  autoDownload?: boolean;
+  tahunAnggaran?: number;
 }) {
   if (clientBackupInFlight) return clientBackupInFlight;
 
@@ -305,22 +371,28 @@ async function runBrowserAutonomousBackup(options?: {
     writeClientBackupConfig({ lastStatus: "running", lastError: null });
 
     try {
-      let idToken = options?.idToken || "";
-      if (!idToken && cfg.refreshToken) {
-        const exchanged = await exchangeRefreshTokenBrowser(cfg.refreshToken);
-        idToken = exchanged.idToken;
-        if (exchanged.refreshToken && exchanged.refreshToken !== cfg.refreshToken) {
-          writeClientBackupConfig({ refreshToken: exchanged.refreshToken });
-        }
-      }
-
       let backupData: Record<string, any[]> = {};
-      if (idToken) {
-        for (const collName of BACKUP_COLLECTIONS) {
-          backupData[collName] = await fetchCollectionViaRestBrowser(collName, idToken);
-        }
-      } else {
+
+      // Jika sesi Firebase SDK aktif, panggil langsung fungsi backupDatabaseToJSON() agar 100% identik
+      if (auth.currentUser) {
         backupData = await backupDatabaseToJSON();
+      } else {
+        let idToken = options?.idToken || "";
+        if (!idToken && cfg.refreshToken) {
+          const exchanged = await exchangeRefreshTokenBrowser(cfg.refreshToken);
+          idToken = exchanged.idToken;
+          if (exchanged.refreshToken && exchanged.refreshToken !== cfg.refreshToken) {
+            writeClientBackupConfig({ refreshToken: exchanged.refreshToken });
+          }
+        }
+
+        if (idToken) {
+          for (const collName of BACKUP_COLLECTIONS) {
+            backupData[collName] = await fetchCollectionViaRestBrowser(collName, idToken);
+          }
+        } else {
+          backupData = await backupDatabaseToJSON();
+        }
       }
 
       const exportedAt = new Date().toISOString();
@@ -340,6 +412,19 @@ async function runBrowserAutonomousBackup(options?: {
         throw new Error(saved.error || "Gagal menyimpan ke localStorage.");
       }
 
+      const shouldAutoDownload = options?.autoDownload ?? cfg.autoDownload;
+      const slotTrack = options?.slotKey || exportedAt;
+      let nextDownloadedSlot = cfg.lastAutoDownloadedSlot || null;
+      if (shouldAutoDownload && (!options?.slotKey || cfg.lastAutoDownloadedSlot !== options.slotKey)) {
+        const downloaded = downloadDatabaseJsonFile(backupData, {
+          tahunAnggaran: options?.tahunAnggaran,
+          exportedAt
+        });
+        if (downloaded) {
+          nextDownloadedSlot = slotTrack;
+        }
+      }
+
       const updatedStatus = writeClientBackupConfig({
         lastRunAt: exportedAt,
         lastRunSlot: options?.slotKey || cfg.lastRunSlot || null,
@@ -347,7 +432,8 @@ async function runBrowserAutonomousBackup(options?: {
         lastError: null,
         lastTotalRecords: saved.meta.totalRecords,
         lastSizeBytes: saved.meta.sizeBytes,
-        hasLatestSnapshot: true
+        hasLatestSnapshot: true,
+        lastAutoDownloadedSlot: nextDownloadedSlot
       });
 
       return {
@@ -409,6 +495,7 @@ export async function saveAutoBackupSchedule(
     minute: number;
     timeOfDay: string;
     timezone?: string;
+    autoDownload?: boolean;
     refreshToken?: string;
   }
 ): Promise<{ status: AutoBackupPublicStatus; syncKey: string }> {
@@ -420,6 +507,7 @@ export async function saveAutoBackupSchedule(
     minute: payload.minute,
     timeOfDay: payload.timeOfDay,
     timezone: payload.timezone || "Asia/Makassar",
+    autoDownload: Boolean(payload.autoDownload),
     refreshToken: payload.refreshToken,
     updatedAt: new Date().toISOString()
   });
@@ -464,7 +552,10 @@ export async function saveAutoBackupSchedule(
   };
 }
 
-export async function triggerServerAutoBackupNow(idToken: string): Promise<{
+export async function triggerServerAutoBackupNow(
+  idToken: string,
+  options?: { autoDownload?: boolean; tahunAnggaran?: number }
+): Promise<{
   status: AutoBackupPublicStatus;
   snapshot: {
     exportedAt: string;
@@ -496,6 +587,12 @@ export async function triggerServerAutoBackupNow(idToken: string): Promise<{
             totalRecords: data.snapshot.totalRecords,
             lastRunSlot: data.status?.lastRunSlot || null
           });
+          if (options?.autoDownload) {
+            downloadDatabaseJsonFile(data.snapshot.data, {
+              tahunAnggaran: options?.tahunAnggaran,
+              exportedAt: data.snapshot.exportedAt
+            });
+          }
         }
         return {
           status: { ...data.status, executionMode: "server_hybrid" },
@@ -517,13 +614,16 @@ export async function triggerServerAutoBackupNow(idToken: string): Promise<{
 
   return runBrowserAutonomousBackup({
     idToken,
-    source: "manual_trigger_browser"
+    source: "manual_trigger_browser",
+    autoDownload: options?.autoDownload,
+    tahunAnggaran: options?.tahunAnggaran
   });
 }
 
 export async function syncLatestBackupToLocalStorage(options?: {
   idToken?: string;
   force?: boolean;
+  tahunAnggaran?: number;
 }): Promise<{ synced: boolean; reason?: string; meta?: LocalBackupMeta; status?: AutoBackupPublicStatus }> {
   if (isBackendKnownUnavailable()) {
     return { synced: false, reason: "browser_standalone_mode", status: readClientBackupConfig() };
@@ -576,8 +676,9 @@ export async function syncLatestBackupToLocalStorage(options?: {
     return { synced: false, reason: "empty_payload", status };
   }
 
+  const exportedAt = snapshot.exportedAt || status.lastRunAt;
   const saved = saveBackupSnapshotToLocalStorage(snapshot.data, {
-    exportedAt: snapshot.exportedAt || status.lastRunAt,
+    exportedAt,
     source: snapshot.source || "auto_scheduler",
     totalRecords: snapshot.totalRecords,
     lastRunSlot: status.lastRunSlot
@@ -585,6 +686,19 @@ export async function syncLatestBackupToLocalStorage(options?: {
 
   if (!saved.ok) {
     return { synced: false, reason: saved.error, status };
+  }
+
+  const clientCfg = readClientBackupConfig();
+  const shouldAutoDownload = Boolean(status.autoDownload || clientCfg.autoDownload);
+  const slotToTrack = status.lastRunSlot || exportedAt;
+  if (shouldAutoDownload && snapshot.source === "auto_scheduler" && clientCfg.lastAutoDownloadedSlot !== slotToTrack) {
+    const downloaded = downloadDatabaseJsonFile(snapshot.data, {
+      tahunAnggaran: options?.tahunAnggaran,
+      exportedAt
+    });
+    if (downloaded) {
+      writeClientBackupConfig({ lastAutoDownloadedSlot: slotToTrack });
+    }
   }
 
   return { synced: true, meta: saved.meta, status };
@@ -627,17 +741,17 @@ function getZonedParts(date: Date, timeZone: string) {
  * - When Express server is present: syncs server snapshot into localStorage.
  * - When deployed statically (e.g. Firebase Hosting): runs scheduled Firestore REST backup directly into localStorage.
  */
-export async function tickAutoBackupBackground(options?: { idToken?: string }) {
+export async function tickAutoBackupBackground(options?: { idToken?: string; tahunAnggaran?: number }) {
   const status = await fetchAutoBackupStatus(options?.idToken);
 
   if (status.executionMode === "server_hybrid") {
-    await syncLatestBackupToLocalStorage({ idToken: options?.idToken });
+    await syncLatestBackupToLocalStorage({ idToken: options?.idToken, tahunAnggaran: options?.tahunAnggaran });
     return;
   }
 
   // Static Hosting / Browser Autonomous Mode
   const cfg = readClientBackupConfig();
-  if (!cfg.enabled || !cfg.refreshToken || !Array.isArray(cfg.daysOfWeek) || cfg.daysOfWeek.length === 0) {
+  if (!cfg.enabled || (!cfg.refreshToken && !auth.currentUser) || !Array.isArray(cfg.daysOfWeek) || cfg.daysOfWeek.length === 0) {
     return;
   }
 
@@ -670,24 +784,20 @@ export async function tickAutoBackupBackground(options?: { idToken?: string }) {
   }
 
   await runBrowserAutonomousBackup({
+    idToken: options?.idToken,
     slotKey,
-    source: "browser_auto_scheduler"
+    source: "browser_auto_scheduler",
+    autoDownload: cfg.autoDownload,
+    tahunAnggaran: options?.tahunAnggaran
   });
 }
 
-export function downloadLocalStorageBackupFile(): boolean {
+export function downloadLocalStorageBackupFile(tahunAnggaran?: number): boolean {
   const raw = readLocalBackupRawJson();
   if (!raw) return false;
   const meta = readLocalBackupMeta();
-  const datePart = (meta?.exportedAt || new Date().toISOString()).substring(0, 10);
-  const blob = new Blob([raw], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = `SIREKAP_TANAH_AutoBackup_LocalStorage_${datePart}.json`;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
-  return true;
+  return downloadDatabaseJsonFile(raw, {
+    tahunAnggaran,
+    exportedAt: meta?.exportedAt
+  });
 }

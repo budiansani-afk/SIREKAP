@@ -639,23 +639,23 @@ export async function clearDatabase() {
 }
 
 // 3. Backup & Restore Data
+export const BACKUP_COLLECTIONS = [
+  COLL_PROGRAM,
+  COLL_KEGIATAN,
+  COLL_SUB_KEGIATAN,
+  COLL_RKA,
+  COLL_REALISASI,
+  COLL_BELANJA_PIHAK_KETIGA,
+  COLL_DOKUMEN,
+  COLL_PENGGUNA,
+  COLL_PENGATURAN
+] as const;
+
 export async function backupDatabaseToJSON() {
   try {
-    const collectionsToBackup = [
-      COLL_PROGRAM,
-      COLL_KEGIATAN,
-      COLL_SUB_KEGIATAN,
-      COLL_RKA,
-      COLL_REALISASI,
-      COLL_BELANJA_PIHAK_KETIGA,
-      COLL_DOKUMEN,
-      COLL_PENGGUNA,
-      COLL_PENGATURAN
-    ];
-
     const backupData: Record<string, any[]> = {};
 
-    for (const collName of collectionsToBackup) {
+    for (const collName of BACKUP_COLLECTIONS) {
       const snapshot = await getDocs(collection(db, collName)).catch(err => handleFirestoreError(err, OperationType.LIST, collName)) as any;
       backupData[collName] = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
     }

@@ -249,13 +249,14 @@
         "nip_pejabat_ttd": { "type": "string" },
         "nama_bendahara": { "type": "string" },
         "jabatan_bendahara": { "type": "string" },
-        "nip_bendahara": { "type": "string" }
+        "nip_bendahara": { "type": "string" },
+        "backup_schedule": { "$ref": "#/entities/BackupConfig" }
       },
       "required": ["tahun_anggaran_aktif", "nama_instansi"]
     },
     "BackupConfig": {
       "title": "BackupConfig",
-      "description": "Konfigurasi jadwal backup otomatis JSON (dokumen backup_config pada sibiru_pengaturan, khusus Admin)",
+      "description": "Konfigurasi jadwal backup otomatis JSON (digabung di sibiru_pengaturan/aktif.backup_schedule)",
       "type": "object",
       "properties": {
         "id": { "type": "string" },
@@ -266,10 +267,11 @@
         "minute": { "type": "number" },
         "timeOfDay": { "type": "string", "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$" },
         "timezone": { "type": "string" },
+        "autoDownload": { "type": "boolean" },
         "updatedAt": { "type": "string" },
         "updatedBy": { "type": "string" }
       },
-      "required": ["id", "enabled", "daysOfWeek", "hour", "timeOfDay", "timezone", "updatedAt", "updatedBy"]
+      "required": ["enabled", "daysOfWeek", "hour", "timeOfDay", "timezone", "updatedAt", "updatedBy"]
     }
   },
   "firestore": {

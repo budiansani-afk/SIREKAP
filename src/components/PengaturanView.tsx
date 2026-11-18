@@ -55,7 +55,7 @@ import {
 import { runFirebaseStorageMigration, MigrationProgressData } from '../migrationStorageService';
 import { formatDuration, formatWaktuMasuk } from '../utils/deviceHelper';
 import { auth, db, STORAGE_BUCKET, ensureUserInFirebaseAuth } from '../firebase';
-import { doc, setDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
+import { doc, setDoc, deleteDoc } from 'firebase/firestore';
 import { 
   isNotificationSupported, 
   getNotificationPermission, 
@@ -67,6 +67,7 @@ import {
   AutoBackupPublicStatus,
   LS_AUTO_BACKUP_DATA_KEY,
   LocalBackupMeta,
+  downloadDatabaseJsonFile,
   downloadLocalStorageBackupFile,
   fetchAutoBackupStatus,
   readLocalBackupMeta,
@@ -233,12 +234,13 @@ export default function PengaturanView({
   const [backupFileUrl, setBackupFileUrl] = useState('');
   const [restoreMessage, setRestoreMessage] = useState<string | null>(null);
 
-  // Auto-Backup Scheduler states (Admin-only, hybrid Firestore backup_config + server + localStorage)
+  // Auto-Backup Scheduler states (Admin-only, hybrid Pengaturan Utama + server + localStorage)
   const [autoBackupEnabled, setAutoBackupEnabled] = useState(false);
   const [autoBackupDays, setAutoBackupDays] = useState<number[]>([1, 2, 3, 4, 5]);
   const [autoBackupHour, setAutoBackupHour] = useState<number>(23);
   const [autoBackupMinute, setAutoBackupMinute] = useState<number>(0);
   const [autoBackupTimezone, setAutoBackupTimezone] = useState('Asia/Makassar');
+  const [autoBackupAutoDownload, setAutoBackupAutoDownload] = useState(false);
   const [firestoreBackupMeta, setFirestoreBackupMeta] = useState<{ updatedAt: string; updatedBy: string } | null>(null);
   const [serverBackupStatus, setServerBackupStatus] = useState<AutoBackupPublicStatus | null>(null);
   const [localBackupMeta, setLocalBackupMeta] = useState<LocalBackupMeta | null>(() => readLocalBackupMeta());
@@ -249,36 +251,41 @@ export default function PengaturanView({
   useEffect(() => {
     if (!canEdit) return;
     let cancelled = false;
-    let latestServerStatus: AutoBackupPublicStatus | null = null;
 
     const loadServerStatusAndSyncLocal = async () => {
       try {
         const idToken = await auth.currentUser?.getIdToken().catch(() => undefined);
         const status = await fetchAutoBackupStatus(idToken);
         if (cancelled) return;
-        latestServerStatus = status;
         setServerBackupStatus(status);
-        // Apply server/local values as initial fallback before Firestore snapshot arrives
-        setAutoBackupEnabled(prev => prev || Boolean(status.enabled));
-        if (Array.isArray(status.daysOfWeek) && status.daysOfWeek.length > 0) {
-          setAutoBackupDays(status.daysOfWeek);
-        }
-        if (Number.isInteger(status.hour)) {
-          setAutoBackupHour(status.hour);
-        }
-        if (Number.isInteger(status.minute)) {
-          setAutoBackupMinute(status.minute);
-        } else if (typeof status.timeOfDay === 'string' && status.timeOfDay.includes(':')) {
-          const parsedMin = Number(status.timeOfDay.split(':')[1]);
-          if (Number.isInteger(parsedMin) && parsedMin >= 0 && parsedMin <= 59) {
-            setAutoBackupMinute(parsedMin);
+
+        // Bila Firestore pengaturan utama belum memiliki backup_schedule, pakai status server/local
+        if (!settings?.backup_schedule) {
+          setAutoBackupEnabled(Boolean(status.enabled));
+          if (Array.isArray(status.daysOfWeek) && status.daysOfWeek.length > 0) {
+            setAutoBackupDays(status.daysOfWeek);
           }
-        }
-        if (status.timezone) {
-          setAutoBackupTimezone(status.timezone);
+          if (Number.isInteger(status.hour)) {
+            setAutoBackupHour(status.hour);
+          }
+          if (Number.isInteger(status.minute)) {
+            setAutoBackupMinute(status.minute);
+          } else if (typeof status.timeOfDay === 'string' && status.timeOfDay.includes(':')) {
+            const parsedMin = Number(status.timeOfDay.split(':')[1]);
+            if (Number.isInteger(parsedMin) && parsedMin >= 0 && parsedMin <= 59) {
+              setAutoBackupMinute(parsedMin);
+            }
+          }
+          if (status.timezone) {
+            setAutoBackupTimezone(status.timezone);
+          }
+          setAutoBackupAutoDownload(Boolean(status.autoDownload));
         }
 
-        await syncLatestBackupToLocalStorage({ idToken });
+        await syncLatestBackupToLocalStorage({
+          idToken,
+          tahunAnggaran: settings?.tahun_anggaran_aktif || fiscalYear
+        });
         if (!cancelled) {
           setLocalBackupMeta(readLocalBackupMeta());
         }
@@ -288,77 +295,72 @@ export default function PengaturanView({
     };
     loadServerStatusAndSyncLocal();
 
-    // Real-time listener untuk dokumen Firestore: sibiru_pengaturan/backup_config
-    const backupDocRef = doc(db, COLL_PENGATURAN, 'backup_config');
-    const unsubBackupConfig = onSnapshot(
-      backupDocRef,
-      async (snap) => {
-        if (cancelled || !snap.exists()) return;
-        const data = snap.data() as Partial<BackupScheduleConfig>;
-        const fsEnabled = Boolean(data.enabled);
-        const fsDays = Array.isArray(data.daysOfWeek)
-          ? data.daysOfWeek.map(Number).filter((d) => Number.isInteger(d) && d >= 0 && d <= 6)
-          : [1, 2, 3, 4, 5];
-        const timeParts = typeof data.timeOfDay === 'string' ? data.timeOfDay.split(':') : [];
-        const fsHour = Number.isInteger(Number(data.hour))
-          ? Math.min(23, Math.max(0, Number(data.hour)))
-          : (timeParts[0] ? Math.min(23, Math.max(0, Number(timeParts[0]) || 23)) : 23);
-        const fsMinute = data.minute !== undefined && data.minute !== null && Number.isInteger(Number(data.minute))
-          ? Math.min(59, Math.max(0, Number(data.minute)))
-          : (timeParts[1] && Number.isInteger(Number(timeParts[1])) ? Math.min(59, Math.max(0, Number(timeParts[1]))) : 0);
-        const fsTz = typeof data.timezone === 'string' && data.timezone.trim() ? data.timezone.trim() : 'Asia/Makassar';
-
-        setAutoBackupEnabled(fsEnabled);
-        setAutoBackupDays(fsDays);
-        setAutoBackupHour(fsHour);
-        setAutoBackupMinute(fsMinute);
-        setAutoBackupTimezone(fsTz);
-        setFirestoreBackupMeta({
-          updatedAt: data.updatedAt || '',
-          updatedBy: data.updatedBy || ''
-        });
-
-        // Reconcile Firestore -> Server Scheduler bila server belum sinkron
-        try {
-          const fsTime = data.updatedAt ? new Date(data.updatedAt).getTime() : 0;
-          const srvTime = latestServerStatus?.updatedAt ? new Date(latestServerStatus.updatedAt).getTime() : 0;
-          if (auth.currentUser && (!latestServerStatus || !latestServerStatus.hasCredentials || fsTime > srvTime)) {
-            const idToken = await auth.currentUser.getIdToken().catch(() => '');
-            if (idToken) {
-              const res = await saveAutoBackupSchedule(idToken, {
-                enabled: fsEnabled,
-                daysOfWeek: fsDays,
-                hour: fsHour,
-                minute: fsMinute,
-                timeOfDay: `${String(fsHour).padStart(2, '0')}:${String(fsMinute).padStart(2, '0')}`,
-                timezone: fsTz,
-                refreshToken: auth.currentUser.refreshToken || ''
-              });
-              if (!cancelled) {
-                latestServerStatus = res.status;
-                setServerBackupStatus(res.status);
-              }
-            }
-          }
-        } catch {
-          // Silent reconcile
-        }
-      },
-      (err) => {
-        console.warn('Gagal membaca sibiru_pengaturan/backup_config:', err);
-      }
-    );
-
     const onSynced = () => {
       setLocalBackupMeta(readLocalBackupMeta());
     };
     window.addEventListener(AUTO_BACKUP_SYNC_EVENT, onSynced);
     return () => {
       cancelled = true;
-      unsubBackupConfig();
       window.removeEventListener(AUTO_BACKUP_SYNC_EVENT, onSynced);
     };
   }, [canEdit]);
+
+  // Sinkronisasi jadwal dari dokumen pengaturan utama (sibiru_pengaturan/aktif.backup_schedule)
+  useEffect(() => {
+    if (!canEdit || !settings?.backup_schedule) return;
+    const data = settings.backup_schedule;
+    const fsEnabled = Boolean(data.enabled);
+    const fsDays = Array.isArray(data.daysOfWeek)
+      ? data.daysOfWeek.map(Number).filter((d) => Number.isInteger(d) && d >= 0 && d <= 6)
+      : [1, 2, 3, 4, 5];
+    const timeParts = typeof data.timeOfDay === 'string' ? data.timeOfDay.split(':') : [];
+    const fsHour = Number.isInteger(Number(data.hour))
+      ? Math.min(23, Math.max(0, Number(data.hour)))
+      : (timeParts[0] ? Math.min(23, Math.max(0, Number(timeParts[0]) || 23)) : 23);
+    const fsMinute = data.minute !== undefined && data.minute !== null && Number.isInteger(Number(data.minute))
+      ? Math.min(59, Math.max(0, Number(data.minute)))
+      : (timeParts[1] && Number.isInteger(Number(timeParts[1])) ? Math.min(59, Math.max(0, Number(timeParts[1]))) : 0);
+    const fsTz = typeof data.timezone === 'string' && data.timezone.trim() ? data.timezone.trim() : 'Asia/Makassar';
+    const fsAutoDownload = Boolean(data.autoDownload);
+
+    setAutoBackupEnabled(fsEnabled);
+    setAutoBackupDays(fsDays);
+    setAutoBackupHour(fsHour);
+    setAutoBackupMinute(fsMinute);
+    setAutoBackupTimezone(fsTz);
+    setAutoBackupAutoDownload(fsAutoDownload);
+    setFirestoreBackupMeta({
+      updatedAt: data.updatedAt || '',
+      updatedBy: data.updatedBy || ''
+    });
+
+    // Reconcile Pengaturan Utama Firestore -> Server Scheduler bila server belum sinkron
+    const reconcileToServer = async () => {
+      try {
+        const fsTime = data.updatedAt ? new Date(data.updatedAt).getTime() : 0;
+        const srvTime = serverBackupStatus?.updatedAt ? new Date(serverBackupStatus.updatedAt).getTime() : 0;
+        if (auth.currentUser && (!serverBackupStatus || !serverBackupStatus.hasCredentials || fsTime > srvTime)) {
+          const idToken = await auth.currentUser.getIdToken().catch(() => '');
+          if (idToken) {
+            const res = await saveAutoBackupSchedule(idToken, {
+              enabled: fsEnabled,
+              daysOfWeek: fsDays,
+              hour: fsHour,
+              minute: fsMinute,
+              timeOfDay: `${String(fsHour).padStart(2, '0')}:${String(fsMinute).padStart(2, '0')}`,
+              timezone: fsTz,
+              autoDownload: fsAutoDownload,
+              refreshToken: auth.currentUser.refreshToken || ''
+            });
+            setServerBackupStatus(res.status);
+          }
+        }
+      } catch {
+        // Silent reconcile
+      }
+    };
+    reconcileToServer();
+  }, [canEdit, settings?.backup_schedule]);
 
   // Firebase Storage Migration state
   const [isMigrating, setIsMigrating] = useState(false);
@@ -488,23 +490,19 @@ export default function PengaturanView({
     }
   };
 
-  // Trigger whole database export to JSON
+  // Trigger whole database export to JSON (fungsi tunggal bersama backup otomatis)
   const handleExportBackup = async () => {
     try {
       const dataObj = await backupDatabaseToJSON();
-      const dataStr = JSON.stringify(dataObj, null, 2);
-      const blob = new Blob([dataStr], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `SIREKAP_TANAH_BackUp_Database_TA2026_${new Date().toISOString().substring(0,10)}.json`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      const exportedAt = new Date().toISOString();
+
+      downloadDatabaseJsonFile(dataObj, {
+        tahunAnggaran: settings?.tahun_anggaran_aktif || fiscalYear,
+        exportedAt
+      });
 
       saveBackupSnapshotToLocalStorage(dataObj, {
-        exportedAt: new Date().toISOString(),
+        exportedAt,
         source: 'manual_admin'
       });
       setLocalBackupMeta(readLocalBackupMeta());
@@ -516,7 +514,7 @@ export default function PengaturanView({
         "DATABASE_BACK_RECOV",
         null,
         { status: 'SUCCESS' }
-      );
+      ).catch(() => {});
     } catch (err) {
       alert("Gagal melakukan export backup: " + (err instanceof Error ? err.message : String(err)));
     }
@@ -558,8 +556,7 @@ export default function PengaturanView({
     const nowIso = new Date().toISOString();
     const updatedBy = currentUserEmail || auth.currentUser.email || 'admin@sirekap.com';
 
-    const firestorePayload: BackupScheduleConfig = {
-      id: 'backup_config',
+    const schedulePayload: BackupScheduleConfig = {
       enabled: autoBackupEnabled,
       daysOfWeek: sortedDays,
       dayNames: sortedDays.map((d) => DAY_NAMES_ID[d]).filter(Boolean),
@@ -567,17 +564,31 @@ export default function PengaturanView({
       minute: minuteInt,
       timeOfDay: timeStr,
       timezone: autoBackupTimezone,
+      autoDownload: autoBackupAutoDownload,
       updatedAt: nowIso,
       updatedBy
     };
 
     setIsSavingAutoBackup(true);
-    try {
-      // 1. Simpan konfigurasi ke Firestore: sibiru_pengaturan / backup_config
-      await setDoc(doc(db, COLL_PENGATURAN, 'backup_config'), firestorePayload);
-      setFirestoreBackupMeta({ updatedAt: nowIso, updatedBy });
+    let firestoreSavedOk = false;
+    let firestorePermissionWarning = '';
 
-      // 2. Sinkronkan jadwal + token penyegar ke penjadwal server
+    try {
+      // 1. Gabungkan jadwal ke dokumen pengaturan utama yang sudah ada (sibiru_pengaturan/aktif)
+      try {
+        await setDoc(
+          doc(db, COLL_PENGATURAN, 'aktif'),
+          { backup_schedule: schedulePayload },
+          { merge: true }
+        );
+        setFirestoreBackupMeta({ updatedAt: nowIso, updatedBy });
+        firestoreSavedOk = true;
+      } catch (fsErr: any) {
+        firestorePermissionWarning = fsErr?.message || 'Akses tulis Firestore ditolak.';
+        console.warn('Gagal menulis backup_schedule ke sibiru_pengaturan/aktif:', fsErr);
+      }
+
+      // 2. Tetap sinkronkan jadwal + token penyegar ke penjadwal server & localStorage browser
       const idToken = await auth.currentUser.getIdToken(true);
       const refreshToken = auth.currentUser.refreshToken || '';
       const res = await saveAutoBackupSchedule(idToken, {
@@ -587,15 +598,29 @@ export default function PengaturanView({
         minute: minuteInt,
         timeOfDay: timeStr,
         timezone: autoBackupTimezone,
+        autoDownload: autoBackupAutoDownload,
         refreshToken
       });
       setServerBackupStatus(res.status);
-      setAutoBackupFeedback({
-        type: 'success',
-        message: autoBackupEnabled
-          ? `Konfigurasi tersimpan ke Firestore (sibiru_pengaturan/backup_config) & Server! Backup otomatis berjalan setiap ${firestorePayload.dayNames?.join(', ')} pukul ${timeStr} (${autoBackupTimezone}) tanpa perlu ada pengguna login.`
-          : 'Konfigurasi penjadwal (Nonaktif) berhasil disimpan ke Firestore (sibiru_pengaturan/backup_config) & Server.'
-      });
+
+      const modeDesc = res.status.executionMode === 'server_hybrid'
+        ? 'Server & LocalStorage'
+        : 'LocalStorage Browser Mandiri';
+      const autoDlDesc = autoBackupAutoDownload ? ' + Auto-Unduh file .json aktif' : '';
+
+      if (firestoreSavedOk) {
+        setAutoBackupFeedback({
+          type: 'success',
+          message: autoBackupEnabled
+            ? `Konfigurasi tersimpan di Pengaturan Utama (sibiru_pengaturan/aktif) & ${modeDesc}! Backup otomatis identik Ekspor JSON berjalan setiap ${schedulePayload.dayNames?.join(', ')} pukul ${timeStr} (${autoBackupTimezone})${autoDlDesc}.`
+            : `Konfigurasi penjadwal (Nonaktif) berhasil disimpan ke Pengaturan Utama (sibiru_pengaturan/aktif) & ${modeDesc}.`
+        });
+      } else {
+        setAutoBackupFeedback({
+          type: 'success',
+          message: `Jadwal tersimpan & aktif di ${modeDesc} (${autoBackupEnabled ? `setiap ${schedulePayload.dayNames?.join(', ')} pukul ${timeStr} ${autoBackupTimezone}${autoDlDesc}` : 'Nonaktif'}). Catatan: Sinkronisasi cloud Firestore tertunda (${firestorePermissionWarning}) — periksa Rules akun Administrator di Firebase Console jika perlu sinkron antar perangkat.`
+        });
+      }
 
       await createAuditLog(
         currentUserEmail,
@@ -603,10 +628,10 @@ export default function PengaturanView({
         "PENGATURAN BACKUP OTOMATIS JSON",
         "DATABASE_BACK_RECOV",
         null,
-        firestorePayload
-      );
+        { ...schedulePayload, firestoreSavedOk }
+      ).catch(() => {});
     } catch (err: any) {
-      setAutoBackupFeedback({ type: 'error', message: err?.message || 'Gagal menyimpan jadwal backup otomatis ke Firestore.' });
+      setAutoBackupFeedback({ type: 'error', message: err?.message || 'Gagal menyimpan jadwal backup otomatis.' });
     } finally {
       setIsSavingAutoBackup(false);
     }
@@ -621,12 +646,15 @@ export default function PengaturanView({
     setIsRunningAutoBackupNow(true);
     try {
       const idToken = await auth.currentUser.getIdToken(true);
-      const res = await triggerServerAutoBackupNow(idToken);
+      const res = await triggerServerAutoBackupNow(idToken, {
+        autoDownload: autoBackupAutoDownload,
+        tahunAnggaran: settings?.tahun_anggaran_aktif || fiscalYear
+      });
       setServerBackupStatus(res.status);
       setLocalBackupMeta(readLocalBackupMeta());
       setAutoBackupFeedback({
         type: 'success',
-        message: `Ekspor server berhasil (${res.snapshot.totalRecords} dokumen) dan key utama localStorage (${LS_AUTO_BACKUP_DATA_KEY}) telah ditimpa dengan versi terbaru.`
+        message: `Ekspor seluruh 9 koleksi berhasil (${res.snapshot.totalRecords} dokumen) dan key utama localStorage (${LS_AUTO_BACKUP_DATA_KEY}) telah ditimpa versi terbaru${autoBackupAutoDownload ? ' serta file .json otomatis diunduh' : ''}.`
       });
     } catch (err: any) {
       setAutoBackupFeedback({ type: 'error', message: err?.message || 'Gagal menjalankan ekspor otomatis sekarang.' });
@@ -636,7 +664,7 @@ export default function PengaturanView({
   };
 
   const handleDownloadLocalStorageBackup = () => {
-    const ok = downloadLocalStorageBackupFile();
+    const ok = downloadLocalStorageBackupFile(settings?.tahun_anggaran_aktif || fiscalYear);
     if (!ok) {
       setAutoBackupFeedback({
         type: 'error',
@@ -1123,7 +1151,7 @@ export default function PengaturanView({
                         Penjadwal Backup Otomatis Mandiri (Server + LocalStorage)
                       </p>
                       <p className="text-[11px] text-slate-600 mt-0.5 leading-relaxed">
-                        Server menjalankan ekspor JSON secara mandiri sesuai hari dan jam tanpa perlu ada pengguna login, lalu otomatis menimpa key utama <code className="font-mono bg-white px-1 py-0.5 rounded border border-slate-200 text-[10px]">{LS_AUTO_BACKUP_DATA_KEY}</code> di <code className="font-mono">localStorage</code> saat browser terbuka.
+                        Menjalankan fungsi ekspor 9 koleksi yang identik dengan tombol <b>Ekspor Semua Basis Data (JSON)</b> secara mandiri sesuai hari, jam &amp; menit tanpa perlu pengguna login, lalu menimpa key utama <code className="font-mono bg-white px-1 py-0.5 rounded border border-slate-200 text-[10px]">{LS_AUTO_BACKUP_DATA_KEY}</code> di <code className="font-mono">localStorage</code>.
                       </p>
                     </div>
                     <label className="inline-flex items-center cursor-pointer shrink-0 select-none">
@@ -1260,6 +1288,24 @@ export default function PengaturanView({
                     </div>
                   </div>
 
+                  {/* Opsi Auto-Unduh File JSON ke Perangkat */}
+                  <label className="flex items-start gap-2.5 p-2.5 bg-white border border-slate-200 rounded-lg cursor-pointer hover:bg-emerald-50/40 transition select-none">
+                    <input
+                      type="checkbox"
+                      checked={autoBackupAutoDownload}
+                      onChange={(e) => setAutoBackupAutoDownload(e.target.checked)}
+                      className="mt-0.5 h-4 w-4 rounded border-slate-300 text-emerald-700 focus:ring-emerald-600 cursor-pointer"
+                    />
+                    <div className="text-[11px]">
+                      <span className="font-bold text-slate-800 block">
+                        Unduh otomatis file <code className="font-mono text-emerald-800">.json</code> ke perangkat saat jadwal backup selesai
+                      </span>
+                      <span className="text-[10px] text-slate-500">
+                        Bila dicentang, selain menimpa <code className="font-mono">localStorage</code>, browser juga otomatis mengunduh file JSON identik dengan tombol Ekspor Semua Basis Data (1x per jadwal eksekusi).
+                      </span>
+                    </div>
+                  </label>
+
                   {/* Status & LocalStorage Monitor */}
                   <div className="bg-white border border-slate-200 rounded-lg p-3 space-y-1.5 text-[11px]">
                     <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1285,11 +1331,11 @@ export default function PengaturanView({
                       </span>
                     </div>
                     <div className="flex flex-wrap justify-between text-slate-600">
-                      <span>Dokumen Firestore (<code className="font-mono text-[10px]">sibiru_pengaturan/backup_config</code>):</span>
+                      <span>Pengaturan Utama (<code className="font-mono text-[10px]">sibiru_pengaturan/aktif</code>):</span>
                       <span className="font-mono font-bold text-blue-800">
                         {firestoreBackupMeta?.updatedAt
                           ? `Tersimpan (${new Date(firestoreBackupMeta.updatedAt).toLocaleString('id-ID')})`
-                          : 'Belum disimpan ke Firestore'}
+                          : 'Belum tersinkron ke Firestore'}
                       </span>
                     </div>
                     <div className="flex flex-wrap justify-between text-slate-600">

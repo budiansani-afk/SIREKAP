@@ -28,6 +28,7 @@ export interface AutoBackupServerConfig {
   minute: number; // 0..59
   timeOfDay: string; // "HH:MM" e.g. "23:00"
   timezone: string; // e.g. "Asia/Makassar"
+  autoDownload: boolean;
   syncKey: string;
   refreshToken: string;
   adminEmail: string;
@@ -47,6 +48,7 @@ export interface AutoBackupPublicStatus {
   minute: number;
   timeOfDay: string;
   timezone: string;
+  autoDownload: boolean;
   lastRunAt: string | null;
   lastRunSlot: string | null;
   lastStatus: "idle" | "running" | "success" | "error";
@@ -79,6 +81,7 @@ function defaultConfig(): AutoBackupServerConfig {
     minute: 0,
     timeOfDay: "23:00",
     timezone: "Asia/Makassar",
+    autoDownload: false,
     syncKey: crypto.randomBytes(24).toString("hex"),
     refreshToken: "",
     adminEmail: "",
@@ -149,6 +152,7 @@ export function getPublicBackupStatus(cfg?: AutoBackupServerConfig): AutoBackupP
     minute: safeMinute,
     timeOfDay: formattedTime,
     timezone: c.timezone || "Asia/Makassar",
+    autoDownload: Boolean(c.autoDownload),
     lastRunAt: c.lastRunAt || null,
     lastRunSlot: c.lastRunSlot || null,
     lastStatus: c.lastStatus || "idle",
@@ -463,14 +467,34 @@ export async function syncBackupConfigFromFirestore(cfg: AutoBackupServerConfig)
       cfg.refreshToken = exchanged.refreshToken;
     }
     const dbId = firebaseConfig.firestoreDatabaseId || "(default)";
-    const url = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/${encodeURIComponent(dbId)}/documents/sibiru_pengaturan/backup_config`;
-    const res = await fetch(url, {
+    const activeUrl = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/${encodeURIComponent(dbId)}/documents/sibiru_pengaturan/aktif`;
+    const activeRes = await fetch(activeUrl, {
       headers: { Authorization: `Bearer ${exchanged.idToken}` }
     });
-    if (!res.ok) return cfg;
-    const json: any = await res.json();
-    const remote = decodeFirestoreFields(json.fields || {});
-    if (typeof remote.enabled !== "boolean") return cfg;
+    let remote: any = null;
+    if (activeRes.ok) {
+      const activeJson: any = await activeRes.json();
+      const activeFields = decodeFirestoreFields(activeJson.fields || {});
+      if (activeFields?.backup_schedule && typeof activeFields.backup_schedule.enabled === "boolean") {
+        remote = activeFields.backup_schedule;
+      }
+    }
+
+    if (!remote) {
+      const legacyUrl = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/${encodeURIComponent(dbId)}/documents/sibiru_pengaturan/backup_config`;
+      const legacyRes = await fetch(legacyUrl, {
+        headers: { Authorization: `Bearer ${exchanged.idToken}` }
+      });
+      if (legacyRes.ok) {
+        const legacyJson: any = await legacyRes.json();
+        const legacyFields = decodeFirestoreFields(legacyJson.fields || {});
+        if (typeof legacyFields.enabled === "boolean") {
+          remote = legacyFields;
+        }
+      }
+    }
+
+    if (!remote || typeof remote.enabled !== "boolean") return cfg;
 
     const remoteUpdated = remote.updatedAt ? new Date(String(remote.updatedAt)).getTime() : 0;
     const localUpdated = cfg.updatedAt ? new Date(String(cfg.updatedAt)).getTime() : 0;
@@ -490,6 +514,9 @@ export async function syncBackupConfigFromFirestore(cfg: AutoBackupServerConfig)
       cfg.hour = hourInt;
       cfg.minute = minuteInt;
       cfg.timeOfDay = `${String(hourInt).padStart(2, "0")}:${String(minuteInt).padStart(2, "0")}`;
+      if (typeof remote.autoDownload === "boolean") {
+        cfg.autoDownload = remote.autoDownload;
+      }
       if (typeof remote.timezone === "string" && remote.timezone.trim()) {
         cfg.timezone = remote.timezone.trim();
       }
@@ -499,7 +526,7 @@ export async function syncBackupConfigFromFirestore(cfg: AutoBackupServerConfig)
       saveAutoBackupConfig(cfg);
     }
   } catch (err) {
-    console.warn("[AutoBackup] Gagal sinkron backup_config dari Firestore:", err);
+    console.warn("[AutoBackup] Gagal sinkron backup_schedule dari Firestore:", err);
   }
   return cfg;
 }
@@ -511,7 +538,7 @@ export function startAutoBackupScheduler() {
     try {
       let cfg = loadAutoBackupConfig();
 
-      // Reconcile config from Firestore sibiru_pengaturan/backup_config every 10 minutes
+      // Reconcile config from Firestore sibiru_pengaturan/aktif.backup_schedule every 10 minutes
       const nowMs = Date.now();
       if (cfg.refreshToken && (lastFirestoreConfigSyncMs === 0 || nowMs - lastFirestoreConfigSyncMs > 600_000)) {
         lastFirestoreConfigSyncMs = nowMs;

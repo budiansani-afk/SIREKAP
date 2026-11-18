@@ -174,10 +174,11 @@ export interface PengaturanSistem {
   nama_bendahara?: string;
   jabatan_bendahara?: string;
   nip_bendahara?: string;
+  backup_schedule?: BackupScheduleConfig;
 }
 
 export interface BackupScheduleConfig {
-  id: 'backup_config';
+  id?: 'backup_config' | string;
   enabled: boolean;
   daysOfWeek: number[]; // 0 = Minggu .. 6 = Sabtu
   dayNames?: string[];
@@ -185,6 +186,7 @@ export interface BackupScheduleConfig {
   minute?: number; // 0..59
   timeOfDay: string; // "HH:MM" e.g. "23:00"
   timezone: string;
+  autoDownload?: boolean;
   updatedAt: string;
   updatedBy: string;
 }
